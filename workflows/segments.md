@@ -1,0 +1,83 @@
+# Segments — the feature workflow, one stage at a time
+
+A **segment** is one stage of `feature-development.md` run as a unit: it checks its entry
+condition, does its work with the referenced prompt, stops at its gate, and ends with a
+**handoff** written to files. Segments are tool-independent; each adapter only maps a trigger
+(slash command, prompt file, or "paste this") onto a segment. Rules live here, once.
+
+**Segments always stop; /new-feature flows only as far as the mode allows.**
+
+Who calls a segment depends on the mode. In **lite**, the human runs `/new-feature`, which calls
+these segments in turn and asks at each gate — calling a segment directly is for resuming at a
+specific gate. In **strict**, each role runs its own segment command in its own session.
+
+## Contract (every segment)
+
+1. **Entry check** — verify the condition below from *files*, never from chat. Hard checks
+   refuse with the exact message; soft checks warn and ask whether to proceed.
+2. **Work** — run the workflow steps with the referenced prompt as written.
+3. **Gate** — stop and wait for the human where marked. Nothing is applied without approval.
+   **One decision per gate message.** Ask exactly one decision. Several open items are asked one
+   per message, or offered as the single decision "accept every recommendation listed above",
+   each item and its recommendation written out. An answer that does not say which decision it
+   answers is asked back, never interpreted.
+4. **Handoff** — finish with a summary that names the artifact, its status, and the line
+   `Next: <segment> — <who runs it>`. Then **stop**. Never start the next segment.
+
+Handoffs travel through files and status fields (`docs/roles/README.md`): the spec's `Status`
+(`specs/TEMPLATE.md`), the plan's `Approved by / on` line (`specs/plans/TEMPLATE.md`), the diff,
+the review report. The next role starts a **new session** and reads them.
+
+## The five segments
+
+| Segment | Role | Steps | Entry check | Prompt(s) | Gate | Sets | Handoff |
+|---|---|---|---|---|---|---|---|
+| **ANALYZE** | Analyst | 1–2 | *Hard:* no twin — if a spec in `specs/active/` matches the request, offer to resume it; never open a second spec for the same work. New number = highest in `active/`, `done/`, `plans/` + 1. | `prompts/clarify.md`, then `prompts/spec.md` (incl. self-critique) | Spec approval (always, in every mode — it is PLAN's entry condition; lite folds clarify into the draft, except in a sensitive area — `docs/domain.md`) | spec `Status: Approved` | "no open questions remain" · `Next: PLAN — Developer` |
+| **PLAN** | Developer | 3–4 | *Hard:* spec has `Status: Approved` (or `In progress` when revising mid-work). Else refuse: **"Spec not approved — run ANALYZE or get approval first."** If a plan file exists, offer to revise it. | `prompts/plan.md` | Plan approval; never start building | plan `Status: Approved` + `Approved by / on: <name>, <YYYY-MM-DD>` (ask for the name; propose `git config user.name`) | `Next: BUILD — Developer` |
+| **BUILD** | Developer | 5 | *Hard:* plan's `Approved by / on` holds a name and date (empty, `—`, or comment only = not approved). Else refuse: **"Plan not approved — run PLAN and get the approval recorded first."** *Then:* print doctor's per-profile verdict; if it differs from the plan's Risks (another machine, a changed environment), stop: **"Environment differs from the plan — R-13."** A `check fails on the check.conf errors above` verdict is a conf error, not R-13: fix check.conf first. | `prompts/build.md` | — (deviation → R-07) | spec `Status: In progress` before the first change; if already `In progress`, resume from the plan's next unfinished step | changed files vs. plan list (as amended) + real `./scripts/check` output, its verdict lines in the plan's `## Build evidence` · `Next: INDEPENDENT REVIEW — fresh session / read-only reviewer` |
+| **REVIEW** | Reviewer | 6 | *Soft:* pushed commits on the branch and a spec `In progress` exist. It does not wait for CI's full run — TRIAGE does. Evidence for HEAD in the plan's `## Build evidence` is cited, not re-run. | `prompts/review.md` | — | nothing (read-only) | findings verbatim, no softening · `Next: TRIAGE — human (real / noise / defer / investigate); then Developer fix rounds, then VERIFY` |
+| **VERIFY** | QA | 9 | *Soft:* triage is complete — the plan's `## Triage` has every finding as real (fixed), noise (rationale written), defer (entry in `specs/backlog.md`), or investigate. A one-pass review ("The chainer") writes its table before triage instead; triage confirms it. | `prompts/verify.md` | — | nothing (no production code) | criterion ↔ evidence table · `Next: SHIP — human (DoD, tick the proven criteria, move spec to specs/done/ with Status: Shipped in the PR, merge; an unprovable criterion is moved out, never waived — R-08)` |
+
+The CHANGE lane of `change-request.md` runs these same segments with `specs/TEMPLATE-mini.md`
+as the spec (Source mandatory, changed + preserved criteria); entry checks and gates are identical.
+
+Steps 7 (triage) and 10 (ship) belong to the human; step 8 (fix rounds) is the Developer applying
+triage with `prompts/build.md §fixes`, followed by REVIEW again on the fix diff when the round
+holds a Medium or higher finding (in a sensitive area: every round); a Low/Info-only round, and
+in any area a round that touches documentation only, goes on to VERIFY (`feature-development.md`,
+step 8).
+
+## The chainer
+
+`/new-feature` (or its equivalent in another tool) is **not** a segment. It reads `Mode` from
+`AGENTS.md` first:
+
+- **strict** — refuse before any stage, in the chat language with command names verbatim: *"Mode
+  is strict: stages are role-owned. Analyst starts
+  with ANALYZE; subsequent roles run PLAN, BUILD, REVIEW, VERIFY in their own sessions."*
+- **lite** — run the segments in order with their entry checks intact, stopping at four gates:
+  spec approval · plan approval · triage · ship. Before opening a spec, look for an existing one
+  that matches the request; if found, report its status and the plan's approval line and resume
+  from the next gate — never a twin spec.
+- **lite, one-pass review** — the chainer may ask **one** independent session or read-only
+  subagent for REVIEW and VERIFY together. That session, not the builder, checks the two
+  conditions from files and runs a plain review if either fails: the work is outside a sensitive
+  area (`docs/domain.md`), and no criterion needs the code broken on purpose (`prompts/verify.md`:
+  concurrency, money, authorization, boundary values). It reviews first. On a "clean" verdict it
+  announces the hat switch to QA and adds the criterion ↔ evidence table to the same report,
+  citing the full green of HEAD as usual (still running → the table waits for it). UI
+  screenshots: the session captures them (`docs/testing.md`, Evidence for UI criteria), outside
+  the repo, and the table lists them for the SHIP gallery. Any review finding ends the pass at
+  the review —
+  triage, fix rounds and a separate VERIFY follow as usual; gaps in the table go to triage the
+  same way. Handoff: `Next: TRIAGE — human (confirm the clean verdict and the evidence table);
+  then SHIP`. The triage and ship gates stay. It saves a session and a handoff, never a gate;
+  the producer still never verifies its own work. Segment commands still stop (ANEW-0002).
+- **unset** — stop; bootstrap has not run.
+
+## Enforcement outside the agent
+
+`./scripts/doctor` warns on a plan whose spec is not Approved / In progress / Shipped, and on a
+spec `In progress` whose plan has no recorded approval. `./scripts/doctor --strict` turns those
+warnings into failures — CI runs it that way, so the gates hold whichever tool produced the PR.
+The PR template (`.github/pull_request_template.md`) asks for the same file evidence.
