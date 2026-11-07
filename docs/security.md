@@ -7,8 +7,11 @@
 - Secrets never enter the repo, specs, prompts, or chat. `.env` is gitignored; `.env.example`
   documents every variable with a placeholder.
 - Agents never print secret values, even when debugging.
-- Local development reads `.env`; CI and production read environment variables (or the platform's
-  secret store). No secret in `docker-compose.yml`, no secret in the SPA bundle.
+- Local development: **Docker Compose** reads `.env` (gitignored) for the database container; the
+  **application** reads plain environment variables (`DB_URL`, `DB_USER`, `DB_PASSWORD`) — it does
+  not parse `.env` itself. CI and production read environment variables (or the platform's secret
+  store). No real secret is committed: `compose.yaml` and `.env.example` carry dev-only defaults
+  (`leave`/`leave`) that production overrides.
 
 ## Input & output
 
