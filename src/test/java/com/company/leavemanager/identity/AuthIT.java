@@ -41,6 +41,17 @@ class AuthIT extends IdentityTestSupport {
     }
 
     @Test
+    void shouldAnswerTheSameWayForAnUnknownEmail() throws Exception {
+        // The response must not reveal whether the address exists.
+        HttpResponse<String> response = session.login("nobody-" + System.nanoTime() + "@acme.test",
+                "some-password-123");
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).contains("NOT_AUTHENTICATED");
+        assertThat(response.body()).doesNotContain("nobody-");
+    }
+
+    @Test
     void shouldRejectEndedSession() throws Exception {
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
         assertThat(session.get("/api/auth/me").statusCode()).isEqualTo(200);

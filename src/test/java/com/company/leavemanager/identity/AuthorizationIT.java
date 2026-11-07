@@ -49,6 +49,23 @@ class AuthorizationIT extends IdentityTestSupport {
                 "{\"email\":\"someone@acme.test\",\"displayName\":\"Someone\",\"role\":\"EMPLOYEE\"}");
 
         assertThat(response.statusCode()).isEqualTo(403);
+        // The code proves the refusal is the role rule, not a CSRF failure (also 403).
+        assertThat(response.body()).contains("NOT_AUTHORIZED");
+    }
+
+    @Test
+    void shouldRejectEveryCeoBusinessWrite() throws Exception {
+        assertThat(session.login(CEO_EMAIL, CEO_PASSWORD).statusCode()).isEqualTo(200);
+        String email = "ceo-target-" + System.nanoTime() + "@acme.test";
+
+        // Every write endpoint of this slice refuses the CEO with the role code.
+        assertThat(session.post("/api/users", "{\"email\":\"" + email + "\","
+                + "\"displayName\":\"Target\",\"role\":\"EMPLOYEE\"}").body())
+                .contains("NOT_AUTHORIZED");
+        assertThat(session.post("/api/users/00000000-0000-0000-0000-000000000001/deactivate", "{}").body())
+                .contains("NOT_AUTHORIZED");
+        assertThat(session.post("/api/users/00000000-0000-0000-0000-000000000001/reset-password", "{}").body())
+                .contains("NOT_AUTHORIZED");
     }
 
     @Test

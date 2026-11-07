@@ -10,6 +10,41 @@ import static org.assertj.core.api.Assertions.assertThat;
 class UserAdminIT extends IdentityTestSupport {
 
     @Test
+    void shouldReturnTheTemporaryPasswordOnlyAtCreation() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String email = unique("once");
+        HttpResponse<String> created = session.post("/api/users", body(email, "Once Person", "EMPLOYEE"));
+        assertThat(created.statusCode()).isEqualTo(201);
+
+        // The list (and any later read) never carries the password again.
+        HttpResponse<String> list = session.get("/api/users");
+
+        assertThat(list.statusCode()).isEqualTo(200);
+        assertThat(list.body()).doesNotContain("temporaryPassword");
+        assertThat(list.body()).doesNotContain(extract(created.body(), "temporaryPassword"));
+    }
+
+    @Test
+    void shouldNotLetAManagerAdministerUsers() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String email = unique("mgr-auth");
+        HttpResponse<String> created = session.post("/api/users", body(email, "Manager Auth", "MANAGER"));
+        String temporaryPassword = extract(created.body(), "temporaryPassword");
+
+        Session manager = new Session();
+        assertThat(manager.login(email, temporaryPassword).statusCode()).isEqualTo(200);
+        assertThat(manager.post("/api/auth/password",
+                "{\"currentPassword\":\"" + temporaryPassword + "\","
+                        + "\"newPassword\":\"manager-pass-123\",\"confirmPassword\":\"manager-pass-123\"}")
+                .statusCode()).isEqualTo(204);
+
+        HttpResponse<String> forbidden = manager.get("/api/users");
+
+        assertThat(forbidden.statusCode()).isEqualTo(403);
+        assertThat(forbidden.body()).contains("NOT_AUTHORIZED");
+    }
+
+    @Test
     void shouldCreateAManagerAsWellAsAnEmployee() throws Exception {
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
 

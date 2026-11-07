@@ -66,5 +66,22 @@ class AuditIT extends IdentityTestSupport {
                 assertThat(details).doesNotContain(HR_PASSWORD);
             }
         });
+
+        // BR-13: who, when, and on whom — the trail is not just an event type.
+        assertThat(events).allSatisfy(event -> assertThat(event.getOccurredAt()).isNotNull());
+
+        AuditEvent createdEvent = events.stream()
+                .filter(event -> "USER_CREATED".equals(event.getEventType()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(createdEvent.getActorUserId()).isNotNull();
+        assertThat(createdEvent.getTargetUserId()).isNotNull();
+        assertThat(createdEvent.getTargetUserId()).isNotEqualTo(createdEvent.getActorUserId());
+
+        AuditEvent loginEvent = events.stream()
+                .filter(event -> "LOGIN_SUCCEEDED".equals(event.getEventType()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(loginEvent.getActorUserId()).isNotNull();
     }
 }

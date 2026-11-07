@@ -56,4 +56,9 @@ test('shouldLoginDenyAndLogout', async ({ page }) => {
 
   const me = await page.request.get('/api/auth/me')
   expect(me.status()).toBe(401)
+
+  // Reloading the app after the logout lands on the login screen, not on the shell (AC-10).
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+  await expect(page.getByText('Giriş yapan:')).toHaveCount(0)
 })

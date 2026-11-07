@@ -43,6 +43,22 @@ class SessionExpiryIT extends IdentityTestSupport {
     }
 
     @Test
+    void shouldKeepTheSessionUntilTheAbsoluteLifetimeIsReached() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+
+        // 7 h 59 min: still inside the 8-hour window.
+        CLOCK.advance(Duration.ofHours(7).plusMinutes(59));
+        assertThat(session.get("/api/auth/me").statusCode()).isEqualTo(200);
+
+        // 8 h 01 min: past it.
+        CLOCK.advance(Duration.ofMinutes(2));
+        HttpResponse<String> expired = session.get("/api/auth/me");
+
+        assertThat(expired.statusCode()).isEqualTo(401);
+        assertThat(expired.body()).contains("SESSION_EXPIRED");
+    }
+
+    @Test
     void shouldEndTheSessionAfterTheAbsoluteLifetime() throws Exception {
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
         assertThat(session.get("/api/auth/me").statusCode()).isEqualTo(200);
