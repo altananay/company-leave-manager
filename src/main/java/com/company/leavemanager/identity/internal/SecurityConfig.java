@@ -20,13 +20,11 @@ import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
-import org.springframework.session.jdbc.config.annotation.web.http.EnableJdbcHttpSession;
 
 import java.time.Clock;
 
 @Configuration
 @EnableWebSecurity
-@EnableJdbcHttpSession
 @EnableConfigurationProperties(IdentityProperties.class)
 public class SecurityConfig {
 
@@ -42,7 +40,7 @@ public class SecurityConfig {
 
     /**
      * A minimal authentication manager: load the user, compare the BCrypt hash, return the principal.
-     * Lockout and the active flag are checked by the login controller before this runs.
+     * Lockout and the active flag are checked by the login use case before this runs.
      */
     @Bean
     AuthenticationManager authenticationManager(AppUserDetailsService details, PasswordEncoder encoder) {
@@ -77,8 +75,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/health", "/api/auth/login", "/api/auth/csrf").permitAll()
                         .requestMatchers("/api/users/**").hasRole("HR")
                         .requestMatchers("/api/**").authenticated()
-                        // The SPA shell and its assets are public; the data behind /api is not.
-                        .anyRequest().permitAll())
+                        // The SPA shell and its assets stay public; anything else is denied by default.
+                        .requestMatchers("/", "/index.html", "/favicon.svg", "/icons.svg", "/assets/**", "/error")
+                        .permitAll()
+                        .anyRequest().denyAll())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, failure) ->
                                 problems.write(response, 401, "NOT_AUTHENTICATED"))

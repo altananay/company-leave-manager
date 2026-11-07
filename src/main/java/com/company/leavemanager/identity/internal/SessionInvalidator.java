@@ -4,6 +4,8 @@ import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.session.Session;
 import org.springframework.stereotype.Service;
 
+import java.util.Locale;
+
 /** Ends every open session of a user (deactivation, password reset). */
 @Service
 public class SessionInvalidator {
@@ -15,7 +17,7 @@ public class SessionInvalidator {
     }
 
     public void endAllFor(String email) {
-        sessions.findByPrincipalName(email.toLowerCase())
+        sessions.findByPrincipalName(email.toLowerCase(Locale.ROOT))
                 .values()
                 .forEach(session -> sessions.deleteById(session.getId()));
     }

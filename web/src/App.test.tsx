@@ -57,7 +57,12 @@ function authenticated(
   health: Route = () => json(200, { status: 'UP' }),
   extra: Record<string, Route> = {},
 ) {
-  stubApi({ '/api/auth/me': () => json(200, me), '/api/health': health, ...extra })
+  stubApi({
+    '/api/auth/me': () => json(200, me),
+    '/api/auth/csrf': () => json(200, { token: 't' }),
+    '/api/health': health,
+    ...extra,
+  })
 }
 
 function renderApp() {
@@ -111,6 +116,20 @@ describe('authentication', () => {
     expect(await screen.findByText('Sistem çalışıyor')).toBeInTheDocument()
   })
 
+  it('shouldReturnToLoginWithAMessageWhenTheSessionEndsMidway', async () => {
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/users': () => json(401, { status: 401, code: 'SESSION_EXPIRED' }),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+
+    expect(await screen.findByRole('heading', { name: 'Giriş' })).toBeInTheDocument()
+    expect(screen.getByText('Oturum sona erdi. Lütfen yeniden giriş yapın.')).toBeInTheDocument()
+  })
+
   it('shouldShowForbiddenForNonHrUsers', async () => {
     authenticated(EMPLOYEE, () => json(200, { status: 'UP' }), {
       '/api/users': () => json(403, { status: 403, code: 'NOT_AUTHORIZED' }),
@@ -122,6 +141,108 @@ describe('authentication', () => {
     await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
 
     expect(await screen.findByText('Bu sayfaya erişiminiz yok')).toBeInTheDocument()
+  })
+})
+
+describe('users screen', () => {
+  const users = [
+    { ...HR, active: true },
+    { ...EMPLOYEE, active: true },
+  ]
+
+  it('shouldAskForConfirmationBeforeDeactivating', async () => {
+    const deactivate = vi.fn(() => json(204, null))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(json(200, HR))
+        }
+        if (url.includes('/api/health')) {
+          return Promise.resolve(json(200, { status: 'UP' }))
+        }
+        if (url.includes('/deactivate')) {
+          return Promise.resolve(deactivate())
+        }
+        if (url.includes('/api/users')) {
+          return Promise.resolve(json(200, users))
+        }
+        return Promise.resolve(json(404, null))
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+
+    const buttons = await screen.findAllByRole('button', { name: 'Pasife al' })
+    await user.click(buttons[1])
+
+    // The first click only asks; nothing is sent yet.
+    expect(deactivate).not.toHaveBeenCalled()
+    expect(screen.getByText('Bu kullanıcı pasife alınsın mı?')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Onayla' }))
+
+    expect(deactivate).toHaveBeenCalledTimes(1)
+  })
+
+  it('shouldReportAnExistingEmailWithItsOwnMessage', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(json(200, HR))
+        }
+        if (url.includes('/api/health')) {
+          return Promise.resolve(json(200, { status: 'UP' }))
+        }
+        if (url.includes('/api/users') && init?.method === 'POST') {
+          return Promise.resolve(json(409, { status: 409, code: 'EMAIL_EXISTS' }))
+        }
+        if (url.includes('/api/users')) {
+          return Promise.resolve(json(200, users))
+        }
+        return Promise.resolve(json(404, null))
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+
+    await user.type(await screen.findByLabelText('E-posta'), 'taken@acme.test')
+    await user.type(screen.getByLabelText('Ad soyad'), 'Taken Person')
+    await user.click(screen.getByRole('button', { name: 'Oluştur' }))
+
+    expect(await screen.findByText('Bu e-posta ile bir kullanıcı zaten var.')).toBeInTheDocument()
+  })
+})
+
+describe('password change', () => {
+  it('shouldReportAWrongCurrentPassword', async () => {
+    authenticated({ ...EMPLOYEE, mustChangePassword: true }, () => json(200, { status: 'UP' }), {
+      '/api/auth/password': () => json(400, { status: 400, code: 'INVALID_PASSWORD' }),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+
+    await user.type(await screen.findByLabelText('Mevcut parola'), 'wrong-current-one')
+    await user.type(screen.getByLabelText('Yeni parola', { exact: true }), 'brand-new-pass-123')
+    await user.type(screen.getByLabelText('Yeni parola (tekrar)'), 'brand-new-pass-123')
+    await user.click(screen.getByRole('button', { name: 'Parolayı değiştir' }))
+
+    expect(await screen.findByText('Mevcut parola hatalı.')).toBeInTheDocument()
   })
 })
 
@@ -175,6 +296,20 @@ describe('health status', () => {
     await user.click(screen.getByRole('button', { name: 'Yeniden dene' }))
 
     expect(await screen.findByText('Sistem çalışıyor')).toBeInTheDocument()
+  })
+
+  it('shouldTranslateTheErrorStateToo', async () => {
+    authenticated(HR, () => json(503, { status: 'DOWN' }))
+
+    const user = userEvent.setup()
+    renderApp()
+
+    expect(await screen.findByText('Bağlantı hatası')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'EN' }))
+
+    expect(screen.getByText('Connection error')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
   })
 })
 
@@ -237,5 +372,45 @@ describe('language', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe('en')
     expect(document.documentElement.lang).toBe('en')
     expect(document.title).toBe('Leave Management')
+  })
+
+  it('shouldTranslateThePasswordScreen', async () => {
+    setBrowserLanguage('en-US')
+    authenticated({ ...EMPLOYEE, mustChangePassword: true })
+
+    renderApp()
+
+    expect(await screen.findByRole('heading', { name: 'Change password' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Current password')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Change password' })).toBeInTheDocument()
+  })
+
+  it('shouldTranslateTheUsersScreen', async () => {
+    setBrowserLanguage('en-US')
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/users': () => json(200, [{ ...HR, active: true }]),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+
+    await user.click(await screen.findByRole('button', { name: 'Users' }))
+
+    expect(await screen.findByRole('heading', { name: 'Users' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument()
+  })
+
+  it('shouldTranslateTheForbiddenScreen', async () => {
+    setBrowserLanguage('en-US')
+    authenticated(EMPLOYEE, () => json(200, { status: 'UP' }), {
+      '/api/users': () => json(403, { status: 403, code: 'NOT_AUTHORIZED' }),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+
+    await user.click(await screen.findByRole('button', { name: 'Users' }))
+
+    expect(await screen.findByText('You do not have access to this page')).toBeInTheDocument()
   })
 })

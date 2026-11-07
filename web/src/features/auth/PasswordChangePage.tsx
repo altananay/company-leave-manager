@@ -1,8 +1,8 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { useI18n } from '../../i18n/I18nProvider'
 import { ApiError, authApi } from './authApi'
 
-type ErrorKey = 'passwordTooShort' | 'passwordMismatch' | 'invalidPassword' | 'loginFailed'
+type ErrorKey = 'passwordTooShort' | 'passwordMismatch' | 'invalidPassword' | 'genericError'
 
 export function PasswordChangePage({
   onChanged,
@@ -17,6 +17,7 @@ export function PasswordChangePage({
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<ErrorKey | null>(null)
   const [busy, setBusy] = useState(false)
+  const currentRef = useRef<HTMLInputElement>(null)
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -34,9 +35,18 @@ export function PasswordChangePage({
       await authApi.changePassword(current, next, confirm)
       onChanged()
     } catch (failure) {
+      // The API answers with a stable English code; the UI never parses prose.
+      const code = failure instanceof ApiError ? failure.code : 'ERROR'
       setError(
-        failure instanceof ApiError && failure.status === 401 ? 'invalidPassword' : 'loginFailed',
+        code === 'INVALID_PASSWORD'
+          ? 'invalidPassword'
+          : code === 'PASSWORD_MISMATCH'
+            ? 'passwordMismatch'
+            : code === 'WEAK_PASSWORD'
+              ? 'passwordTooShort'
+              : 'genericError',
       )
+      currentRef.current?.focus()
     } finally {
       setBusy(false)
     }
@@ -48,9 +58,11 @@ export function PasswordChangePage({
       <label>
         {t('currentPassword')}
         <input
+          ref={currentRef}
           type="password"
           autoComplete="current-password"
           value={current}
+          aria-invalid={error === 'invalidPassword'}
           onChange={(event) => setCurrent(event.target.value)}
           required
         />
@@ -61,6 +73,7 @@ export function PasswordChangePage({
           type="password"
           autoComplete="new-password"
           value={next}
+          aria-invalid={error === 'passwordTooShort'}
           onChange={(event) => setNext(event.target.value)}
           required
         />
@@ -71,6 +84,7 @@ export function PasswordChangePage({
           type="password"
           autoComplete="new-password"
           value={confirm}
+          aria-invalid={error === 'passwordMismatch'}
           onChange={(event) => setConfirm(event.target.value)}
           required
         />

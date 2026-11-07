@@ -16,6 +16,8 @@ spring:
     hibernate:
       ddl-auto: validate
   session:
+    # Spring Session (spring-boot-session): idle timeout and cookie attributes.
+    timeout: ${SESSION_IDLE_TIMEOUT:30m}
     jdbc:
       # The session tables are a Flyway migration (V2), not startup DDL.
       initialize-schema: never
@@ -24,10 +26,12 @@ server:
   port: ${PORT:8080}
   servlet:
     session:
-      timeout: 30m
+      timeout: ${SESSION_IDLE_TIMEOUT:30m}
       cookie:
         http-only: true
         same-site: lax
+        # Behind TLS in production; the local profile runs over plain HTTP.
+        secure: ${SESSION_COOKIE_SECURE:false}
 
 management:
   endpoints:

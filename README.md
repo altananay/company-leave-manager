@@ -21,9 +21,9 @@ npm --prefix web run dev        # SPA: http://localhost:5173 (/api → :8080 pro
 
 > Uygulama `.env` dosyasını okumaz; veritabanı ayarları ve ilk hesaplar **ortam değişkeni** olarak
 > verilir: `DB_URL`, `DB_USER`, `DB_PASSWORD`, `SEED_HR_EMAIL`, `SEED_HR_PASSWORD`,
-> `SEED_CEO_EMAIL`, `SEED_CEO_PASSWORD`. Seed yalnızca boş veritabanında ve yalnızca bu değişkenler
-> verildiğinde çalışır (en az 12 karakterlik parola); verilmezse uygulama açılır ama kimse giriş
-> yapamaz. Örnek (Git Bash):
+> `SEED_CEO_EMAIL`, `SEED_CEO_PASSWORD`. Seed her hesap için yalnızca o e-posta yoksa çalışır ve en
+> az 12 karakterlik parola ister; değişkenler verilmezse uygulama açılır ama kimse giriş yapamaz.
+> Örnek (Git Bash):
 >
 > ```bash
 > SEED_HR_EMAIL=hr@example.test SEED_HR_PASSWORD=change-this-hr-password \

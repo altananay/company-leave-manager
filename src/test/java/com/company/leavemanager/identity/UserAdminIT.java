@@ -40,6 +40,48 @@ class UserAdminIT extends IdentityTestSupport {
     }
 
     @Test
+    void shouldRejectAWrongCurrentPasswordWhenChangingIt() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String email = unique("current");
+        HttpResponse<String> created = session.post("/api/users", body(email, "Current Person", "EMPLOYEE"));
+        String temporaryPassword = extract(created.body(), "temporaryPassword");
+
+        Session newcomer = new Session();
+        assertThat(newcomer.login(email, temporaryPassword).statusCode()).isEqualTo(200);
+
+        HttpResponse<String> rejected = newcomer.post("/api/auth/password",
+                "{\"currentPassword\":\"not-the-current-one\","
+                        + "\"newPassword\":\"brand-new-pass-123\",\"confirmPassword\":\"brand-new-pass-123\"}");
+
+        // A wrong current password is a validation error, not a lost session (401 means "no session").
+        assertThat(rejected.statusCode()).isEqualTo(400);
+        assertThat(rejected.body()).contains("INVALID_PASSWORD");
+        // The gate is still in place: the temporary password was not replaced.
+        assertThat(newcomer.get("/api/users").statusCode()).isEqualTo(403);
+    }
+
+    @Test
+    void shouldForceAPasswordChangeAfterAReset() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String email = unique("resetforce");
+        HttpResponse<String> created = session.post("/api/users", body(email, "Reset Force", "EMPLOYEE"));
+        String id = extract(created.body(), "id");
+
+        HttpResponse<String> reset = session.post("/api/users/" + id + "/reset-password", "{}");
+        assertThat(reset.statusCode()).isEqualTo(200);
+        assertThat(reset.body()).contains("\"mustChangePassword\":true");
+        String newTemporaryPassword = extract(reset.body(), "temporaryPassword");
+
+        Session target = new Session();
+        HttpResponse<String> login = target.login(email, newTemporaryPassword);
+
+        assertThat(login.statusCode()).isEqualTo(200);
+        assertThat(login.body()).contains("\"mustChangePassword\":true");
+        assertThat(target.get("/api/users").statusCode()).isEqualTo(403);
+        assertThat(target.get("/api/users").body()).contains("PASSWORD_CHANGE_REQUIRED");
+    }
+
+    @Test
     void shouldEndSessionsWhenDeactivated() throws Exception {
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
         String email = unique("gone");

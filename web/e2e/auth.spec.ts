@@ -49,8 +49,11 @@ test('shouldLoginDenyAndLogout', async ({ page }) => {
   await page.getByRole('button', { name: 'Kullanıcılar' }).click()
   await expect(page.getByText('Bu sayfaya erişiminiz yok')).toBeVisible()
 
-  // Sign out: a protected page leads back to the login screen.
+  // Sign out, then the shell shows the login screen again and the API refuses the session.
   await page.getByRole('button', { name: 'Geri' }).click()
   await page.getByRole('button', { name: 'Çıkış' }).click()
   await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+
+  const me = await page.request.get('/api/auth/me')
+  expect(me.status()).toBe(401)
 })

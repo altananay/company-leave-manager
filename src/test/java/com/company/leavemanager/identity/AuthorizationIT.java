@@ -55,4 +55,15 @@ class AuthorizationIT extends IdentityTestSupport {
     void shouldDenyUnknownApiPathsByDefault() throws Exception {
         assertThat(session.get("/api/unknown-endpoint").statusCode()).isEqualTo(401);
     }
+
+    @Test
+    void shouldDenyNonApiPathsByDefault() throws Exception {
+        // Default deny covers everything the SPA shell does not need (docs/security.md).
+        assertThat(session.get("/internal/secret").statusCode()).isEqualTo(401);
+
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+
+        assertThat(session.get("/internal/secret").statusCode()).isEqualTo(403);
+        assertThat(session.get("/").statusCode()).isEqualTo(200);
+    }
 }

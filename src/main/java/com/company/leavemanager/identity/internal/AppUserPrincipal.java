@@ -52,4 +52,10 @@ public record AppUserPrincipal(
     public boolean isEnabled() {
         return active;
     }
+
+    /** The hash never reaches a log line or a session dump (R-10: no password, not even its hash). */
+    @Override
+    public String toString() {
+        return "AppUserPrincipal[id=" + id + ", email=" + email + ", role=" + role + "]";
+    }
 }

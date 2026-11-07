@@ -6,37 +6,65 @@ import com.company.leavemanager.identity.IdentityTestSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.net.http.HttpResponse;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** AC-8 of spec 0002: events are recorded, the email is masked, and no password ever lands there. */
+/** AC-8 of spec 0002: every write event is recorded, the email is masked, no password lands there. */
 class AuditIT extends IdentityTestSupport {
 
     @Autowired
     AuditRepository auditRepository;
 
     @Test
-    void shouldRecordEventsWithoutPasswords() throws Exception {
-        long before = auditRepository.count();
-
+    void shouldRecordEveryIdentityEventWithoutPasswords() throws Exception {
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
-        new Session().login(HR_EMAIL, "definitely-wrong-123");
+        String email = "audit-" + System.nanoTime() + "@acme.test";
+
+        HttpResponse<String> created = session.post("/api/users",
+                "{\"email\":\"" + email + "\",\"displayName\":\"Audit Person\",\"role\":\"EMPLOYEE\"}");
+        String id = extract(created.body(), "id");
+        String temporaryPassword = extract(created.body(), "temporaryPassword");
+
+        assertThat(session.post("/api/users/" + id + "/reset-password", "{}").statusCode()).isEqualTo(200);
+        assertThat(session.post("/api/users/" + id + "/deactivate", "{}").statusCode()).isEqualTo(204);
+
+        // A failed login and the lockout that follows it, on a second (active) account.
+        String lockedEmail = "locked-" + System.nanoTime() + "@acme.test";
+        assertThat(session.post("/api/users",
+                "{\"email\":\"" + lockedEmail + "\",\"displayName\":\"Locked Person\",\"role\":\"EMPLOYEE\"}")
+                .statusCode()).isEqualTo(201);
+        Session attacker = new Session();
+        for (int attempt = 0; attempt < 5; attempt++) {
+            attacker.login(lockedEmail, "wrong-password-123");
+        }
+        assertThat(attacker.login(lockedEmail, "wrong-password-123").statusCode()).isEqualTo(423);
+
         assertThat(session.post("/api/auth/logout", "{}").statusCode()).isEqualTo(204);
 
         List<AuditEvent> events = auditRepository.findAllByOrderByOccurredAtDesc();
 
-        assertThat(events).hasSizeGreaterThanOrEqualTo((int) before + 3);
         assertThat(events).extracting(AuditEvent::getEventType)
-                .contains("LOGIN_SUCCEEDED", "LOGIN_FAILED", "LOGOUT");
+                .contains("LOGIN_SUCCEEDED", "LOGIN_FAILED", "ACCOUNT_LOCKED", "LOGOUT",
+                        "USER_CREATED", "USER_DEACTIVATED", "PASSWORD_RESET");
 
         AuditEvent failedLogin = events.stream()
                 .filter(event -> "LOGIN_FAILED".equals(event.getEventType()))
                 .findFirst()
                 .orElseThrow();
+        // The address is masked: the first letter, then the domain (docs/conventions.md, Data rules).
+        assertThat(failedLogin.getDetails()).contains("***@acme.test");
+        assertThat(failedLogin.getDetails()).doesNotContain(lockedEmail);
 
-        assertThat(failedLogin.getDetails()).contains("h***@acme.test");
-        assertThat(events).allMatch(event ->
-                event.getDetails() == null || !event.getDetails().contains(HR_PASSWORD));
+        // No password, no BCrypt hash, anywhere in the trail.
+        assertThat(events).allSatisfy(event -> {
+            String details = event.getDetails();
+            if (details != null) {
+                assertThat(details).doesNotContain(temporaryPassword == null ? "" : temporaryPassword);
+                assertThat(details).doesNotContain("$2a$").doesNotContain("$2b$").doesNotContain("$2y$");
+                assertThat(details).doesNotContain(HR_PASSWORD);
+            }
+        });
     }
 }

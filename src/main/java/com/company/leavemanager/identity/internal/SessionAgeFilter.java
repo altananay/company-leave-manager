@@ -12,7 +12,10 @@ import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 
-/** Enforces the absolute session lifetime (8 hours), independent of activity. */
+/**
+ * Enforces the absolute session lifetime (8 hours) on the API only: the SPA shell, its assets and
+ * the public endpoints must stay reachable so the user can be sent back to the login screen.
+ */
 public class SessionAgeFilter extends OncePerRequestFilter {
 
     public static final String AUTH_TIME = "authTime";
@@ -25,6 +28,15 @@ public class SessionAgeFilter extends OncePerRequestFilter {
         this.properties = properties;
         this.clock = clock;
         this.problems = problems;
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return !path.startsWith("/api/")
+                || path.startsWith("/api/health")
+                || path.startsWith("/api/auth/login")
+                || path.startsWith("/api/auth/csrf");
     }
 
     @Override

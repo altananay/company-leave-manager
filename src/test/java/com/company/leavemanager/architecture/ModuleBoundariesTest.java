@@ -1,5 +1,6 @@
 package com.company.leavemanager.architecture;
 
+import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -47,11 +48,16 @@ class ModuleBoundariesTest {
     }
 
     @Test
-    void web_classes_never_depend_on_repositories_directly() {
+    void controllers_never_depend_on_repositories_directly() {
+        // Controllers live in <module>.api and repositories in <module>.internal, so the rule matches
+        // the real packages: a controller must go through a use case, never through a repository.
+        // Spring's own abstractions (e.g. SecurityContextRepository) are not storage and are excluded.
         noClasses()
-                .that().resideInAPackage("..web..")
-                .should().dependOnClassesThat().resideInAnyPackage("..repository..", "..internal.repository..")
-                .because("controllers go through the module's public API, not its storage")
+                .that().haveSimpleNameEndingWith("Controller")
+                .should().dependOnClassesThat(DescribedPredicate.and(
+                        JavaClass.Predicates.resideInAPackage("com.company.leavemanager.."),
+                        JavaClass.Predicates.simpleNameEndingWith("Repository")))
+                .because("controllers go through the module's use cases, not its storage")
                 .allowEmptyShould(true)
                 .check(CLASSES);
     }

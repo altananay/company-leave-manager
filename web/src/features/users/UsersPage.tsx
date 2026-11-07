@@ -1,17 +1,36 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useI18n } from '../../i18n/I18nProvider'
+import type { MessageKey } from '../../i18n/messages'
 import { ApiError, authApi, type CreatedUser, type User } from '../auth/authApi'
+
+type ErrorKey = 'emailExists' | 'roleNotAssignable' | 'validationFailed' | 'genericError'
+
+function errorKeyFor(failure: unknown): ErrorKey {
+  const code = failure instanceof ApiError ? failure.code : 'ERROR'
+  switch (code) {
+    case 'EMAIL_EXISTS':
+      return 'emailExists'
+    case 'ROLE_NOT_ASSIGNABLE':
+    case 'INVALID_ROLE':
+      return 'roleNotAssignable'
+    case 'VALIDATION_FAILED':
+      return 'validationFailed'
+    default:
+      return 'genericError'
+  }
+}
 
 export function UsersPage({ onBack }: { onBack: () => void }) {
   const { t } = useI18n()
   const [users, setUsers] = useState<User[]>([])
   const [forbidden, setForbidden] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [error, setError] = useState<ErrorKey | null>(null)
   const [created, setCreated] = useState<CreatedUser | null>(null)
   const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [role, setRole] = useState('EMPLOYEE')
   const [busy, setBusy] = useState(false)
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -20,7 +39,7 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
       if (failure instanceof ApiError && failure.status === 403) {
         setForbidden(true)
       } else {
-        setFailed(true)
+        setError(errorKeyFor(failure))
       }
     }
   }, [])
@@ -41,7 +60,7 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
         if (failure instanceof ApiError && failure.status === 403) {
           setForbidden(true)
         } else {
-          setFailed(true)
+          setError(errorKeyFor(failure))
         }
       })
     return () => {
@@ -51,30 +70,38 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
 
   async function create(event: FormEvent) {
     event.preventDefault()
+    setError(null)
     setBusy(true)
     try {
       setCreated(await authApi.createUser(email, displayName, role))
       setEmail('')
       setDisplayName('')
       await load()
-    } catch {
-      setFailed(true)
+    } catch (failure) {
+      setError(errorKeyFor(failure))
     } finally {
       setBusy(false)
     }
   }
 
   async function deactivate(user: User) {
-    await authApi.deactivate(user.id).catch(() => setFailed(true))
-    await load()
+    setError(null)
+    setConfirmingId(null)
+    try {
+      await authApi.deactivate(user.id)
+      await load()
+    } catch (failure) {
+      setError(errorKeyFor(failure))
+    }
   }
 
   async function resetPassword(user: User) {
+    setError(null)
     try {
       setCreated(await authApi.resetPassword(user.id))
       await load()
-    } catch {
-      setFailed(true)
+    } catch (failure) {
+      setError(errorKeyFor(failure))
     }
   }
 
@@ -103,9 +130,9 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
           {t('temporaryPasswordOnce')} <code>{created.temporaryPassword}</code>
         </p>
       )}
-      {failed && (
+      {error && (
         <p className="error" role="alert">
-          {t('loginFailed')}
+          {t(error)}
         </p>
       )}
 
@@ -116,6 +143,7 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
           <input
             type="email"
             value={email}
+            aria-invalid={error === 'emailExists' || error === 'validationFailed'}
             onChange={(event) => setEmail(event.target.value)}
             required
           />
@@ -124,6 +152,7 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
           {t('displayName')}
           <input
             value={displayName}
+            aria-invalid={error === 'validationFailed'}
             onChange={(event) => setDisplayName(event.target.value)}
             required
           />
@@ -161,9 +190,25 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
                 <button type="button" className="secondary" onClick={() => resetPassword(user)}>
                   {t('resetPassword')}
                 </button>
-                <button type="button" className="danger" onClick={() => deactivate(user)}>
-                  {t('deactivate')}
-                </button>
+                {confirmingId === user.id ? (
+                  <>
+                    <span className="confirm-text">{t('confirmDeactivate')}</span>
+                    <button type="button" className="danger" onClick={() => deactivate(user)}>
+                      {t('confirm')}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setConfirmingId(null)}
+                    >
+                      {t('cancel')}
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" className="danger" onClick={() => setConfirmingId(user.id)}>
+                    {t('deactivate')}
+                  </button>
+                )}
               </td>
             </tr>
           ))}
@@ -173,15 +218,15 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
   )
 }
 
-function roleKey(role: string) {
+function roleKey(role: string): MessageKey {
   switch (role) {
     case 'HR':
-      return 'roleHr' as const
+      return 'roleHr'
     case 'CEO':
-      return 'roleCeo' as const
+      return 'roleCeo'
     case 'MANAGER':
-      return 'roleManager' as const
+      return 'roleManager'
     default:
-      return 'roleEmployee' as const
+      return 'roleEmployee'
   }
 }

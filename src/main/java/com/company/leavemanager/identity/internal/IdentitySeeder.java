@@ -70,7 +70,8 @@ public class IdentitySeeder implements ApplicationRunner {
         // Seeded accounts are configured deliberately by the operator: no forced password change.
         user.changePassword(encoder.encode(password), false, clock.instant());
         users.save(user);
-        log.info("Seeded {} account {}", role, email);
+        // Personal data stays out of the logs (docs/conventions.md, Data rules).
+        log.info("Seeded {} account with id {}", role, user.getId());
     }
 
     private static boolean isBlank(String value) {

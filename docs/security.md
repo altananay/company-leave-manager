@@ -33,13 +33,17 @@
   log 1,000 people out; cookie `HttpOnly`, `Secure`, `SameSite=Lax`; **30 minutes idle / 8 hours
   absolute**; the session id changes on login (fixation protection). CSRF token required for every
   state-changing request — the SPA reads it from `GET /api/auth/csrf` and sends `X-CSRF-TOKEN`.
-- **Error contract:** an unauthenticated request gets **401**, an authenticated but unauthorized one
-  **403** (both with a stable English `code`); the SPA redirects to the login screen on 401 and shows
-  the forbidden screen on 403.
+- **Error contract:** every error is RFC 9457 (`type`, `title`, `status`, plus the project's stable
+  English `code`, and `errors[]` for validation). An unauthenticated request gets **401**, an
+  authenticated but unauthorized one **403**; the SPA redirects to the login screen on 401 (with an
+  "session ended" message) and shows the forbidden screen on 403.
 - **AuthZ:** RBAC (role) **and** data scope, enforced server-side on every request — the SPA hiding
-  a button is UX, never authorization. Default deny: a missing rule denies. İK can assign only
-  `EMPLOYEE` and `MANAGER`; the `HR`/`CEO` roles come from the environment seed. İK cannot deactivate
-  itself or reset its own password through the admin screen.
+  a button is UX, never authorization. Default deny: only the SPA shell, its assets, `/error`,
+  `/api/health`, `/api/auth/login` and `/api/auth/csrf` are public; every other path is denied.
+  İK can assign only `EMPLOYEE` and `MANAGER`; the `HR`/`CEO` roles come from the environment seed.
+  İK cannot deactivate itself or reset its own password through the admin screen.
+- **No SPA deep links:** the shell is served at `/`; client-side routes are view state, so an
+  unknown non-API path is denied rather than forwarded to `index.html`.
 - **Object-level checks:** every endpoint that takes an employee or request identifier verifies the
   caller's scope before loading the object, not after.
 

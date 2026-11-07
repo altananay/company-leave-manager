@@ -17,15 +17,30 @@ export class Unauthorized extends Error {}
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
+  readonly errors: string[]
 
-  constructor(status: number, code: string) {
+  constructor(status: number, code: string, errors: string[] = []) {
     super(code)
     this.status = status
     this.code = code
+    this.errors = errors
   }
 }
 
 let csrfToken: string | null = null
+let onUnauthorized: (() => void) | null = null
+
+/**
+ * One place decides what a lost session means: the app sends the user back to the login screen
+ * (spec 0002, "Hata davranışı"). Pages never handle 401 themselves.
+ */
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  onUnauthorized = handler
+}
+
+export function resetCsrfToken() {
+  csrfToken = null
+}
 
 async function csrf(): Promise<string> {
   if (csrfToken) {
@@ -50,11 +65,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { ...init, method, headers })
   if (response.status === 401) {
     csrfToken = null
+    onUnauthorized?.()
     throw new Unauthorized('unauthorized')
   }
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { code?: string } | null
-    throw new ApiError(response.status, body?.code ?? 'ERROR')
+    const body = (await response.json().catch(() => null)) as {
+      code?: string
+      errors?: string[]
+    } | null
+    throw new ApiError(response.status, body?.code ?? 'ERROR', body?.errors ?? [])
   }
   if (response.status === 204) {
     return undefined as T

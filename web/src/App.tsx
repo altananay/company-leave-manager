@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { LoginPage } from './features/auth/LoginPage'
 import { PasswordChangePage } from './features/auth/PasswordChangePage'
-import { authApi, type Me } from './features/auth/authApi'
+import { authApi, setUnauthorizedHandler, type Me } from './features/auth/authApi'
 import { HealthStatus } from './features/health/HealthStatus'
 import { UsersPage } from './features/users/UsersPage'
 import { useI18n } from './i18n/I18nProvider'
@@ -13,6 +13,18 @@ function App() {
   const { lang, setLang, t } = useI18n()
   const [view, setView] = useState<View>('loading')
   const [me, setMe] = useState<Me | null>(null)
+  const [sessionExpired, setSessionExpired] = useState(false)
+
+  // One channel for a lost session: whatever the user was doing, they land on the login screen
+  // with an explanation (spec 0002, "Hata davranışı").
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setMe(null)
+      setSessionExpired(true)
+      setView('login')
+    })
+    return () => setUnauthorizedHandler(null)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -36,6 +48,7 @@ function App() {
   }, [])
 
   function handleLoggedIn(current: Me) {
+    setSessionExpired(false)
     setMe(current)
     setView(current.mustChangePassword ? 'password' : 'home')
   }
@@ -43,6 +56,7 @@ function App() {
   async function handleLogout() {
     await authApi.logout().catch(() => undefined)
     setMe(null)
+    setSessionExpired(false)
     setView('login')
   }
 
@@ -67,7 +81,9 @@ function App() {
 
       {view === 'loading' && <p>{t('loading')}</p>}
 
-      {view === 'login' && <LoginPage onLoggedIn={handleLoggedIn} />}
+      {view === 'login' && (
+        <LoginPage onLoggedIn={handleLoggedIn} sessionExpired={sessionExpired} />
+      )}
 
       {view === 'password' && (
         <PasswordChangePage onChanged={handlePasswordChanged} onLogout={handleLogout} />

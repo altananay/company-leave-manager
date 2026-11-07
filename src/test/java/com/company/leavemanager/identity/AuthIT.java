@@ -22,7 +22,8 @@ class AuthIT extends IdentityTestSupport {
         assertThat(login.body()).contains("\"role\":\"HR\"");
         assertThat(hasSessionCookie(login)).isTrue();
         assertThat(login.headers().allValues("set-cookie"))
-                .anyMatch(cookie -> cookie.toLowerCase().contains("httponly"));
+                .anyMatch(cookie -> cookie.toLowerCase().contains("httponly"))
+                .anyMatch(cookie -> cookie.contains("SameSite=Lax"));
 
         assertThat(session.get("/api/auth/me").statusCode()).isEqualTo(200);
 

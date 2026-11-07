@@ -56,7 +56,7 @@ public class User {
     public static User create(String email, String displayName, Role role, String passwordHash, Instant now) {
         User user = new User();
         user.id = UUID.randomUUID();
-        user.email = email.toLowerCase();
+        user.email = email.toLowerCase(java.util.Locale.ROOT);
         user.displayName = displayName;
         user.role = role;
         user.passwordHash = passwordHash;
