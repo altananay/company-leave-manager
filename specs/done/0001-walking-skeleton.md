@@ -1,6 +1,6 @@
 # Spec 0001 — Walking skeleton
 
-- Status: In progress
+- Status: Shipped
 - Mode: lite
 - Plan: `specs/plans/0001-plan.md`
 - Self-critique: done
@@ -74,30 +74,30 @@ kimlik doğrulama ve ELK yığını.
 
 ## Acceptance criteria
 
-- [ ] AC-1 — Temiz bir kopyada `./scripts/check` arka ucu ve arayüzü derler, tüm adımları koşar ve `CHECK GREEN (full, …)` ile biter.
-- [ ] AC-2 — Veritabanı açıkken `GET /api/health` 200 ve `{"status":"UP"}` döner; veritabanı erişilemezken 503 ve `{"status":"DOWN"}` döner.
-- [ ] AC-3 — Boş bir veritabanında şema sürümlü migration ile kurulur; aynı veritabanında ikinci açılış hiçbir migration uygulamaz.
-- [ ] AC-4 — `/` açıldığında istek tamamlanana kadar sayfa "Kontrol ediliyor…", başarılı olduğunda "Sistem çalışıyor" gösterir.
-- [ ] AC-5 — Sağlık isteği başarısız olduğunda sayfa "Bağlantı hatası" ve "Yeniden dene" düğmesi gösterir; düğme isteği yeniden gönderir.
-- [ ] AC-6 — Tarayıcı yolculuğu (tek worker, headless, gerçek veritabanı) uygulamayı açar ve "Sistem çalışıyor" durumunu görür.
-- [ ] AC-7 — `./scripts/check --fast` yalnızca hızlı adımları (derleme, birim, bileşen, lint) koşar ve yeşil biter; entegrasyon ve e2e yalnızca full profilde koşar.
-- [ ] AC-8 — Arayüz varsayılan olarak tarayıcı dilini kullanır (tr → Türkçe, en → İngilizce, diğer → Türkçe); TR/EN denetimi tüm görünür metinleri anında değiştirir, `document.lang` güncellenir ve seçim sayfa yenilendikten sonra korunur.
-- [ ] AC-9 — CI, push ve PR'da `doctor --strict`, `selftest` ve full `check`'i kurulu araç zinciriyle koşar ve dalda yeşildir.
+- [x] AC-1 — Temiz bir kopyada `./scripts/check` arka ucu ve arayüzü derler, tüm adımları koşar ve `CHECK GREEN (full, …)` ile biter.
+- [x] AC-2 — Veritabanı açıkken `GET /api/health` 200 ve `{"status":"UP"}` döner; veritabanı erişilemezken 503 ve `{"status":"DOWN"}` döner.
+- [x] AC-3 — Boş bir veritabanında şema sürümlü migration ile kurulur; aynı veritabanında ikinci açılış hiçbir migration uygulamaz.
+- [x] AC-4 — `/` açıldığında istek tamamlanana kadar sayfa "Kontrol ediliyor…", başarılı olduğunda "Sistem çalışıyor" gösterir.
+- [x] AC-5 — Sağlık isteği başarısız olduğunda sayfa "Bağlantı hatası" ve "Yeniden dene" düğmesi gösterir; düğme isteği yeniden gönderir.
+- [x] AC-6 — Tarayıcı yolculuğu (tek worker, headless, gerçek veritabanı) uygulamayı açar ve "Sistem çalışıyor" durumunu görür.
+- [x] AC-7 — `./scripts/check --fast` yalnızca hızlı adımları (derleme, birim, bileşen, lint) koşar ve yeşil biter; entegrasyon ve e2e yalnızca full profilde koşar.
+- [x] AC-8 — Arayüz varsayılan olarak tarayıcı dilini kullanır (tr → Türkçe, en → İngilizce, diğer → Türkçe); TR/EN denetimi tüm görünür metinleri anında değiştirir, `document.lang` güncellenir ve seçim sayfa yenilendikten sonra korunur.
+- [x] AC-9 — CI, push ve PR'da `doctor --strict`, `selftest` ve full `check`'i kurulu araç zinciriyle koşar ve dalda yeşildir.
 
 ## Definition of Done
 
-- [ ] Every acceptance criterion mapped to proof (test or reproducible observation)
-- [ ] `scripts/check` green
-- [ ] Independent review done; real findings fixed, noise rejected with written rationale, deferred ones in `specs/backlog.md`
-- [ ] Docs / ADRs updated if behavior or architecture changed
-- [ ] Spec moved to `specs/done/` (it becomes immutable there)
+- [x] Every acceptance criterion mapped to proof (test or reproducible observation)
+- [x] `scripts/check` green
+- [x] Independent review done; real findings fixed, noise rejected with written rationale, deferred ones in `specs/backlog.md`
+- [x] Docs / ADRs updated if behavior or architecture changed
+- [x] Spec moved to `specs/done/` (it becomes immutable there)
 
 ## Scorecard (fill at ship — honest numbers make the process improvable)
 
 | Metric | Value |
 |---|---|
-| Spec revisions | |
-| Fix rounds | |
-| Review findings: real / noise / deferred | |
-| Regressions introduced | |
-| Bugs escaped to production | |
+| Spec revisions | 2 (i18n eklendi; TypeScript sürüm notu) |
+| Fix rounds | 2 |
+| Review findings: real / noise / deferred | 18 / 0 / 5 (B-2…B-6) |
+| Regressions introduced | 0 |
+| Bugs escaped to production | 0 |
