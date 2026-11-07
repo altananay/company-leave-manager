@@ -28,7 +28,7 @@
 | Node | **24 LTS** (24.11.1) | Vite 8 requires `>=22.12` |
 | React | **19.3.1** | no LTS line — current stable, pinned |
 | Vite | **8.3.6** | no LTS line — current stable, pinned |
-| TypeScript | **6.0.3** | `typescript-eslint` supports `<6.1`; TS 7 upgrade when the tooling catches up (plan 0001 A-1) |
+| TypeScript | **7.0.2** | native compiler; `typescript-eslint` does not support it yet, so lint is **oxlint** (plan 0001 A-1) |
 | Vitest / Playwright | **5.1.0** / **1.65.0** | component / e2e |
 | Docker | 28.5.1 | local PostgreSQL and deployment |
 
@@ -78,7 +78,8 @@ it in the fix round. Builders read this section before the first plan step.
 
 - `scripts/check` — the single gate: build, unit, component, integration and e2e steps.
 - **ArchUnit** — the four forbidden dependencies in `docs/architecture.md`.
-- **ESLint + Prettier** — frontend lint and formatting, in `check`.
+- **oxlint + Prettier** — frontend lint and formatting, in `check` (oxlint because it supports
+  TypeScript 7; `typescript-eslint` does not yet).
 - Compiler — Java 25 types and null-checks as configured; no Java format gate.
 - **Formatting is not tool-enforced on the Java side:** IntelliJ IDEA's default formatter is the
   project style, pinned by `.editorconfig` (LF, UTF-8, 4-space Java / 2-space web). No

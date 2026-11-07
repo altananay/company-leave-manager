@@ -64,7 +64,7 @@ kimlik doğrulama ve ELK yığını.
   spec'iyle gelir.
 - **Tek origin:** üretimde arayüz aynı uygulamadan servis edilir; geliştirmede Vite proxy kullanılır.
 - **Sürümler sabit:** Java 25, Spring Boot 4.1.2, PostgreSQL 18, React 19.3.1, Vite 8.3.6,
-  TypeScript 6.0.3 (TS 7, `typescript-eslint` desteği gelince — plan A-1), Node 24, Maven.
+  TypeScript 7.0.2, Node 24, Maven.
 - **e2e yaşam döngüsü:** tek proje script'i (`scripts/e2e`) veritabanını ve uygulamayı açar, health
   bekler, Playwright'ı koşar, her durumda kapatır; adımın exit kodu korunur.
 - **Belge güncellemeleri:** `docs/testing.md` e2e yolculuk listesi ikiye çıkar (smoke + ileride izin

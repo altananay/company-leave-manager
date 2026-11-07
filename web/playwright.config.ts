@@ -8,7 +8,7 @@ export default defineConfig({
   retries: 0,
   reporter: [['line']],
   use: {
-    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:18080',
+    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:8083',
     headless: true,
     locale: 'tr-TR',
     reducedMotion: 'reduce',

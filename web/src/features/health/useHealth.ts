@@ -14,7 +14,6 @@ export function useHealth() {
 
   useEffect(() => {
     let cancelled = false
-    setState('loading')
 
     fetch('/api/health', { headers: { Accept: 'application/json' } })
       .then(async (response) => {
@@ -35,7 +34,11 @@ export function useHealth() {
     }
   }, [attempt])
 
-  const retry = useCallback(() => setAttempt((current) => current + 1), [])
+  // The loading state is set by the event that starts a new attempt, not inside the effect.
+  const retry = useCallback(() => {
+    setState('loading')
+    setAttempt((current) => current + 1)
+  }, [])
 
   return { state, retry }
 }
