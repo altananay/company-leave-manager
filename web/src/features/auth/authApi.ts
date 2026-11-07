@@ -55,7 +55,12 @@ async function csrf(): Promise<string> {
   return csrfToken
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  // A failed login is an ordinary 401, not a lost session: it must not reach the global channel.
+  { notifyUnauthorized = true }: { notifyUnauthorized?: boolean } = {},
+): Promise<T> {
   const method = init.method ?? 'GET'
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (method !== 'GET') {
@@ -65,7 +70,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { ...init, method, headers })
   if (response.status === 401) {
     csrfToken = null
-    onUnauthorized?.()
+    if (notifyUnauthorized) {
+      onUnauthorized?.()
+    }
     throw new Unauthorized('unauthorized')
   }
   if (!response.ok) {
@@ -84,7 +91,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const authApi = {
   me: () => request<Me>('/api/auth/me'),
   login: (email: string, password: string) =>
-    request<Me>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+    request<Me>(
+      '/api/auth/login',
+      { method: 'POST', body: JSON.stringify({ email, password }) },
+      { notifyUnauthorized: false },
+    ),
   // The session (and its CSRF token) ends with the logout: the next login must fetch a fresh one.
   logout: async () => {
     await request<void>('/api/auth/logout', { method: 'POST' })

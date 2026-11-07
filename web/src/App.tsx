@@ -9,17 +9,19 @@ import type { MessageKey } from './i18n/messages'
 
 type View = 'loading' | 'login' | 'password' | 'home' | 'users'
 
-// Per-tab marker: a session existed in this tab. sessionStorage (not memory) so a reload after the
-// session ended still shows "your session ended" instead of pretending it is a first visit.
+// Per-tab marker in sessionStorage (not memory) so the state survives a reload in this tab.
+// '1' = this tab had a session; 'expired' = a 401 ended it and the notice is still owed.
 const SESSION_MARKER = 'leave-manager.had-session'
+const HAD_SESSION = '1'
+const SESSION_ENDED = 'expired'
 
-function hadSessionMarker() {
-  return sessionStorage.getItem(SESSION_MARKER) === '1'
+function sessionMarker() {
+  return sessionStorage.getItem(SESSION_MARKER)
 }
 
-function rememberSession(remember: boolean) {
-  if (remember) {
-    sessionStorage.setItem(SESSION_MARKER, '1')
+function rememberSession(state: '1' | 'expired' | null) {
+  if (state) {
+    sessionStorage.setItem(SESSION_MARKER, state)
   } else {
     sessionStorage.removeItem(SESSION_MARKER)
   }
@@ -33,10 +35,14 @@ function App() {
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
-      // A 401 means "your session ended" only if this tab had a session: an anonymous first visit
-      // and a failed login are ordinary 401s (spec 0002, "Hata davranışı").
-      setSessionExpired(hadSessionMarker())
-      rememberSession(false)
+      // Latch: a 401 only ever raises the notice. A second in-flight 401 must not clear what the
+      // first one showed, and the marker keeps the notice across a reload (spec 0002, "Hata davranışı").
+      if (sessionMarker() === HAD_SESSION) {
+        rememberSession(SESSION_ENDED)
+      }
+      if (sessionMarker() === SESSION_ENDED) {
+        setSessionExpired(true)
+      }
       setMe(null)
       setView('login')
     })
@@ -51,14 +57,20 @@ function App() {
         if (cancelled) {
           return
         }
-        rememberSession(true)
+        rememberSession(HAD_SESSION)
         setMe(current)
         setView(current.mustChangePassword ? 'password' : 'home')
       })
       .catch(() => {
-        if (!cancelled) {
-          setView('login')
+        if (cancelled) {
+          return
         }
+        // The probe failed without a 401 (500, network): the marker is stale — a later failed
+        // login must not claim that the session ended (spec 0002, "Hata davranışı").
+        if (sessionMarker() === HAD_SESSION) {
+          rememberSession(null)
+        }
+        setView('login')
       })
     return () => {
       cancelled = true
@@ -66,7 +78,7 @@ function App() {
   }, [])
 
   function handleLoggedIn(current: Me) {
-    rememberSession(true)
+    rememberSession(HAD_SESSION)
     setSessionExpired(false)
     setMe(current)
     setView(current.mustChangePassword ? 'password' : 'home')
@@ -74,7 +86,7 @@ function App() {
 
   async function handleLogout() {
     await authApi.logout().catch(() => undefined)
-    rememberSession(false)
+    rememberSession(null)
     setMe(null)
     setSessionExpired(false)
     setView('login')

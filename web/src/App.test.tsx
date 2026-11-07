@@ -158,6 +158,37 @@ describe('authentication', () => {
     expect(screen.getByText('Oturum sona erdi. Lütfen yeniden giriş yapın.')).toBeInTheDocument()
   })
 
+  it('shouldKeepTheSessionMessageAfterAFurtherReload', async () => {
+    // The notice was already shown once ('expired'): reloading must not lose it.
+    sessionStorage.setItem('leave-manager.had-session', 'expired')
+    anonymous()
+
+    renderApp()
+
+    expect(await screen.findByRole('heading', { name: 'Giriş' })).toBeInTheDocument()
+    expect(screen.getByText('Oturum sona erdi. Lütfen yeniden giriş yapın.')).toBeInTheDocument()
+  })
+
+  it('shouldNotClaimASessionEndedWhenTheProbeFailsForAnotherReason', async () => {
+    // A stale marker from an earlier login, then the probe fails with a 500 (not a 401).
+    sessionStorage.setItem('leave-manager.had-session', '1')
+    stubApi({
+      '/api/auth/me': () => json(500, { status: 500, code: 'INTERNAL_ERROR' }),
+      '/api/auth/csrf': () => json(200, { token: 't' }),
+      '/api/auth/login': () => json(401, { status: 401, code: 'NOT_AUTHENTICATED' }),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+
+    await user.type(await screen.findByLabelText('E-posta'), HR.email)
+    await user.type(screen.getByLabelText('Parola'), 'wrong-password')
+    await user.click(screen.getByRole('button', { name: 'Giriş yap' }))
+
+    expect(await screen.findByText('E-posta veya parola hatalı.')).toBeInTheDocument()
+    expect(screen.queryByText('Oturum sona erdi. Lütfen yeniden giriş yapın.')).toBeNull()
+  })
+
   it('shouldReplaceTheSessionMessageWithTheLoginError', async () => {
     authenticated(HR, () => json(200, { status: 'UP' }), {
       '/api/users': () => json(401, { status: 401, code: 'SESSION_EXPIRED' }),
