@@ -14,10 +14,14 @@ Java 25 + Spring Boot 4.1.2 API, PostgreSQL 18 ve React 19 + Vite 8 SPA (tek ori
 
 ```bash
 cp .env.example .env            # Docker Compose bu dosyayı okur (uygulama okumaz — aşağıya bak)
-docker compose up -d db         # PostgreSQL 18 (host portu: .env'deki DB_HOST_PORT)
+docker compose up -d db         # PostgreSQL 18 — host portu .env'deki DB_HOST_PORT (varsayılan 5434)
 ./mvnw spring-boot:run          # API: http://localhost:8080
 npm --prefix web run dev        # SPA: http://localhost:5173 (/api → :8080 proxy)
 ```
+
+> **Port çakışması:** Bu makinede 5432 yerel bir PostgreSQL'e, 5433 başka bir projenin konteynerine
+> ait. Bu yüzden projenin veritabanı **5434**'ü kullanır. Gerekirse `.env` içinde `DB_HOST_PORT`
+> değiştirin; `DB_HOST_PORT=0` rastgele boş bir port verir (e2e bunu kullanır).
 
 > Uygulama `.env` dosyasını okumaz; veritabanı ayarları ve ilk hesaplar **ortam değişkeni** olarak
 > verilir: `DB_URL`, `DB_USER`, `DB_PASSWORD`, `SEED_HR_EMAIL`, `SEED_HR_PASSWORD`,
