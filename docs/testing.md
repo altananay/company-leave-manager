@@ -1,26 +1,44 @@
 # Testing
 
-> **Template — filled during bootstrap.**
-
 ## The contract
+
 - Every acceptance criterion maps to at least one test (criterion ↔ test map lives in the plan).
 - Tests assert **behavior**, not implementation details or mere status codes.
 - The whole suite runs inside `scripts/check` — one command, everywhere.
 
 ## Frameworks & layout
-<!-- Test framework(s), where tests live, naming pattern. -->
+
+| Layer | Tool | Location |
+|---|---|---|
+| Unit | **JUnit 5 + Mockito** | `src/test/java/.../<module>/**Test.java` |
+| Architecture | **ArchUnit** (`ModuleBoundariesTest`) | `src/test/java/.../architecture/` |
+| Integration | **Spring Boot Test + MockMvc + Testcontainers (PostgreSQL 18)** | `src/test/java/.../**IT.java` |
+| Component (UI) | **Vitest + Testing Library** | `web/src/**/*.test.tsx` |
+| E2E | **Playwright 1.65** (Chromium) | `e2e/*.spec.ts` |
+
+- Unit tests never touch the database; integration tests use a fresh Testcontainers database per
+  run (resource hygiene, rule 5).
+- The SPA's API client is typed from the OpenAPI document; component tests stub the client, not
+  `fetch`.
+- Determinism: the backend injects `Clock` (never `LocalDate.now()` directly), the SPA's clock and
+  locale are fixed in test setup, seeds are fixed, animations/transitions are off.
 
 ## What must be tested
-<!-- e.g. every business rule (BR-n), every boundary/forbidden dependency; the e2e journeys and
-     budget, if the project has e2e at all (Test layers). -->
+
+- Every business rule **BR-1 … BR-14** in `docs/domain.md`, at the lowest layer that fails for the
+  right reason.
+- The **authorization matrix**: each of the four roles against each read/write scope
+  (BR-12, sensitive area *Yetkilendirme*) — a denied case is as important as an allowed one.
+- The forbidden dependencies (ArchUnit), in the same `check` run.
+- The single e2e journey: **employee requests annual leave → manager approves → balance decreases**.
 
 ## Test layers
+
 1. **The cheapest test that proves the criterion.** Unit first, then component or integration
    (UI states render in component tests), and a browser end-to-end test only for what no lower
    layer can prove. A test sits at the lowest layer that fails for the right reason.
-2. **e2e is optional, and budgeted.** ANEW does not require end-to-end tests. A project that
-   has them names at bootstrap the few critical journeys they cover and a budget (journeys and
-   minutes, under "What must be tested"). Over budget, no e2e test is added: the next test goes a
+2. **e2e is optional, and budgeted.** This project has exactly **one** e2e journey (above), a budget
+   of **~2 minutes**, one worker, headless. Over budget, no e2e test is added: the next test goes a
    layer down, or an existing one moves down.
 3. **What exists runs in check.** Every test, e2e included, is a check step — slow suites
    full-only (Two speeds). A suite outside check costs its upkeep and proves nothing: it is never
@@ -30,6 +48,7 @@
    for an e2e test: the states are tested at the lowest layer that can (rule 1).
 
 ## Protected-tests rule
+
 Weakening asserts, deleting, or skipping tests to reach green is forbidden. A red test triggers
 `prompts/recovery/red-test.md` (R-02) — first decide what is wrong: code, test, or spec.
 
@@ -48,11 +67,13 @@ Weakening asserts, deleting, or skipping tests to reach green is forbidden. A re
   behavior — it needs the criterion that orders it.
 
 ## Characterization tests
+
 Before refactoring untested code (`workflows/refactor.md`) and for brownfield change requests
 (`workflows/change-request.md`, Preserved behavior), pin the current behavior first — warts
 included. They are written from observation, not from what the code "should" do.
 
 ## Evidence for UI criteria
+
 A screenshot is evidence for a UI criterion; for change requests, before/after screenshots that
 also show the preserved behavior. Tests prove the states (Test layers 1); the screenshot is the
 human's visual sign-off.
@@ -60,7 +81,7 @@ human's visual sign-off.
 **The agent captures, the human looks.**
 1. **Capture.** The session running VERIFY captures one screenshot per screen and state listed in
    the spec's User experience:
-   - with a scripted, headless browser (the tool is the project's choice);
+   - with a scripted, headless browser (the project's choice: Playwright);
    - with the app in its deterministic mode (Determinism) and its data stubbed;
    - with the script and the images outside the repo and outside check, in a temporary directory
      that is deleted after the SHIP gate. They are never stored in the repo (Evidence policy).
@@ -76,6 +97,7 @@ A screenshot proves a criterion only against the spec's "User experience": every
 (empty, loading, error, success, no permission), compared with the linked design if there is one.
 
 ## Evidence policy
+
 1. **Evidence is referenced, not stored.** Each acceptance criterion's evidence is a pointer: the
    test's name and the command that reproduces it (`./scripts/check`). The criterion ↔ evidence
    table in the spec/plan is the only evidence artifact that lives in the repo.
@@ -92,6 +114,7 @@ A screenshot proves a criterion only against the spec's "User experience": every
    the need to create one is about to violate rule 1. `scripts/doctor` warns on both violations.
 
 ## Resource hygiene
+
 1. **A check run leaves nothing running.** No survivors of any kind: build/compile daemons,
    package-manager services, test hosts and parallel workers, watch modes, browsers, the application
    under test, containers or emulators started for the run. Agents run check an order of magnitude
@@ -121,26 +144,27 @@ A screenshot proves a criterion only against the spec's "User experience": every
    exit code. The residue test measures processes and memory only; tests that pass on a clean state
    and fail on a used one are this rule failing, not the code (R-02, environment first).
 
+Project specifics: Maven runs without a daemon; Testcontainers starts a throwaway PostgreSQL per
+run and reaps it; Playwright runs `--workers=1` headless and starts/stops the app itself (no dev
+server in check); `npm --prefix web run test -- --run` never watches.
+
 ## Two speeds, one contract
+
 1. `./scripts/check` is still the one way to ask "is this good?"; `--fast` is a speed of the
    contract, not a second contract.
 2. **Fast green is a working state; only full green is evidence.** Per step, per finding, per
    iteration → `--fast`. Segment exits, PROVE steps, recovery-ramp exits, the verify table and CI
    → `CHECK GREEN (full, …)`. `scripts/doctor` warns when a shipped spec, or in CI the pull
    request description, shows `CHECK GREEN (fast, …)` and no `(full, …)`.
-3. Fast: compile and the quick tests (unit, lint). Full only: long integration suites, e2e, and
-   any single step over ~a minute — the minute is a per-step threshold, not a total for the fast
-   profile; fast has no fixed total. Bootstrap decides per stack and tags the steps `[fast]` in
-   check.conf. When fast grows too long to iterate with, take steps out in this order: lint
-   first, then formatting, then unit tests; compilation stays longest.
+3. Fast: compile and the quick tests (unit, component, lint). Full only: integration (Testcontainers)
+   and e2e, and any single step over ~1 minute — the minute is a per-step threshold, not a total
+   for the fast profile; fast has no fixed total. The walking skeleton tags the steps `[fast]` in
+   check.conf.
 4. **Split a test step by a selector, never by a list.** The fast step selects with a filter
-   (a category, trait, tag or namespace) and the full-only step runs the same filter inverted,
-   so "fast ∪ the rest = every test" holds by construction: a test added later still runs in
-   one of them. Splitting by naming projects or files leaves a silent hole — a new one that is
-   not added to check.conf runs in neither profile while check stays green.
+   (Surefire `*Test` vs Failsafe `*IT`, a Vitest project/tag) and the full-only step runs the same
+   filter inverted, so "fast ∪ the rest = every test" holds by construction.
 5. Durations come from check itself (`<== <step> (n s)` per step, the total in the green line).
-   Decide a split, or report a profile's duration, on the median of at least 3 runs — single
-   runs vary too much to decide on.
+   Decide a split, or report a profile's duration, on the median of at least 3 runs.
 6. **A full green is evidence for its commit — run it once.** When `CHECK GREEN (full, …)` exists
    for the exact commit at hand (the builder's handoff, or a CI run), review, verify and the gates
    cite it — the line, plus the CI run link and its commit SHA, which must equal HEAD — instead of
@@ -150,33 +174,33 @@ A screenshot proves a criterion only against the spec's "User experience": every
    `./scripts/doctor --strict` has judged the ship itself before it is committed, output shown
    (the inherited green never saw the move or the ticks). The evidence names both SHAs and the
    proof: `git diff --name-only <green-sha> HEAD -- . ':!specs/'` prints nothing (a tree diff;
-   the green commit need not be an ancestor, e.g. after a squash-merge).
+   the green commit need not be an ancestor).
 7. **Writing one test runs that test.** While writing or fixing a single test, run it alone with
    the test tool's own filter, without the suites that depend on it. That is authoring, never
-   evidence; `scripts/check` stays the way to ask "is this good?". Repeat runs are for the
-   flaky-test hunt only (R-03).
+   evidence.
 8. **Before a push, run the touched area.** `--fast`, plus the full-only tests that cover what
-   changed (the touched module's integration tests; the touched journey's e2e test, if there is
-   one), selected with the test tool's own filter. Failures that only show against real
-   infrastructure or in a real browser then surface in minutes, not after a CI round, a review
-   and a triage. Like rule 7 this is authoring, never evidence. When CI runs the full profile on
-   the pushed commit, that run is the full green (rule 6): do not also run full locally before
-   pushing.
+   changed, selected with the test tool's own filter. When CI runs the full profile on the pushed
+   commit, that run is the full green: do not also run full locally before pushing.
 9. **A step states what it needs of the machine.** A step that needs a toolchain version, a
    container runtime or a service gets `requires <step>: <command>` in check.conf — a command the
-   project writes, exit 0 = met; ANEW names no tool (ANEW-0011). check runs them before the first
-   step (unmet → red, never skipped); doctor says which profile this machine can run. A profile
-   that cannot run here is decided at bootstrap or plan time, not found at BUILD's end (R-13).
+   project writes, exit 0 = met. check runs them before the first step (unmet → red, never
+   skipped); doctor says which profile this machine can run. A profile that cannot run here is
+   decided at bootstrap or plan time, not found at BUILD's end (R-13).
 
 ## Determinism
-Flaky tests are fixed, not retried or skipped — see R-03. Evidence of a fix: 5 consecutive green runs.
-An infrastructure failure outside the tests (mirror timeout, lost runner) is not a flake: rerun
-only the failed jobs and write the cause down (R-03 tells the two apart).
+
+Flaky tests are fixed, not retried or skipped — see R-03. Evidence of a fix: 5 consecutive green
+runs. An infrastructure failure outside the tests (mirror timeout, lost runner) is not a flake:
+rerun only the failed jobs and write the cause down (R-03 tells the two apart).
 
 **The app under test runs in a deterministic mode.** Animations and transitions are off; the
 clock, time zone, locale and random seeds are fixed; third-party services are replaced by stubs.
 A test that measures or asserts while an animation runs is waiting on time, not on state — its
 result depends on the machine's speed. Turn motion off in both places the stack offers: the test
-tool's setting (e.g. a reduced-motion preference) and the app's own switch for test builds.
-Bootstrap records how this stack does it under "Frameworks & layout"; a decision that is not
-obvious gets an ADR.
+tool's setting (Playwright `reducedMotion: 'reduce'`) and the app's own switch for test builds
+(a `prefers-reduced-motion` stylesheet and a test-build flag that disables transitions).
+
+This project's determinism settings: backend `Clock` bean fixed in tests (Europe/Istanbul, no
+wall-clock reads outside it); Testcontainers database seeded by Flyway with a fixed baseline; the
+SPA's date formatting pinned to `tr-TR`/`Europe/Istanbul`; Playwright `--workers=1`, headless,
+`reducedMotion: 'reduce'`, fixed viewport and locale.
