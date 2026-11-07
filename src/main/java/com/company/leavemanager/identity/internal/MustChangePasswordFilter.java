@@ -22,7 +22,9 @@ public class MustChangePasswordFilter extends OncePerRequestFilter {
             "/api/auth/me",
             "/api/auth/csrf",
             "/api/auth/password",
-            "/api/auth/logout");
+            "/api/auth/logout",
+            // The health probe is public in every state (spec 0002, R-9).
+            "/api/health");
 
     private final Problems problems;
 

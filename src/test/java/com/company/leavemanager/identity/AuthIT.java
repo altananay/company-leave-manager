@@ -51,11 +51,40 @@ class AuthIT extends IdentityTestSupport {
     }
 
     @Test
-    void shouldRejectLoginWithoutCsrfToken() throws Exception {
+    void shouldAnswer401WhenAStateChangingRequestLosesItsSession() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        assertThat(session.get("/api/auth/me").statusCode()).isEqualTo(200);
+
+        sessionInvalidator.endAllFor(HR_EMAIL);
+
+        // A POST without a session fails the CSRF check first; the client must see "session gone"
+        // (401), not "not allowed" (403), so the SPA can send the user back to the login screen.
+        HttpResponse<String> response = session.post("/api/users", "{\"email\":\"x@acme.test\","
+                + "\"displayName\":\"X\",\"role\":\"EMPLOYEE\"}");
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).contains("NOT_AUTHENTICATED");
+    }
+
+    @Test
+    void shouldRejectAStateChangingRequestWithoutASession() throws Exception {
+        // No session at all: the CSRF check fails first, but the answer is "session gone" (401).
         HttpResponse<String> response = session.postWithoutCsrf("/api/auth/login",
                 "{\"email\":\"" + HR_EMAIL + "\",\"password\":\"" + HR_PASSWORD + "\"}");
 
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).contains("NOT_AUTHENTICATED");
+    }
+
+    @Test
+    void shouldRejectAStateChangingRequestWithAWrongCsrfToken() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+
+        // A session exists, so the refusal is an authorization answer, not a lost session.
+        HttpResponse<String> response = session.postWithToken("/api/auth/logout", "{}", "not-the-token");
+
         assertThat(response.statusCode()).isEqualTo(403);
+        assertThat(response.body()).contains("NOT_AUTHORIZED");
     }
 
     @Test

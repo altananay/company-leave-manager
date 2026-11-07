@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { LoginPage } from './features/auth/LoginPage'
 import { PasswordChangePage } from './features/auth/PasswordChangePage'
 import { authApi, setUnauthorizedHandler, type Me } from './features/auth/authApi'
@@ -14,13 +14,17 @@ function App() {
   const [view, setView] = useState<View>('loading')
   const [me, setMe] = useState<Me | null>(null)
   const [sessionExpired, setSessionExpired] = useState(false)
+  // A 401 only means "your session ended" if there was a session: an anonymous first visit and a
+  // failed login are ordinary 401s and must not show that message (spec 0002, "Hata davranışı").
+  const hadSession = useRef(false)
 
-  // One channel for a lost session: whatever the user was doing, they land on the login screen
-  // with an explanation (spec 0002, "Hata davranışı").
   useEffect(() => {
     setUnauthorizedHandler(() => {
+      if (hadSession.current) {
+        setSessionExpired(true)
+      }
+      hadSession.current = false
       setMe(null)
-      setSessionExpired(true)
       setView('login')
     })
     return () => setUnauthorizedHandler(null)
@@ -34,6 +38,7 @@ function App() {
         if (cancelled) {
           return
         }
+        hadSession.current = true
         setMe(current)
         setView(current.mustChangePassword ? 'password' : 'home')
       })
@@ -48,6 +53,7 @@ function App() {
   }, [])
 
   function handleLoggedIn(current: Me) {
+    hadSession.current = true
     setSessionExpired(false)
     setMe(current)
     setView(current.mustChangePassword ? 'password' : 'home')
@@ -55,6 +61,7 @@ function App() {
 
   async function handleLogout() {
     await authApi.logout().catch(() => undefined)
+    hadSession.current = false
     setMe(null)
     setSessionExpired(false)
     setView('login')

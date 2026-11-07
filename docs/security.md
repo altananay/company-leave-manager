@@ -30,9 +30,12 @@
   users and resets passwords. **Lockout:** five failed attempts lock the account for 15 minutes
   (counter and lock time live in the database, so a restart does not reset them).
 - **Session:** server-side session stored in PostgreSQL (Spring Session JDBC) so a restart does not
-  log 1,000 people out; cookie `HttpOnly`, `Secure`, `SameSite=Lax`; **30 minutes idle / 8 hours
-  absolute**; the session id changes on login (fixation protection). CSRF token required for every
-  state-changing request — the SPA reads it from `GET /api/auth/csrf` and sends `X-CSRF-TOKEN`.
+  log 1,000 people out; cookie `HttpOnly`, `SameSite=Lax`, and `Secure` in production
+  (`SESSION_COOKIE_SECURE=true` — the local profile runs over plain HTTP and defaults to `false`);
+  **30 minutes idle / 8 hours absolute**; the session id changes on login (fixation protection).
+  CSRF token required for every state-changing request — the SPA reads it from
+  `GET /api/auth/csrf` and sends `X-CSRF-TOKEN`. A state-changing request without a session is
+  answered with **401** (a lost session), not 403.
 - **Error contract:** every error is RFC 9457 (`type`, `title`, `status`, plus the project's stable
   English `code`, and `errors[]` for validation). An unauthenticated request gets **401**, an
   authenticated but unauthorized one **403**; the SPA redirects to the login screen on 401 (with an

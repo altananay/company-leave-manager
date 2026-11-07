@@ -77,8 +77,8 @@ it in the fix round. Builders read this section before the first plan step.
 ## Enforced by tooling
 
 - `scripts/check` — the single gate: build, unit, component, integration and e2e steps.
-- **ArchUnit** — the forbidden dependencies in `docs/architecture.md`; today rules 1, 2 and 4
-  (rule 3, JPA entities, arrives with JPA — `specs/backlog.md` B-3).
+- **ArchUnit** — the forbidden dependencies in `docs/architecture.md`, rules 1–4 (rule 3, JPA
+  entities, arrived with spec 0002).
 - **oxlint + Prettier** — frontend lint and formatting, in `check` (oxlint because it supports
   TypeScript 7; `typescript-eslint` does not yet).
 - Compiler — Java 25 types and null-checks as configured; no Java format gate.

@@ -52,8 +52,31 @@ class AuthorizationIT extends IdentityTestSupport {
     }
 
     @Test
+    void shouldLetCeoChangeItsOwnPassword() throws Exception {
+        assertThat(session.login(CEO_EMAIL, CEO_PASSWORD).statusCode()).isEqualTo(200);
+
+        // Self-service is not a business write: the endpoint is reachable, the wrong current
+        // password is a validation error (400), not a refusal (403).
+        HttpResponse<String> response = session.post("/api/auth/password",
+                "{\"currentPassword\":\"not-the-current-one\","
+                        + "\"newPassword\":\"ceo-new-password-123\",\"confirmPassword\":\"ceo-new-password-123\"}");
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("INVALID_PASSWORD");
+    }
+
+    @Test
     void shouldDenyUnknownApiPathsByDefault() throws Exception {
+        // Anonymous: 401. An unlisted endpoint must not be reachable just because a session exists.
         assertThat(session.get("/api/unknown-endpoint").statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void shouldDenyUnknownApiPathsEvenWithASession() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+
+        // A new endpoint that nobody listed in SecurityConfig stays closed for every role.
+        assertThat(session.get("/api/unknown-endpoint").statusCode()).isEqualTo(403);
     }
 
     @Test

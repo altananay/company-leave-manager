@@ -10,6 +10,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 class UserAdminIT extends IdentityTestSupport {
 
     @Test
+    void shouldCreateAManagerAsWellAsAnEmployee() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+
+        HttpResponse<String> created = session.post("/api/users", body(unique("mgr"), "Manager Person", "MANAGER"));
+
+        assertThat(created.statusCode()).isEqualTo(201);
+        assertThat(created.body()).contains("\"role\":\"MANAGER\"");
+    }
+
+    @Test
     void shouldCreateUserWithTemporaryPasswordAndForceChange() throws Exception {
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
         String email = unique("new");

@@ -97,6 +97,22 @@ describe('authentication', () => {
 
     expect(await screen.findByRole('button', { name: 'Giriş yap' })).toBeInTheDocument()
     expect(screen.getByLabelText('E-posta')).toBeInTheDocument()
+    // A first visit is not an ended session.
+    expect(screen.queryByText('Oturum sona erdi. Lütfen yeniden giriş yapın.')).toBeNull()
+  })
+
+  it('shouldShowOnlyTheGenericErrorOnAWrongPassword', async () => {
+    anonymous({ '/api/auth/login': () => json(401, { status: 401, code: 'NOT_AUTHENTICATED' }) })
+
+    const user = userEvent.setup()
+    renderApp()
+
+    await user.type(await screen.findByLabelText('E-posta'), HR.email)
+    await user.type(screen.getByLabelText('Parola'), 'wrong-password')
+    await user.click(screen.getByRole('button', { name: 'Giriş yap' }))
+
+    expect(await screen.findByText('E-posta veya parola hatalı.')).toBeInTheDocument()
+    expect(screen.queryByText('Oturum sona erdi. Lütfen yeniden giriş yapın.')).toBeNull()
   })
 
   it('shouldShowHomeAfterLogin', async () => {
@@ -310,6 +326,19 @@ describe('health status', () => {
 
     expect(screen.getByText('Connection error')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+  })
+
+  it('shouldTranslateTheSuccessStateToo', async () => {
+    authenticated(HR, () => json(200, { status: 'UP' }))
+
+    const user = userEvent.setup()
+    renderApp()
+
+    expect(await screen.findByText('Sistem çalışıyor')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'EN' }))
+
+    expect(screen.getByText('System is up')).toBeInTheDocument()
   })
 })
 

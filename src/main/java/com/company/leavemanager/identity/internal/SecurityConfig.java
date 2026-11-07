@@ -4,6 +4,7 @@ import com.company.leavemanager.web.Problems;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -11,6 +12,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -72,9 +75,11 @@ public class SecurityConfig {
                         .requireExplicitSave(true))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(auth -> auth
+                        // Public: the health probe, the login form and the CSRF bootstrap.
                         .requestMatchers("/api/health", "/api/auth/login", "/api/auth/csrf").permitAll()
+                        // Every other API endpoint is listed explicitly; an unlisted one is denied.
+                        .requestMatchers("/api/auth/me", "/api/auth/logout", "/api/auth/password").authenticated()
                         .requestMatchers("/api/users/**").hasRole("HR")
-                        .requestMatchers("/api/**").authenticated()
                         // The SPA shell and its assets stay public; anything else is denied by default.
                         .requestMatchers("/", "/index.html", "/favicon.svg", "/icons.svg", "/assets/**", "/error")
                         .permitAll()
@@ -82,10 +87,19 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, failure) ->
                                 problems.write(response, 401, "NOT_AUTHENTICATED"))
-                        .accessDeniedHandler((request, response, failure) ->
-                                problems.write(response, 403, "NOT_AUTHORIZED")))
-                .addFilterAfter(mustChangePassword, SecurityContextHolderFilter.class)
-                .addFilterAfter(sessionAge, MustChangePasswordFilter.class)
+                        .accessDeniedHandler((request, response, failure) -> {
+                            // A state-changing request without a session fails the CSRF check first;
+                            // that is a lost session (401), not an authorization refusal (403).
+                            Authentication authentication =
+                                    SecurityContextHolder.getContext().getAuthentication();
+                            boolean anonymous = authentication == null
+                                    || authentication instanceof AnonymousAuthenticationToken;
+                            problems.write(response, anonymous ? 401 : 403,
+                                    anonymous ? "NOT_AUTHENTICATED" : "NOT_AUTHORIZED");
+                        }))
+                // Order matters: the absolute session age is judged before the must-change gate.
+                .addFilterAfter(sessionAge, SecurityContextHolderFilter.class)
+                .addFilterAfter(mustChangePassword, SessionAgeFilter.class)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .logout(AbstractHttpConfigurer::disable);

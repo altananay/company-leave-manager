@@ -23,7 +23,8 @@ npm --prefix web run dev        # SPA: http://localhost:5173 (/api → :8080 pro
 > verilir: `DB_URL`, `DB_USER`, `DB_PASSWORD`, `SEED_HR_EMAIL`, `SEED_HR_PASSWORD`,
 > `SEED_CEO_EMAIL`, `SEED_CEO_PASSWORD`. Seed her hesap için yalnızca o e-posta yoksa çalışır ve en
 > az 12 karakterlik parola ister; değişkenler verilmezse uygulama açılır ama kimse giriş yapamaz.
-> Örnek (Git Bash):
+> Oturum için `SESSION_IDLE_TIMEOUT` (varsayılan `30m`) ve `SESSION_COOKIE_SECURE` (TLS arkasında
+> **`true`** olmalı) kullanılır. Örnek (Git Bash):
 >
 > ```bash
 > SEED_HR_EMAIL=hr@example.test SEED_HR_PASSWORD=change-this-hr-password \

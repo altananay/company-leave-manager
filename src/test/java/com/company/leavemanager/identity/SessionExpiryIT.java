@@ -2,26 +2,46 @@ package com.company.leavemanager.identity;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 
 import java.net.http.HttpResponse;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * AC-2: the absolute session lifetime ends the session, while the SPA shell stays reachable so the
- * user can be sent back to the login screen (the filter must not lock the shell out).
+ * user can be sent back to the login screen. Time is advanced through the injected clock, not by
+ * sleeping (docs/testing.md, Determinism).
  */
-@SpringBootTest(
-        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "app.identity.session-max-age=1s")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(SessionExpiryIT.ClockConfig.class)
 class SessionExpiryIT extends IdentityTestSupport {
+
+    private static final MutableClock CLOCK = new MutableClock(Instant.parse("2026-11-07T10:00:00Z"));
+
+    @TestConfiguration
+    static class ClockConfig {
+        @Bean
+        @Primary
+        Clock testClock() {
+            return CLOCK;
+        }
+    }
 
     @Test
     void shouldEndTheSessionAfterTheAbsoluteLifetime() throws Exception {
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
         assertThat(session.get("/api/auth/me").statusCode()).isEqualTo(200);
 
-        Thread.sleep(1500);
+        CLOCK.advance(Duration.ofHours(9));
 
         HttpResponse<String> expired = session.get("/api/auth/me");
 
@@ -33,10 +53,39 @@ class SessionExpiryIT extends IdentityTestSupport {
     void shouldKeepTheShellAndHealthReachableWithAnExpiredSession() throws Exception {
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
 
-        Thread.sleep(1500);
+        CLOCK.advance(Duration.ofHours(9));
 
         // The shell and the health probe must not be blocked by the expired session.
         assertThat(session.get("/").statusCode()).isEqualTo(200);
         assertThat(session.get("/api/health").statusCode()).isEqualTo(200);
+    }
+
+    /** A clock the test moves forward; the production clock is fixed. */
+    static final class MutableClock extends Clock {
+
+        private Instant now;
+
+        private MutableClock(Instant now) {
+            this.now = now;
+        }
+
+        void advance(Duration duration) {
+            now = now.plus(duration);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
+        }
     }
 }
