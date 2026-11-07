@@ -3,7 +3,13 @@ import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
 import { ApiError, authApi, type CreatedUser, type User } from '../auth/authApi'
 
-type ErrorKey = 'emailExists' | 'roleNotAssignable' | 'validationFailed' | 'genericError'
+type ErrorKey =
+  | 'emailExists'
+  | 'roleNotAssignable'
+  | 'validationFailed'
+  | 'protectedAccount'
+  | 'selfAction'
+  | 'genericError'
 
 function errorKeyFor(failure: unknown): ErrorKey {
   const code = failure instanceof ApiError ? failure.code : 'ERROR'
@@ -15,6 +21,10 @@ function errorKeyFor(failure: unknown): ErrorKey {
       return 'roleNotAssignable'
     case 'VALIDATION_FAILED':
       return 'validationFailed'
+    case 'PROTECTED_ACCOUNT':
+      return 'protectedAccount'
+    case 'SELF_ACTION_NOT_ALLOWED':
+      return 'selfAction'
     default:
       return 'genericError'
   }
@@ -187,27 +197,38 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
               <td>{t(roleKey(user.role))}</td>
               <td>{user.active ? t('active') : t('inactive')}</td>
               <td>
-                <button type="button" className="secondary" onClick={() => resetPassword(user)}>
-                  {t('resetPassword')}
-                </button>
-                {confirmingId === user.id ? (
-                  <>
-                    <span className="confirm-text">{t('confirmDeactivate')}</span>
-                    <button type="button" className="danger" onClick={() => deactivate(user)}>
-                      {t('confirm')}
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => setConfirmingId(null)}
-                    >
-                      {t('cancel')}
-                    </button>
-                  </>
+                {isProtected(user) ? (
+                  // The server refuses these rows (PROTECTED_ACCOUNT); the UI must not offer them.
+                  <span className="muted">{t('protectedAccount')}</span>
                 ) : (
-                  <button type="button" className="danger" onClick={() => setConfirmingId(user.id)}>
-                    {t('deactivate')}
-                  </button>
+                  <>
+                    <button type="button" className="secondary" onClick={() => resetPassword(user)}>
+                      {t('resetPassword')}
+                    </button>
+                    {confirmingId === user.id ? (
+                      <>
+                        <span className="confirm-text">{t('confirmDeactivate')}</span>
+                        <button type="button" className="danger" onClick={() => deactivate(user)}>
+                          {t('confirm')}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => setConfirmingId(null)}
+                        >
+                          {t('cancel')}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => setConfirmingId(user.id)}
+                      >
+                        {t('deactivate')}
+                      </button>
+                    )}
+                  </>
                 )}
               </td>
             </tr>
@@ -216,6 +237,11 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
       </table>
     </section>
   )
+}
+
+/** Seeded accounts are managed by the environment, not by this screen (spec 0002, AC-6). */
+function isProtected(user: User): boolean {
+  return user.role === 'HR' || user.role === 'CEO'
 }
 
 function roleKey(role: string): MessageKey {

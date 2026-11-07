@@ -2,7 +2,8 @@ spring:
   application:
     name: leave-manager
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5433/leave_manager}
+    # Matches compose.yaml: 5432 is a local PostgreSQL, 5433 another project's container.
+    url: ${DB_URL:jdbc:postgresql://localhost:5434/leave_manager}
     username: ${DB_USER:leave}
     password: ${DB_PASSWORD:leave}
     hikari:

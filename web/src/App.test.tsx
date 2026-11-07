@@ -233,13 +233,58 @@ describe('authentication', () => {
 
     expect(await screen.findByText('Bu sayfaya erişiminiz yok')).toBeInTheDocument()
   })
+
+  it('shouldLogOutWithoutANotice', async () => {
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/auth/logout': () => json(204, null),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+
+    await user.click(await screen.findByRole('button', { name: 'Çıkış' }))
+
+    expect(await screen.findByRole('heading', { name: 'Giriş' })).toBeInTheDocument()
+    expect(screen.queryByText('Oturum sona erdi. Lütfen yeniden giriş yapın.')).toBeNull()
+  })
+
+  it('shouldExplainWhenTheSessionWasAlreadyGoneAtLogout', async () => {
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/auth/logout': () => json(401, { status: 401, code: 'NOT_AUTHENTICATED' }),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+
+    await user.click(await screen.findByRole('button', { name: 'Çıkış' }))
+
+    // The 401 handler explained the lost session; the logout must not wipe that explanation.
+    expect(await screen.findByRole('heading', { name: 'Giriş' })).toBeInTheDocument()
+    expect(screen.getByText('Oturum sona erdi. Lütfen yeniden giriş yapın.')).toBeInTheDocument()
+  })
 })
 
 describe('users screen', () => {
   const users = [
     { ...HR, active: true },
     { ...EMPLOYEE, active: true },
+    { ...EMPLOYEE, id: 'u-emp-2', email: 'emp2@acme.test', displayName: 'Second', active: true },
   ]
+
+  it('shouldNotOfferActionsOnASeededAccount', async () => {
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/users': () => json(200, users),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+
+    // The server refuses these rows (PROTECTED_ACCOUNT); the screen must not offer the buttons.
+    expect(screen.getByText('Ortam değişkenleriyle yönetilir')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Pasife al' })).toHaveLength(2)
+  })
 
   it('shouldAskForConfirmationBeforeDeactivating', async () => {
     const deactivate = vi.fn(() => json(204, null))

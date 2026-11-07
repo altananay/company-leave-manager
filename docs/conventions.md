@@ -48,7 +48,7 @@ Upgrades keep `scripts/check` green; a major upgrade that changes behavior is it
 
 - Every error is **RFC 9457 Problem Details**: `type`, `title`, `status`, plus `code`
   and, for validation, `errors[]` (field → message). A 5xx also carries `requestId`. `instance` is
-  left to the framework (it fills it in when it can).
+  optional in RFC 9457 and this project does not set it.
 - One `@RestControllerAdvice` produces the error shape: `ApiExceptionHandler.problem(...)` is the
   only place a body is built, and controllers return its result — they never format JSON themselves.
 - Business codes: `NOT_AUTHENTICATED`, `NOT_AUTHORIZED`, `CSRF_INVALID`, `SESSION_EXPIRED`,

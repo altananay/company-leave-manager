@@ -165,13 +165,13 @@ class UserAdminIT extends IdentityTestSupport {
     @Test
     void shouldNotLetHrTouchTheSeededAccounts() throws Exception {
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
-        String ceoId = extract(session.get("/api/users").body(), "id");
-        // The CEO is not the first row; find the id by e-mail through the API.
+        // The CEO is not the first row; find its id by e-mail through the API.
         String ceoRow = session.get("/api/users").body();
         int at = ceoRow.indexOf(CEO_EMAIL);
         assertThat(at).isGreaterThan(-1);
         String before = ceoRow.substring(0, at);
-        ceoId = before.substring(before.lastIndexOf("\"id\":\"") + 6, before.lastIndexOf("\"id\":\"") + 42);
+        String ceoId =
+                before.substring(before.lastIndexOf("\"id\":\"") + 6, before.lastIndexOf("\"id\":\"") + 42);
 
         HttpResponse<String> deactivate = session.post("/api/users/" + ceoId + "/deactivate", "{}");
         HttpResponse<String> reset = session.post("/api/users/" + ceoId + "/reset-password", "{}");
@@ -181,6 +181,9 @@ class UserAdminIT extends IdentityTestSupport {
         assertThat(deactivate.body()).contains("PROTECTED_ACCOUNT");
         assertThat(reset.statusCode()).isEqualTo(403);
         assertThat(reset.body()).contains("PROTECTED_ACCOUNT");
+
+        // The refusal really left the account alone: the CEO still signs in with its seeded password.
+        assertThat(new Session().login(CEO_EMAIL, CEO_PASSWORD).statusCode()).isEqualTo(200);
     }
 
     @Test

@@ -32,6 +32,7 @@ function App() {
   const [view, setView] = useState<View>('loading')
   const [me, setMe] = useState<Me | null>(null)
   const [sessionExpired, setSessionExpired] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
@@ -85,12 +86,18 @@ function App() {
   }
 
   async function handleLogout() {
+    // A second click while the first request is in flight would race with it.
+    if (loggingOut) {
+      return
+    }
+    setLoggingOut(true)
     // If the session was already gone, the 401 handler has just explained that: keep its notice.
     const lost = await authApi
       .logout()
       .then(() => false)
       .catch((failure) => failure instanceof Unauthorized)
     rememberSession(lost ? SESSION_ENDED : null)
+    setLoggingOut(false)
     setMe(null)
     setSessionExpired(lost)
     setView('login')
@@ -144,7 +151,12 @@ function App() {
             <button type="button" onClick={() => setView('users')}>
               {t('users')}
             </button>
-            <button type="button" className="secondary" onClick={handleLogout}>
+            <button
+              type="button"
+              className="secondary"
+              onClick={handleLogout}
+              disabled={loggingOut}
+            >
               {t('logout')}
             </button>
           </div>

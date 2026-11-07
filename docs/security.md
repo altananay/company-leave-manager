@@ -50,7 +50,9 @@
   a button is UX, never authorization. Default deny: only the SPA shell, its assets, `/error`,
   `/api/health`, `/api/auth/login` and `/api/auth/csrf` are public; every other path is denied.
   İK can assign only `EMPLOYEE` and `MANAGER`; the `HR`/`CEO` roles come from the environment seed.
-  İK cannot deactivate itself or reset its own password through the admin screen.
+  İK cannot deactivate itself or reset its own password through the admin screen, and cannot
+  deactivate or reset a seeded `HR`/`CEO` account (`403 PROTECTED_ACCOUNT`): those accounts are
+  managed by the environment only.
 - **No SPA deep links:** the shell is served at `/`; client-side routes are view state, so an
   unknown non-API path is denied rather than forwarded to `index.html`.
 - **Object-level checks:** every endpoint that takes an employee or request identifier verifies the
