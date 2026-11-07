@@ -175,4 +175,5 @@ td {
 
 td button {
   margin-right: 0.25rem;
+  white-space: nowrap;
 }
