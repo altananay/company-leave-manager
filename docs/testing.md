@@ -31,8 +31,8 @@
 - The **authorization matrix**: each of the four roles against each read/write scope
   (BR-12, sensitive area *Yetkilendirme*) — a denied case is as important as an allowed one.
 - The forbidden dependencies (ArchUnit), in the same `check` run.
-- The e2e journeys (at most two, `~3 minutes` total): the **smoke** journey — the app opens against
-  a real database and reports healthy — and the **leave** journey — employee requests annual leave
+- The e2e journeys (at most two, `~3 minutes` total): the **auth** journey — sign in, create a user,
+  sign out, and a forbidden screen — and the **leave** journey — employee requests annual leave
   → manager approves → balance decreases (added by its own spec).
 
 ## Test layers

@@ -19,9 +19,16 @@ docker compose up -d db         # PostgreSQL 18 (host portu: .env'deki DB_HOST_P
 npm --prefix web run dev        # SPA: http://localhost:5173 (/api → :8080 proxy)
 ```
 
-> Uygulama `.env` dosyasını okumaz; veritabanı ayarları **ortam değişkeni** olarak verilir:
-> `DB_URL`, `DB_USER`, `DB_PASSWORD`. `.env`deki değerleri değiştirdiysen aynılarını bu
-> değişkenlerle de ver (ör. Git Bash: `DB_URL=... DB_USER=... DB_PASSWORD=... ./mvnw spring-boot:run`).
+> Uygulama `.env` dosyasını okumaz; veritabanı ayarları ve ilk hesaplar **ortam değişkeni** olarak
+> verilir: `DB_URL`, `DB_USER`, `DB_PASSWORD`, `SEED_HR_EMAIL`, `SEED_HR_PASSWORD`,
+> `SEED_CEO_EMAIL`, `SEED_CEO_PASSWORD`. Seed yalnızca boş veritabanında ve yalnızca bu değişkenler
+> verildiğinde çalışır (en az 12 karakterlik parola); verilmezse uygulama açılır ama kimse giriş
+> yapamaz. Örnek (Git Bash):
+>
+> ```bash
+> SEED_HR_EMAIL=hr@example.test SEED_HR_PASSWORD=change-this-hr-password \
+> DB_URL=... ./mvnw spring-boot:run
+> ```
 
 Sağlık kontrolü: `curl http://localhost:8080/api/health` → `{"status":"UP"}`
 

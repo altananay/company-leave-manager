@@ -20,7 +20,12 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "spring.datasource.password=leave",
                 // Never fail fast at startup: the point of this test is the health answer, not a boot failure.
                 "spring.datasource.hikari.initialization-fail-timeout=-1",
-                "spring.flyway.enabled=false"
+                "spring.flyway.enabled=false",
+                // JPA validation and the session repository must not connect while the database is down.
+                "spring.jpa.hibernate.ddl-auto=none",
+                "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect",
+                "spring.jpa.properties.hibernate.boot.allow_jdbc_metadata_access=false",
+                "spring.session.jdbc.initialize-schema=never"
         })
 class HealthDownIT {
 

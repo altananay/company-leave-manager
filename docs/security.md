@@ -26,14 +26,20 @@
 
 ## AuthN / AuthZ
 
-- **AuthN (V1):** corporate e-mail + password, BCrypt hashing (Spring Security's delegating
-  encoder). No self-service sign-up; İK creates users and resets passwords. Login rate limiting sits
-  at the reverse proxy.
+- **AuthN (V1):** corporate e-mail + password, BCrypt hashing. No self-service sign-up; İK creates
+  users and resets passwords. **Lockout:** five failed attempts lock the account for 15 minutes
+  (counter and lock time live in the database, so a restart does not reset them).
 - **Session:** server-side session stored in PostgreSQL (Spring Session JDBC) so a restart does not
-  log 1,000 people out; cookie `HttpOnly`, `Secure`, `SameSite=Lax`; CSRF token required for every
-  state-changing request.
+  log 1,000 people out; cookie `HttpOnly`, `Secure`, `SameSite=Lax`; **30 minutes idle / 8 hours
+  absolute**; the session id changes on login (fixation protection). CSRF token required for every
+  state-changing request — the SPA reads it from `GET /api/auth/csrf` and sends `X-CSRF-TOKEN`.
+- **Error contract:** an unauthenticated request gets **401**, an authenticated but unauthorized one
+  **403** (both with a stable English `code`); the SPA redirects to the login screen on 401 and shows
+  the forbidden screen on 403.
 - **AuthZ:** RBAC (role) **and** data scope, enforced server-side on every request — the SPA hiding
-  a button is UX, never authorization. Default deny: a missing rule denies.
+  a button is UX, never authorization. Default deny: a missing rule denies. İK can assign only
+  `EMPLOYEE` and `MANAGER`; the `HR`/`CEO` roles come from the environment seed. İK cannot deactivate
+  itself or reset its own password through the admin screen.
 - **Object-level checks:** every endpoint that takes an employee or request identifier verifies the
   caller's scope before loading the object, not after.
 

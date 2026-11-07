@@ -1,0 +1,58 @@
+package com.company.leavemanager.identity;
+
+import org.junit.jupiter.api.Test;
+
+import java.net.http.HttpResponse;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/** AC-6 and AC-7 of spec 0002: default deny, 401 vs 403, and the public health endpoint. */
+class AuthorizationIT extends IdentityTestSupport {
+
+    @Test
+    void shouldReturn401WithoutSession() throws Exception {
+        assertThat(session.get("/api/users").statusCode()).isEqualTo(401);
+        assertThat(session.get("/api/auth/me").statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void shouldKeepHealthPublic() throws Exception {
+        assertThat(session.get("/api/health").statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    void shouldReturn403ForWrongRole() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String email = "employee-" + System.nanoTime() + "@acme.test";
+        HttpResponse<String> created = session.post("/api/users",
+                "{\"email\":\"" + email + "\",\"displayName\":\"Emp\",\"role\":\"EMPLOYEE\"}");
+        String temporaryPassword = extract(created.body(), "temporaryPassword");
+
+        Session employee = new Session();
+        assertThat(employee.login(email, temporaryPassword).statusCode()).isEqualTo(200);
+        assertThat(employee.post("/api/auth/password",
+                "{\"currentPassword\":\"" + temporaryPassword + "\","
+                        + "\"newPassword\":\"employee-pass-123\",\"confirmPassword\":\"employee-pass-123\"}")
+                .statusCode()).isEqualTo(204);
+
+        HttpResponse<String> forbidden = employee.get("/api/users");
+
+        assertThat(forbidden.statusCode()).isEqualTo(403);
+        assertThat(forbidden.body()).contains("NOT_AUTHORIZED");
+    }
+
+    @Test
+    void shouldRejectCeoWrite() throws Exception {
+        assertThat(session.login(CEO_EMAIL, CEO_PASSWORD).statusCode()).isEqualTo(200);
+
+        HttpResponse<String> response = session.post("/api/users",
+                "{\"email\":\"someone@acme.test\",\"displayName\":\"Someone\",\"role\":\"EMPLOYEE\"}");
+
+        assertThat(response.statusCode()).isEqualTo(403);
+    }
+
+    @Test
+    void shouldDenyUnknownApiPathsByDefault() throws Exception {
+        assertThat(session.get("/api/unknown-endpoint").statusCode()).isEqualTo(401);
+    }
+}

@@ -11,9 +11,23 @@ spring:
       validation-timeout: 1000
   flyway:
     enabled: true
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  session:
+    jdbc:
+      # The session tables are a Flyway migration (V2), not startup DDL.
+      initialize-schema: never
 
 server:
   port: ${PORT:8080}
+  servlet:
+    session:
+      timeout: 30m
+      cookie:
+        http-only: true
+        same-site: lax
 
 management:
   endpoints:
@@ -29,3 +43,14 @@ management:
       probes:
         enabled: false
       show-details: never
+
+app:
+  identity:
+    max-failed-attempts: 5
+    lockout-duration: 15m
+    session-max-age: 8h
+  seed:
+    hr-email: ${SEED_HR_EMAIL:}
+    hr-password: ${SEED_HR_PASSWORD:}
+    ceo-email: ${SEED_CEO_EMAIL:}
+    ceo-password: ${SEED_CEO_PASSWORD:}

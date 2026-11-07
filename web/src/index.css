@@ -79,3 +79,100 @@ button:focus-visible {
 .status-down {
   color: #b91c1c;
 }
+
+.signed-in {
+  margin-top: 1.5rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.card {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.card h2,
+.card h3 {
+  margin: 0;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-weight: 600;
+}
+
+input,
+select {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #94a3b8;
+  border-radius: 0.375rem;
+  background: #fff;
+}
+
+.error {
+  margin: 0;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.notice {
+  margin: 0;
+  padding: 0.75rem;
+  background: #ecfdf5;
+  border: 1px solid #6ee7b7;
+  border-radius: 0.375rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+button.secondary {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+
+button.danger {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+td button {
+  margin-right: 0.25rem;
+}

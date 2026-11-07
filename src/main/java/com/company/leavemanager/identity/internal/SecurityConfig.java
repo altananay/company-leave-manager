@@ -1,0 +1,95 @@
+package com.company.leavemanager.identity.internal;
+
+import com.company.leavemanager.web.Problems;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
+import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
+import org.springframework.session.jdbc.config.annotation.web.http.EnableJdbcHttpSession;
+
+import java.time.Clock;
+
+@Configuration
+@EnableWebSecurity
+@EnableJdbcHttpSession
+@EnableConfigurationProperties(IdentityProperties.class)
+public class SecurityConfig {
+
+    @Bean
+    PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    SecurityContextRepository securityContextRepository() {
+        return new HttpSessionSecurityContextRepository();
+    }
+
+    /**
+     * A minimal authentication manager: load the user, compare the BCrypt hash, return the principal.
+     * Lockout and the active flag are checked by the login controller before this runs.
+     */
+    @Bean
+    AuthenticationManager authenticationManager(AppUserDetailsService details, PasswordEncoder encoder) {
+        return authentication -> {
+            UserDetails user = details.loadUserByUsername((String) authentication.getPrincipal());
+            if (!encoder.matches((String) authentication.getCredentials(), user.getPassword())) {
+                throw new BadCredentialsException("bad credentials");
+            }
+            return new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+        };
+    }
+
+    @Bean
+    SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                            SecurityContextRepository contextRepository,
+                                            IdentityProperties identityProperties,
+                                            Clock clock,
+                                            Problems problems) throws Exception {
+        MustChangePasswordFilter mustChangePassword = new MustChangePasswordFilter(problems);
+        SessionAgeFilter sessionAge = new SessionAgeFilter(identityProperties, clock, problems);
+
+        http
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(new HttpSessionCsrfTokenRepository())
+                        // Plain handler: the SPA sends the raw token from GET /api/auth/csrf.
+                        .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
+                .securityContext(context -> context
+                        .securityContextRepository(contextRepository)
+                        .requireExplicitSave(true))
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/health", "/api/auth/login", "/api/auth/csrf").permitAll()
+                        .requestMatchers("/api/users/**").hasRole("HR")
+                        .requestMatchers("/api/**").authenticated()
+                        // The SPA shell and its assets are public; the data behind /api is not.
+                        .anyRequest().permitAll())
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, failure) ->
+                                problems.write(response, 401, "NOT_AUTHENTICATED"))
+                        .accessDeniedHandler((request, response, failure) ->
+                                problems.write(response, 403, "NOT_AUTHORIZED")))
+                .addFilterAfter(mustChangePassword, SecurityContextHolderFilter.class)
+                .addFilterAfter(sessionAge, MustChangePasswordFilter.class)
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .formLogin(AbstractHttpConfigurer::disable)
+                .logout(AbstractHttpConfigurer::disable);
+
+        return http.build();
+    }
+}

@@ -42,8 +42,8 @@ Enforced by one ArchUnit test class (`ModuleBoundariesTest`) in the backend test
 
 1. A module never depends on another module's `internal` package — only on its public API.
 2. Web/controller classes never depend on repository classes directly.
-3. JPA entities never leave their module — DTOs/maps at the boundary. *(Enforced when JPA arrives:
-   the skeleton uses JDBC and has no entities yet — `specs/backlog.md` B-3.)*
+3. JPA entities never leave their module — DTOs/maps at the boundary *(enforced by the ArchUnit
+   entity rule)*.
 4. `reporting` never writes; there are no cyclic dependencies between modules.
 
 ## Deliberately out of scope

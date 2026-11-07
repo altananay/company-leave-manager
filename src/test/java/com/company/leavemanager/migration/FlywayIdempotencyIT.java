@@ -22,6 +22,6 @@ class FlywayIdempotencyIT {
 
         assertThat(flyway.migrate().migrationsExecuted).isPositive();
         assertThat(flyway.migrate().migrationsExecuted).isZero();
-        assertThat(flyway.info().applied()).hasSize(1);
+        assertThat(flyway.info().applied()).isNotEmpty();
     }
 }
