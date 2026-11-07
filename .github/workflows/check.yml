@@ -29,7 +29,9 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - name: Playwright browser
+      - name: Install web dependencies
+        run: npm --prefix web ci --no-audit --no-fund
+      - name: Playwright browser (from the pinned package)
         working-directory: web
         run: npx playwright install --with-deps chromium
       # --fast is for the inner loop only; CI always runs the full contract (docs/testing.md).

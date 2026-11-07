@@ -2,7 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { I18nProvider } from './i18n/I18nProvider'
+import { I18nProvider, detectInitialLang } from './i18n/I18nProvider'
 
 const STORAGE_KEY = 'leave-manager.lang'
 
@@ -75,11 +75,74 @@ describe('health status', () => {
     expect(await screen.findByText('Sistem çalışıyor')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
+
+  it('shouldShowErrorOn503Down', async () => {
+    // The contract's failure path: 503 with {"status":"DOWN"} (not a network error).
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(healthResponse('DOWN', 503))
+      .mockResolvedValueOnce(healthResponse('UP'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const user = userEvent.setup()
+    renderApp()
+
+    expect(await screen.findByText('Bağlantı hatası')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Yeniden dene' }))
+
+    expect(await screen.findByText('Sistem çalışıyor')).toBeInTheDocument()
+  })
+})
+
+describe('detectInitialLang', () => {
+  it('shouldPreferTheStoredLanguageOverTheBrowser', () => {
+    expect(detectInitialLang('en', 'tr-TR')).toBe('en')
+    expect(detectInitialLang('tr', 'en-US')).toBe('tr')
+  })
+
+  it('shouldUseTheBrowserLanguageWhenNothingIsStored', () => {
+    expect(detectInitialLang(null, 'en-GB')).toBe('en')
+    expect(detectInitialLang(null, 'tr-TR')).toBe('tr')
+  })
+
+  it('shouldFallBackToTurkishForAnyOtherLanguage', () => {
+    expect(detectInitialLang(null, 'de-DE')).toBe('tr')
+    expect(detectInitialLang(null, '')).toBe('tr')
+  })
 })
 
 describe('language', () => {
   it('shouldUseBrowserLanguageAsDefault', async () => {
     setBrowserLanguage('en-US')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(healthResponse('UP'))),
+    )
+
+    renderApp()
+
+    expect(screen.getByRole('heading', { name: 'Leave Management' })).toBeInTheDocument()
+    expect(await screen.findByText('System is up')).toBeInTheDocument()
+    expect(document.title).toBe('Leave Management')
+  })
+
+  it('shouldFallBackToTurkishForOtherBrowserLanguages', async () => {
+    setBrowserLanguage('de-DE')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(healthResponse('UP'))),
+    )
+
+    renderApp()
+
+    expect(screen.getByRole('heading', { name: 'İzin Yönetimi' })).toBeInTheDocument()
+    expect(await screen.findByText('Sistem çalışıyor')).toBeInTheDocument()
+  })
+
+  it('shouldUseTheStoredLanguageOnReload', async () => {
+    // A reload: the language was chosen earlier and is read back from localStorage.
+    localStorage.setItem(STORAGE_KEY, 'en')
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.resolve(healthResponse('UP'))),
@@ -108,5 +171,6 @@ describe('language', () => {
     expect(screen.getByText('System is up')).toBeInTheDocument()
     expect(localStorage.getItem(STORAGE_KEY)).toBe('en')
     expect(document.documentElement.lang).toBe('en')
+    expect(document.title).toBe('Leave Management')
   })
 })

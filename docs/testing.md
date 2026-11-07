@@ -12,16 +12,17 @@
 |---|---|---|
 | Unit | **JUnit 5 + Mockito** | `src/test/java/.../<module>/**Test.java` |
 | Architecture | **ArchUnit** (`ModuleBoundariesTest`) | `src/test/java/.../architecture/` |
-| Integration | **Spring Boot Test + MockMvc + Testcontainers (PostgreSQL 18)** | `src/test/java/.../**IT.java` |
-| Component (UI) | **Vitest + Testing Library** | `web/src/**/*.test.tsx` |
-| E2E | **Playwright 1.65** (Chromium) | `e2e/*.spec.ts` |
+| Integration | **Spring Boot Test (real HTTP via JDK `HttpClient`) + Testcontainers (PostgreSQL 18)** | `src/test/java/.../**IT.java` |
+| Component (UI) | **Vitest + Testing Library** (global `fetch` stubbed) | `web/src/**/*.test.tsx` |
+| E2E | **Playwright 1.65** (Chromium), lifecycle owned by `scripts/e2e` | `web/e2e/*.spec.ts` |
 
 - Unit tests never touch the database; integration tests use a fresh Testcontainers database per
   run (resource hygiene, rule 5).
-- The SPA's API client is typed from the OpenAPI document; component tests stub the client, not
-  `fetch`.
-- Determinism: the backend injects `Clock` (never `LocalDate.now()` directly), the SPA's clock and
-  locale are fixed in test setup, seeds are fixed, animations/transitions are off.
+- Component tests stub the global `fetch` (the health hook calls it directly); there is no API
+  client layer yet.
+- Determinism: no wall-clock logic exists yet — when domain dates arrive they read an injected
+  `Clock` (never `LocalDate.now()` directly); the SPA's locale is fixed in test setup, seeds are
+  fixed, animations/transitions are off.
 
 ## What must be tested
 
@@ -147,8 +148,10 @@ A screenshot proves a criterion only against the spec's "User experience": every
    and fail on a used one are this rule failing, not the code (R-02, environment first).
 
 Project specifics: Maven runs without a daemon; Testcontainers starts a throwaway PostgreSQL per
-run and reaps it; Playwright runs `--workers=1` headless and starts/stops the app itself (no dev
-server in check); `npm --prefix web run test -- --run` never watches.
+run and reaps it; `scripts/e2e` owns the app-under-test lifecycle — it starts the database in its
+own compose project (`leave-manager-e2e`, throwaway volume), starts the packaged jar, waits for
+health, runs Playwright with `--workers=1` headless, and tears everything down on every path;
+`npm --prefix web run test` runs Vitest once (never watches).
 
 ## Two speeds, one contract
 
@@ -202,7 +205,8 @@ result depends on the machine's speed. Turn motion off in both places the stack 
 tool's setting (Playwright `reducedMotion: 'reduce'`) and the app's own switch for test builds
 (a `prefers-reduced-motion` stylesheet and a test-build flag that disables transitions).
 
-This project's determinism settings: backend `Clock` bean fixed in tests (Europe/Istanbul, no
-wall-clock reads outside it); Testcontainers database seeded by Flyway with a fixed baseline; the
-SPA's date formatting pinned to `tr-TR`/`Europe/Istanbul`; Playwright `--workers=1`, headless,
-`reducedMotion: 'reduce'`, fixed viewport and locale.
+This project's determinism settings: the backend has no wall-clock logic yet — when domain dates
+arrive they read an injected `Clock` (Europe/Istanbul, no `LocalDate.now()` outside it); the
+Testcontainers database starts empty and is migrated by Flyway's fixed baseline; the SPA's locale
+is pinned to `tr-TR`; Playwright runs `--workers=1`, headless, `reducedMotion: 'reduce'`, with a
+fixed viewport and locale.

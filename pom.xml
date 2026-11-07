@@ -22,7 +22,9 @@
     <!-- Fast/full split: `-DskipUnitTests=true` runs only the *IT classes through Failsafe. -->
     <skipUnitTests>false</skipUnitTests>
     <archunit.version>1.5.1</archunit.version>
-    <!-- Spring Boot 4.1 no longer manages Testcontainers; pinned on the stable 1.x line. -->
+    <!-- Spring Boot 4.1.2 imports the Testcontainers 2.0.5 BOM, but that BOM manages the new
+         `testcontainers-*` coordinates; the classic `postgresql`/`junit-jupiter` artifacts are
+         not managed, so they are pinned on the stable 1.21.x line (2.x migration is a separate change). -->
     <testcontainers.version>1.21.4</testcontainers.version>
   </properties>
 
@@ -40,8 +42,8 @@
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
     <dependency>
-      <groupId>org.flywaydb</groupId>
-      <artifactId>flyway-core</artifactId>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-flyway</artifactId>
     </dependency>
     <dependency>
       <groupId>org.flywaydb</groupId>

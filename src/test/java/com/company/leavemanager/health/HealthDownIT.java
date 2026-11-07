@@ -34,6 +34,6 @@ class HealthDownIT {
                 HttpResponse.BodyHandlers.ofString());
 
         assertThat(response.statusCode()).isEqualTo(503);
-        assertThat(response.body()).contains("\"status\":\"DOWN\"");
+        assertThat(response.body()).isEqualTo("{\"status\":\"DOWN\"}");
     }
 }

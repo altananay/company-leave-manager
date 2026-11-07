@@ -25,6 +25,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.lang = lang
+    document.title = messages[lang].appTitle
   }, [lang])
 
   const value = useMemo<I18nValue>(

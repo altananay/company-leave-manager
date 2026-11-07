@@ -2,11 +2,15 @@
 # e2e — the single browser journey (docs/testing.md, Test layers).
 # Starts the compose database and the packaged app, waits for health, runs Playwright, and tears
 # everything down on every path (resource hygiene, rule 4). Its exit code is the check step's.
+#
+# The database runs in its own compose project (leave-manager-e2e) with a throwaway volume, so a
+# developer's `docker compose up` database is never touched and every run starts from a known state.
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
+COMPOSE_PROJECT=leave-manager-e2e
 # A dedicated port: 8080-8082 are taken by unrelated local apps on a developer machine.
 APP_PORT="${PORT:-8083}"
 LOG="$ROOT/target/e2e-app.log"
@@ -23,14 +27,16 @@ cleanup() {
     kill "$APP_PID" 2>/dev/null || true
     wait "$APP_PID" 2>/dev/null || true
   fi
-  docker compose down -v --remove-orphans >/dev/null 2>&1 || true
+  docker compose -p "$COMPOSE_PROJECT" down -v --remove-orphans >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
-DB_HOST_PORT=0 docker compose up -d --wait db
+# Known state: a run killed halfway must not leak its volume or containers into this one.
+docker compose -p "$COMPOSE_PROJECT" down -v --remove-orphans >/dev/null 2>&1 || true
+DB_HOST_PORT=0 docker compose -p "$COMPOSE_PROJECT" up -d --wait db
 
 # Discover the random host port compose assigned (a fixed port can be taken by another project).
-DB_PORT=$(docker compose port db 5432 | head -n 1 | sed 's/.*://')
+DB_PORT=$(docker compose -p "$COMPOSE_PROJECT" port db 5432 | head -n 1 | sed 's/.*://')
 [ -n "$DB_PORT" ] || { echo "e2e: could not discover the database port" >&2; exit 1; }
 
 DB_URL="jdbc:postgresql://localhost:$DB_PORT/leave_manager" \

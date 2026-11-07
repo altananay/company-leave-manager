@@ -24,4 +24,8 @@ management:
         include: health
   endpoint:
     health:
+      # The contract body is exactly {"status":"UP"} / {"status":"DOWN"}; the liveness/readiness
+      # probe groups would add a "groups" field to the response.
+      probes:
+        enabled: false
       show-details: never

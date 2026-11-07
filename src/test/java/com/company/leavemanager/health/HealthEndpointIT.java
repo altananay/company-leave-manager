@@ -1,8 +1,10 @@
 package com.company.leavemanager.health;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -16,7 +18,7 @@ import java.net.http.HttpResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** AC-2 (up): GET /api/health answers 200 with exactly {"status":"UP"} against a real database. */
+/** AC-2 (up) and AC-3: GET /api/health answers 200 with exactly {"status":"UP"} against a real database. */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class HealthEndpointIT {
@@ -34,6 +36,9 @@ class HealthEndpointIT {
     @Value("${local.server.port}")
     int port;
 
+    @Autowired
+    JdbcTemplate jdbc;
+
     @Test
     void shouldReturnUpWhenDatabaseIsUp() throws Exception {
         HttpResponse<String> response = HttpClient.newHttpClient().send(
@@ -41,6 +46,15 @@ class HealthEndpointIT {
                 HttpResponse.BodyHandlers.ofString());
 
         assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.body()).contains("\"status\":\"UP\"");
+        // Exactly the contract body: show-details=never must not leak indicator details.
+        assertThat(response.body()).isEqualTo("{\"status\":\"UP\"}");
+    }
+
+    @Test
+    void shouldHaveAppliedTheMigrationWhenTheApplicationStarts() {
+        // The schema is created by the application's own Flyway auto-configuration, not by a test fixture.
+        Integer rows = jdbc.queryForObject("select count(*) from app_metadata", Integer.class);
+
+        assertThat(rows).isEqualTo(1);
     }
 }
