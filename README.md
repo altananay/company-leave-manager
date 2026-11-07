@@ -20,8 +20,12 @@ npm --prefix web run dev        # SPA: http://localhost:5173 (/api → :8080 pro
 ```
 
 > **Port çakışması:** Bu makinede 5432 yerel bir PostgreSQL'e, 5433 başka bir projenin konteynerine
-> ait. Bu yüzden projenin veritabanı **5434**'ü kullanır. Gerekirse `.env` içinde `DB_HOST_PORT`
-> değiştirin; `DB_HOST_PORT=0` rastgele boş bir port verir (e2e bunu kullanır).
+> ait. Bu yüzden projenin veritabanı varsayılanı **5434**'tür (`application.yml` ve `compose.yaml`
+> aynı değeri kullanır). Gerekirse `.env` içinde `DB_HOST_PORT` ve `DB_URL` birlikte değiştirin;
+> `DB_HOST_PORT=0` rastgele boş bir port verir (e2e bunu kullanır).
+>
+> **Üretim profili:** `SPRING_PROFILES_ACTIVE=prod` oturum çerezini `Secure` yapar
+> (`application-prod.yml`); TLS arkasında bu profili kullanın.
 
 > Uygulama `.env` dosyasını okumaz; veritabanı ayarları ve ilk hesaplar **ortam değişkeni** olarak
 > verilir: `DB_URL`, `DB_USER`, `DB_PASSWORD`, `SEED_HR_EMAIL`, `SEED_HR_PASSWORD`,

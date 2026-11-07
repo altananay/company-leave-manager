@@ -1,8 +1,12 @@
 package com.company.leavemanager.identity;
 
+import com.company.leavemanager.identity.internal.Role;
+import com.company.leavemanager.identity.internal.User;
+import com.company.leavemanager.identity.internal.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -13,6 +17,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Instant;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,6 +32,17 @@ public abstract class IdentityTestSupport {
     protected static final String HR_PASSWORD = "hr-password-123456";
     protected static final String CEO_EMAIL = "ceo@acme.test";
     protected static final String CEO_PASSWORD = "ceo-password-123456";
+
+    /**
+     * A second account with a seeded role, written straight to the database: the API refuses to
+     * create HR/CEO users (only the environment seed may), and some rules are only reachable when
+     * the actor is not the target.
+     */
+    protected static User seededRoleAccount(UserRepository users, PasswordEncoder encoder,
+                                           String email, Role role, String password) {
+        return users.findByEmailIgnoreCase(email).orElseGet(() -> users.save(
+                User.create(email, "Seeded " + role, role, encoder.encode(password), Instant.now())));
+    }
 
     /**
      * One container for the whole test JVM: every identity test class shares the same database, so a

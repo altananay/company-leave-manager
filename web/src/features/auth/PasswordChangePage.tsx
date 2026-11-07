@@ -18,16 +18,30 @@ export function PasswordChangePage({
   const [error, setError] = useState<ErrorKey | null>(null)
   const [busy, setBusy] = useState(false)
   const currentRef = useRef<HTMLInputElement>(null)
+  const nextRef = useRef<HTMLInputElement>(null)
+  const confirmRef = useRef<HTMLInputElement>(null)
+
+  /** Focus moves to the field the user has to correct. */
+  function fail(key: ErrorKey) {
+    setError(key)
+    if (key === 'invalidPassword') {
+      currentRef.current?.focus()
+    } else if (key === 'passwordTooShort') {
+      nextRef.current?.focus()
+    } else if (key === 'passwordMismatch') {
+      confirmRef.current?.focus()
+    }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     setError(null)
     if (next.length < 12) {
-      setError('passwordTooShort')
+      fail('passwordTooShort')
       return
     }
     if (next !== confirm) {
-      setError('passwordMismatch')
+      fail('passwordMismatch')
       return
     }
     setBusy(true)
@@ -37,7 +51,7 @@ export function PasswordChangePage({
     } catch (failure) {
       // The API answers with a stable English code; the UI never parses prose.
       const code = failure instanceof ApiError ? failure.code : 'ERROR'
-      setError(
+      fail(
         code === 'INVALID_PASSWORD'
           ? 'invalidPassword'
           : code === 'PASSWORD_MISMATCH'
@@ -46,7 +60,6 @@ export function PasswordChangePage({
               ? 'passwordTooShort'
               : 'genericError',
       )
-      currentRef.current?.focus()
     } finally {
       setBusy(false)
     }
@@ -70,6 +83,7 @@ export function PasswordChangePage({
       <label>
         {t('newPassword')}
         <input
+          ref={nextRef}
           type="password"
           autoComplete="new-password"
           value={next}
@@ -81,6 +95,7 @@ export function PasswordChangePage({
       <label>
         {t('confirmPassword')}
         <input
+          ref={confirmRef}
           type="password"
           autoComplete="new-password"
           value={confirm}
@@ -97,7 +112,7 @@ export function PasswordChangePage({
       <button type="submit" disabled={busy}>
         {t('savePassword')}
       </button>
-      <button type="button" className="secondary" onClick={onLogout}>
+      <button type="button" className="secondary" onClick={onLogout} disabled={busy}>
         {t('logout')}
       </button>
     </form>

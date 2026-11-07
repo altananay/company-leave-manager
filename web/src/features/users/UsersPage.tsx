@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useI18n } from '../../i18n/I18nProvider'
 import type { MessageKey } from '../../i18n/messages'
 import { ApiError, authApi, type CreatedUser, type User } from '../auth/authApi'
@@ -7,7 +7,7 @@ type ErrorKey =
   | 'emailExists'
   | 'roleNotAssignable'
   | 'validationFailed'
-  | 'protectedAccount'
+  | 'protectedAccountError'
   | 'selfAction'
   | 'genericError'
 
@@ -22,7 +22,7 @@ function errorKeyFor(failure: unknown): ErrorKey {
     case 'VALIDATION_FAILED':
       return 'validationFailed'
     case 'PROTECTED_ACCOUNT':
-      return 'protectedAccount'
+      return 'protectedAccountError'
     case 'SELF_ACTION_NOT_ALLOWED':
       return 'selfAction'
     default:
@@ -41,6 +41,8 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
   const [role, setRole] = useState('EMPLOYEE')
   const [busy, setBusy] = useState(false)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const emailRef = useRef<HTMLInputElement>(null)
+  const displayNameRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     try {
@@ -88,7 +90,14 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
       setDisplayName('')
       await load()
     } catch (failure) {
-      setError(errorKeyFor(failure))
+      const key = errorKeyFor(failure)
+      setError(key)
+      // Focus moves to the field the user has to correct.
+      if (key === 'emailExists') {
+        emailRef.current?.focus()
+      } else if (key === 'validationFailed') {
+        displayNameRef.current?.focus()
+      }
     } finally {
       setBusy(false)
     }
@@ -151,6 +160,7 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
         <label>
           {t('email')}
           <input
+            ref={emailRef}
             type="email"
             value={email}
             aria-invalid={error === 'emailExists' || error === 'validationFailed'}
@@ -161,6 +171,7 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
         <label>
           {t('displayName')}
           <input
+            ref={displayNameRef}
             value={displayName}
             aria-invalid={error === 'validationFailed'}
             onChange={(event) => setDisplayName(event.target.value)}

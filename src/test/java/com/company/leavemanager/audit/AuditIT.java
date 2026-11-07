@@ -75,12 +75,18 @@ class AuditIT extends IdentityTestSupport {
         // BR-13: who, when, and on whom — the trail is not just an event type.
         assertThat(events).allSatisfy(event -> assertThat(event.getOccurredAt()).isNotNull());
 
+        // Every event type carries its actor; the ones that act on somebody also carry the target.
+        assertThat(events).allSatisfy(event -> {
+            assertThat(event.getActorUserId()).as("actor of %s", event.getEventType()).isNotNull();
+            if (!"LOGIN_FAILED".equals(event.getEventType())) {
+                assertThat(event.getTargetUserId()).as("target of %s", event.getEventType()).isNotNull();
+            }
+        });
+
         AuditEvent createdEvent = events.stream()
                 .filter(event -> "USER_CREATED".equals(event.getEventType()))
                 .findFirst()
                 .orElseThrow();
-        assertThat(createdEvent.getActorUserId()).isNotNull();
-        assertThat(createdEvent.getTargetUserId()).isNotNull();
         assertThat(createdEvent.getTargetUserId()).isNotEqualTo(createdEvent.getActorUserId());
 
         AuditEvent loginEvent = events.stream()

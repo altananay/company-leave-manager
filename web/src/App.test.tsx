@@ -202,12 +202,18 @@ describe('authentication', () => {
     ).toBeInTheDocument()
 
     // A new attempt on the login screen shows its own result, not both messages.
+    const login = vi.fn(() =>
+      Promise.resolve(json(401, { status: 401, code: 'NOT_AUTHENTICATED' })),
+    )
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
         const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
         if (url.includes('/api/auth/login')) {
-          return Promise.resolve(json(401, { status: 401, code: 'NOT_AUTHENTICATED' }))
+          return login()
         }
         return Promise.resolve(json(401, null))
       }),
@@ -219,6 +225,8 @@ describe('authentication', () => {
 
     expect(await screen.findByText('E-posta veya parola hatalı.')).toBeInTheDocument()
     expect(screen.queryByText('Oturum sona erdi. Lütfen yeniden giriş yapın.')).toBeNull()
+    // The message came from the login answer, not from a failed CSRF bootstrap.
+    expect(login).toHaveBeenCalledTimes(1)
   })
 
   it('shouldShowForbiddenForNonHrUsers', async () => {
@@ -265,7 +273,16 @@ describe('authentication', () => {
 })
 
 describe('users screen', () => {
+  const CEO_ROW = {
+    id: 'u-ceo',
+    email: 'ceo@acme.test',
+    displayName: 'CEO',
+    role: 'CEO',
+    mustChangePassword: false,
+    active: true,
+  }
   const users = [
+    CEO_ROW,
     { ...HR, active: true },
     { ...EMPLOYEE, active: true },
     { ...EMPLOYEE, id: 'u-emp-2', email: 'emp2@acme.test', displayName: 'Second', active: true },
@@ -281,9 +298,47 @@ describe('users screen', () => {
     await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
     await screen.findByRole('heading', { name: 'Kullanıcılar' })
 
-    // The server refuses these rows (PROTECTED_ACCOUNT); the screen must not offer the buttons.
-    expect(screen.getByText('Ortam değişkenleriyle yönetilir')).toBeInTheDocument()
+    // The server refuses these rows (PROTECTED_ACCOUNT); the screen must not offer any action:
+    // two seeded rows (CEO + HR) show the note, the two employees keep their buttons.
+    expect(screen.getAllByText('Ortam değişkenleriyle yönetilir')).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: 'Pasife al' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'Parola sıfırla' })).toHaveLength(2)
+  })
+
+  it('shouldShowTheServerCodeAsItsOwnMessage', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(json(200, HR))
+        }
+        if (url.includes('/api/health')) {
+          return Promise.resolve(json(200, { status: 'UP' }))
+        }
+        if (url.includes('/reset-password')) {
+          return Promise.resolve(json(403, { status: 403, code: 'PROTECTED_ACCOUNT' }))
+        }
+        if (url.includes('/api/users')) {
+          return Promise.resolve(json(200, users))
+        }
+        return Promise.resolve(json(404, null))
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+
+    await user.click(screen.getAllByRole('button', { name: 'Parola sıfırla' })[0])
+
+    expect(
+      await screen.findByText('Bu hesap ortam değişkenleriyle yönetilir; buradan değiştirilemez.'),
+    ).toBeInTheDocument()
   })
 
   it('shouldAskForConfirmationBeforeDeactivating', async () => {

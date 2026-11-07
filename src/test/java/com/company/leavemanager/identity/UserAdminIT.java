@@ -1,6 +1,11 @@
 package com.company.leavemanager.identity;
 
+import com.company.leavemanager.identity.internal.Role;
+import com.company.leavemanager.identity.internal.User;
+import com.company.leavemanager.identity.internal.UserRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.net.http.HttpResponse;
 
@@ -8,6 +13,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /** AC-4, AC-5 and AC-6 of spec 0002: HR user administration and its restrictions. */
 class UserAdminIT extends IdentityTestSupport {
+
+    @Autowired
+    UserRepository users;
+
+    @Autowired
+    PasswordEncoder encoder;
 
     @Test
     void shouldReturnTheTemporaryPasswordOnlyAtCreation() throws Exception {
@@ -160,6 +171,28 @@ class UserAdminIT extends IdentityTestSupport {
         assertThat(deactivate.body()).contains("SELF_ACTION_NOT_ALLOWED");
         assertThat(reset.statusCode()).isEqualTo(403);
         assertThat(reset.body()).contains("SELF_ACTION_NOT_ALLOWED");
+    }
+
+    @Test
+    void shouldProtectASeededHrAccountFromAnotherHr() throws Exception {
+        // The only HR is the actor, so the self-action check would fire first; a second HR makes the
+        // "seeded role" rule reachable (roles come from the environment, never from this API).
+        String otherHrEmail = "hr2-" + System.nanoTime() + "@acme.test";
+        User otherHr = seededRoleAccount(users, encoder, otherHrEmail, Role.HR, HR_PASSWORD);
+
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> deactivate =
+                session.post("/api/users/" + otherHr.getId() + "/deactivate", "{}");
+        HttpResponse<String> reset =
+                session.post("/api/users/" + otherHr.getId() + "/reset-password", "{}");
+
+        assertThat(deactivate.statusCode()).isEqualTo(403);
+        assertThat(deactivate.body()).contains("PROTECTED_ACCOUNT");
+        assertThat(reset.statusCode()).isEqualTo(403);
+        assertThat(reset.body()).contains("PROTECTED_ACCOUNT");
+
+        // The refusal left the account untouched: it still signs in with its password.
+        assertThat(new Session().login(otherHrEmail, HR_PASSWORD).statusCode()).isEqualTo(200);
     }
 
     @Test

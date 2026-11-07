@@ -1,6 +1,10 @@
 package com.company.leavemanager.identity;
 
+import com.company.leavemanager.identity.internal.Role;
+import com.company.leavemanager.identity.internal.UserRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.net.http.HttpResponse;
 
@@ -8,6 +12,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /** AC-6 and AC-7 of spec 0002: default deny, 401 vs 403, and the public health endpoint. */
 class AuthorizationIT extends IdentityTestSupport {
+
+    @Autowired
+    UserRepository users;
+
+    @Autowired
+    PasswordEncoder encoder;
 
     @Test
     void shouldReturn401WithoutSession() throws Exception {
@@ -70,10 +80,29 @@ class AuthorizationIT extends IdentityTestSupport {
 
     @Test
     void shouldLetCeoChangeItsOwnPassword() throws Exception {
+        // A second CEO keeps the seeded account's password stable for the other tests; the role rule
+        // is the same, and the change is exercised positively end to end.
+        String email = "ceo2-" + System.nanoTime() + "@acme.test";
+        seededRoleAccount(users, encoder, email, Role.CEO, CEO_PASSWORD);
+
+        Session ceo = new Session();
+        assertThat(ceo.login(email, CEO_PASSWORD).statusCode()).isEqualTo(200);
+
+        HttpResponse<String> changed = ceo.post("/api/auth/password",
+                "{\"currentPassword\":\"" + CEO_PASSWORD + "\","
+                        + "\"newPassword\":\"ceo-new-password-123\",\"confirmPassword\":\"ceo-new-password-123\"}");
+
+        assertThat(changed.statusCode()).isEqualTo(204);
+        // Self-service really works: the new password signs in, the old one does not.
+        assertThat(new Session().login(email, "ceo-new-password-123").statusCode()).isEqualTo(200);
+        assertThat(new Session().login(email, CEO_PASSWORD).statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void shouldAnswer400ForAWrongCurrentPasswordAsCeo() throws Exception {
         assertThat(session.login(CEO_EMAIL, CEO_PASSWORD).statusCode()).isEqualTo(200);
 
-        // Self-service is not a business write: the endpoint is reachable, the wrong current
-        // password is a validation error (400), not a refusal (403).
+        // Not a 403: the endpoint is open to the CEO, the credential is simply wrong.
         HttpResponse<String> response = session.post("/api/auth/password",
                 "{\"currentPassword\":\"not-the-current-one\","
                         + "\"newPassword\":\"ceo-new-password-123\",\"confirmPassword\":\"ceo-new-password-123\"}");
