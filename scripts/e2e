@@ -11,6 +11,11 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
 COMPOSE_PROJECT=leave-manager-e2e
+# One set of credentials for both sides: compose would otherwise read .env while the app reads the
+# environment, and a developer's .env edit would break this run.
+DB_NAME="${DB_NAME:-leave_manager}"
+DB_USER="${DB_USER:-leave}"
+DB_PASSWORD="${DB_PASSWORD:-leave}"
 # A dedicated port: 8080-8082 are taken by unrelated local apps on a developer machine.
 APP_PORT="${PORT:-8083}"
 LOG="$ROOT/target/e2e-app.log"
@@ -33,14 +38,15 @@ trap cleanup EXIT INT TERM
 
 # Known state: a run killed halfway must not leak its volume or containers into this one.
 docker compose -p "$COMPOSE_PROJECT" down -v --remove-orphans >/dev/null 2>&1 || true
-DB_HOST_PORT=0 docker compose -p "$COMPOSE_PROJECT" up -d --wait db
+DB_NAME="$DB_NAME" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" DB_HOST_PORT=0 \
+  docker compose -p "$COMPOSE_PROJECT" up -d --wait db
 
 # Discover the random host port compose assigned (a fixed port can be taken by another project).
 DB_PORT=$(docker compose -p "$COMPOSE_PROJECT" port db 5432 | head -n 1 | sed 's/.*://')
 [ -n "$DB_PORT" ] || { echo "e2e: could not discover the database port" >&2; exit 1; }
 
-DB_URL="jdbc:postgresql://localhost:$DB_PORT/leave_manager" \
-DB_USER=leave DB_PASSWORD=leave PORT="$APP_PORT" \
+DB_URL="jdbc:postgresql://localhost:$DB_PORT/$DB_NAME" \
+DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" PORT="$APP_PORT" \
   java -jar "$JAR" >"$LOG" 2>&1 &
 APP_PID=$!
 

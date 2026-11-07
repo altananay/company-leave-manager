@@ -12,7 +12,7 @@
 |---|---|---|
 | Unit | **JUnit 5 + Mockito** | `src/test/java/.../<module>/**Test.java` |
 | Architecture | **ArchUnit** (`ModuleBoundariesTest`) | `src/test/java/.../architecture/` |
-| Integration | **Spring Boot Test (real HTTP via JDK `HttpClient`) + Testcontainers (PostgreSQL 18)** | `src/test/java/.../**IT.java` |
+| Integration | **Testcontainers (PostgreSQL 18)** — a Spring Boot context with real HTTP via JDK `HttpClient`, or a plain `Flyway` against the container | `src/test/java/.../**IT.java` |
 | Component (UI) | **Vitest + Testing Library** (global `fetch` stubbed) | `web/src/**/*.test.tsx` |
 | E2E | **Playwright 1.65** (Chromium), lifecycle owned by `scripts/e2e` | `web/e2e/*.spec.ts` |
 
@@ -206,7 +206,7 @@ tool's setting (Playwright `reducedMotion: 'reduce'`) and the app's own switch f
 (a `prefers-reduced-motion` stylesheet and a test-build flag that disables transitions).
 
 This project's determinism settings: the backend has no wall-clock logic yet — when domain dates
-arrive they read an injected `Clock` (Europe/Istanbul, no `LocalDate.now()` outside it); the
-Testcontainers database starts empty and is migrated by Flyway's fixed baseline; the SPA's locale
-is pinned to `tr-TR`; Playwright runs `--workers=1`, headless, `reducedMotion: 'reduce'`, with a
-fixed viewport and locale.
+arrive they read an injected `Clock` (Europe/Istanbul, no `LocalDate.now()` outside it); every
+Testcontainers database starts empty and is migrated by Flyway's `V1`; the SPA's locale is pinned
+to `tr-TR`; Playwright runs `--workers=1`, headless, `reducedMotion: 'reduce'`, with a fixed
+viewport and locale.

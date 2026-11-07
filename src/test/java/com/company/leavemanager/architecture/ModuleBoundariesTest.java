@@ -12,10 +12,14 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
 /**
- * The four forbidden dependencies of {@code docs/architecture.md}, enforced as tests.
+ * The forbidden dependencies of {@code docs/architecture.md}, enforced as tests.
  *
- * <p>The module packages do not exist yet (the walking skeleton has no domain code), so every rule
- * allows an empty match today and starts biting the moment a module reaches into another one.
+ * <p>Rules 1, 2 and 4 are covered here. Rule 3 (JPA entities never leave their module) has no
+ * entity to check yet — the skeleton uses JDBC — and is enforced when JPA arrives
+ * ({@code specs/backlog.md} B-3).
+ *
+ * <p>The module packages do not exist yet, so every rule allows an empty match today and starts
+ * biting the moment a module reaches into another one.
  */
 class ModuleBoundariesTest {
 

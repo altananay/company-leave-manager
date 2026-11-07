@@ -13,11 +13,15 @@ Java 25 + Spring Boot 4.1.2 API, PostgreSQL 18 ve React 19 + Vite 8 SPA (tek ori
 ## Hızlı başlangıç
 
 ```bash
-cp .env.example .env            # değerleri gerekiyorsa düzenle
+cp .env.example .env            # Docker Compose bu dosyayı okur (uygulama okumaz — aşağıya bak)
 docker compose up -d db         # PostgreSQL 18 (host portu: .env'deki DB_HOST_PORT)
 ./mvnw spring-boot:run          # API: http://localhost:8080
 npm --prefix web run dev        # SPA: http://localhost:5173 (/api → :8080 proxy)
 ```
+
+> Uygulama `.env` dosyasını okumaz; veritabanı ayarları **ortam değişkeni** olarak verilir:
+> `DB_URL`, `DB_USER`, `DB_PASSWORD`. `.env`deki değerleri değiştirdiysen aynılarını bu
+> değişkenlerle de ver (ör. Git Bash: `DB_URL=... DB_USER=... DB_PASSWORD=... ./mvnw spring-boot:run`).
 
 Sağlık kontrolü: `curl http://localhost:8080/api/health` → `{"status":"UP"}`
 
