@@ -62,7 +62,8 @@ public class AuthController {
                     .body(ApiExceptionHandler.problem(HttpStatus.UNAUTHORIZED, "NOT_AUTHENTICATED"));
         }
 
-        AppUserPrincipal principal = result.principal();
+        // The session keeps a credential-free principal: the hash never reaches spring_session.
+        AppUserPrincipal principal = result.principal().withoutCredentials();
         Authentication authentication =
                 new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
         SecurityContext context = SecurityContextHolder.createEmptyContext();

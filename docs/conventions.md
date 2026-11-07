@@ -46,13 +46,15 @@ Upgrades keep `scripts/check` green; a major upgrade that changes behavior is it
 
 ## Error handling
 
-- Every error is **RFC 9457 Problem Details**: `type`, `title`, `status`, `instance`, plus `code`
-  and, for validation, `errors[]` (field → message). A 5xx also carries `requestId`.
-- One `@RestControllerAdvice` produces all error responses; no controller builds its own error body.
+- Every error is **RFC 9457 Problem Details**: `type`, `title`, `status`, plus `code`
+  and, for validation, `errors[]` (field → message). A 5xx also carries `requestId`. `instance` is
+  left to the framework (it fills it in when it can).
+- One `@RestControllerAdvice` produces the error shape: `ApiExceptionHandler.problem(...)` is the
+  only place a body is built, and controllers return its result — they never format JSON themselves.
 - Business codes: `NOT_AUTHENTICATED`, `NOT_AUTHORIZED`, `CSRF_INVALID`, `SESSION_EXPIRED`,
   `PASSWORD_CHANGE_REQUIRED`, `ACCOUNT_LOCKED`, `INVALID_PASSWORD`, `PASSWORD_MISMATCH`,
   `WEAK_PASSWORD`, `VALIDATION_FAILED`, `INVALID_REQUEST`, `INVALID_PARAMETER`, `INVALID_ROLE`,
-  `ROLE_NOT_ASSIGNABLE`, `EMAIL_EXISTS`, `SELF_ACTION_NOT_ALLOWED`, `NOT_FOUND`,
+  `ROLE_NOT_ASSIGNABLE`, `PROTECTED_ACCOUNT`, `EMAIL_EXISTS`, `SELF_ACTION_NOT_ALLOWED`, `NOT_FOUND`,
   `METHOD_NOT_ALLOWED`, `UNSUPPORTED_MEDIA_TYPE`, `CONFLICT`, `INTERNAL_ERROR`, and the leave
   codes `LEAVE_BALANCE_INSUFFICIENT`, `LEAVE_OVERLAP`, `LEAVE_PAST_DATE`.
 - 5xx never leaks internals or stack traces; the response carries `requestId` and the server logs

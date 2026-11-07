@@ -78,6 +78,10 @@ class UserAdminIT extends IdentityTestSupport {
                         + "\"newPassword\":\"brand-new-pass-123\",\"confirmPassword\":\"brand-new-pass-123\"}");
         assertThat(changed.statusCode()).isEqualTo(204);
 
+        // The new password really was stored: it logs in, the old one does not.
+        assertThat(new Session().login(email, "brand-new-pass-123").statusCode()).isEqualTo(200);
+        assertThat(new Session().login(email, temporaryPassword).statusCode()).isEqualTo(401);
+
         // The password gate is gone; what remains is the ordinary authorization refusal.
         HttpResponse<String> after = newcomer.get("/api/users");
         assertThat(after.statusCode()).isEqualTo(403);
@@ -149,16 +153,47 @@ class UserAdminIT extends IdentityTestSupport {
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
         String myId = extract(session.get("/api/auth/me").body(), "id");
 
-        assertThat(session.post("/api/users/" + myId + "/deactivate", "{}").statusCode()).isEqualTo(403);
-        assertThat(session.post("/api/users/" + myId + "/reset-password", "{}").statusCode()).isEqualTo(403);
+        HttpResponse<String> deactivate = session.post("/api/users/" + myId + "/deactivate", "{}");
+        HttpResponse<String> reset = session.post("/api/users/" + myId + "/reset-password", "{}");
+
+        assertThat(deactivate.statusCode()).isEqualTo(403);
+        assertThat(deactivate.body()).contains("SELF_ACTION_NOT_ALLOWED");
+        assertThat(reset.statusCode()).isEqualTo(403);
+        assertThat(reset.body()).contains("SELF_ACTION_NOT_ALLOWED");
+    }
+
+    @Test
+    void shouldNotLetHrTouchTheSeededAccounts() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String ceoId = extract(session.get("/api/users").body(), "id");
+        // The CEO is not the first row; find the id by e-mail through the API.
+        String ceoRow = session.get("/api/users").body();
+        int at = ceoRow.indexOf(CEO_EMAIL);
+        assertThat(at).isGreaterThan(-1);
+        String before = ceoRow.substring(0, at);
+        ceoId = before.substring(before.lastIndexOf("\"id\":\"") + 6, before.lastIndexOf("\"id\":\"") + 42);
+
+        HttpResponse<String> deactivate = session.post("/api/users/" + ceoId + "/deactivate", "{}");
+        HttpResponse<String> reset = session.post("/api/users/" + ceoId + "/reset-password", "{}");
+
+        // The seeded HR/CEO accounts are managed by the environment, not by the admin screen (R-8).
+        assertThat(deactivate.statusCode()).isEqualTo(403);
+        assertThat(deactivate.body()).contains("PROTECTED_ACCOUNT");
+        assertThat(reset.statusCode()).isEqualTo(403);
+        assertThat(reset.body()).contains("PROTECTED_ACCOUNT");
     }
 
     @Test
     void shouldRejectHrAndCeoRoleAssignment() throws Exception {
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
 
-        assertThat(session.post("/api/users", body(unique("hr2"), "HR Two", "HR")).statusCode()).isEqualTo(403);
-        assertThat(session.post("/api/users", body(unique("ceo2"), "CEO Two", "CEO")).statusCode()).isEqualTo(403);
+        HttpResponse<String> hr = session.post("/api/users", body(unique("hr2"), "HR Two", "HR"));
+        HttpResponse<String> ceo = session.post("/api/users", body(unique("ceo2"), "CEO Two", "CEO"));
+
+        assertThat(hr.statusCode()).isEqualTo(403);
+        assertThat(hr.body()).contains("ROLE_NOT_ASSIGNABLE");
+        assertThat(ceo.statusCode()).isEqualTo(403);
+        assertThat(ceo.body()).contains("ROLE_NOT_ASSIGNABLE");
     }
 
     @Test

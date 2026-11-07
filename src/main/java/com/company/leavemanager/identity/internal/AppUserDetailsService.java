@@ -16,8 +16,9 @@ public class AppUserDetailsService implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String username) {
+        // The message never carries the address: an exception is not a place for personal data.
         User user = users.findByEmailIgnoreCase(username)
-                .orElseThrow(() -> new UsernameNotFoundException("no user: " + username));
+                .orElseThrow(() -> new UsernameNotFoundException("user not found"));
         return new AppUserPrincipal(
                 user.getId(),
                 user.getEmail(),

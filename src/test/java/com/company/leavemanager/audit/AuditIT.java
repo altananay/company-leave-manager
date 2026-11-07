@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.net.http.HttpResponse;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,6 +20,7 @@ class AuditIT extends IdentityTestSupport {
 
     @Test
     void shouldRecordEveryIdentityEventWithoutPasswords() throws Exception {
+        Instant start = Instant.now();
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
         String email = "audit-" + System.nanoTime() + "@acme.test";
 
@@ -43,7 +45,10 @@ class AuditIT extends IdentityTestSupport {
 
         assertThat(session.post("/api/auth/logout", "{}").statusCode()).isEqualTo(204);
 
-        List<AuditEvent> events = auditRepository.findAllByOrderByOccurredAtDesc();
+        // Only the rows this test produced: another test's trail must not make it pass.
+        List<AuditEvent> events = auditRepository.findAllByOrderByOccurredAtDesc().stream()
+                .filter(event -> event.getOccurredAt() != null && !event.getOccurredAt().isBefore(start))
+                .toList();
 
         assertThat(events).extracting(AuditEvent::getEventType)
                 .contains("LOGIN_SUCCEEDED", "LOGIN_FAILED", "ACCOUNT_LOCKED", "LOGOUT",

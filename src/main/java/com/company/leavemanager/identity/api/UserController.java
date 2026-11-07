@@ -63,6 +63,8 @@ public class UserController {
         return switch (result.outcome()) {
             case SELF_ACTION -> ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(ApiExceptionHandler.problem(HttpStatus.FORBIDDEN, "SELF_ACTION_NOT_ALLOWED"));
+            case PROTECTED_ACCOUNT -> ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ApiExceptionHandler.problem(HttpStatus.FORBIDDEN, "PROTECTED_ACCOUNT"));
             case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ApiExceptionHandler.problem(HttpStatus.NOT_FOUND, "NOT_FOUND"));
             case DONE -> result.response() == null

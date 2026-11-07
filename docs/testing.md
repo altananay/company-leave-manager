@@ -19,7 +19,8 @@
 - Unit tests never touch the database; integration tests use a fresh Testcontainers database per
   run (resource hygiene, rule 5).
 - Component tests stub the global `fetch`; the SPA's API client (`web/src/features/auth/authApi.ts`)
-  turns every 401 into one "session ended" signal the app handles in a single place.
+  turns a 401 into one "session ended" signal the app handles in a single place — except for the
+  login request, whose 401 is an ordinary wrong-password answer.
 - Determinism: time-dependent logic reads the injected `Clock` bean (lockout, session age, audit
   timestamps) — never `LocalDate.now()`/`Instant.now()` directly; the SPA's locale is fixed in test
   setup, seeds are

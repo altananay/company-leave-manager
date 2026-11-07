@@ -110,13 +110,14 @@ public class AuthService {
 
     /** Re-reads the user so the caller can refresh the principal after a password change. */
     public AppUserPrincipal refresh(AppUserPrincipal principal) {
+        // Credential-free on purpose: this principal is written back into the session.
         return users.findById(principal.id())
                 .map(user -> new AppUserPrincipal(
                         user.getId(),
                         user.getEmail(),
                         user.getDisplayName(),
                         user.getRole(),
-                        user.getPasswordHash(),
+                        null,
                         user.isMustChangePassword(),
                         user.isActive()))
                 .orElseThrow();

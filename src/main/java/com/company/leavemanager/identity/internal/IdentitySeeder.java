@@ -68,7 +68,7 @@ public class IdentitySeeder implements ApplicationRunner {
         }
         User user = User.create(email, displayName, role, encoder.encode(password), clock.instant());
         // Seeded accounts are configured deliberately by the operator: no forced password change.
-        user.changePassword(encoder.encode(password), false, clock.instant());
+        user.changePassword(user.getPasswordHash(), false, clock.instant());
         users.save(user);
         // Personal data stays out of the logs (docs/conventions.md, Data rules).
         log.info("Seeded {} account with id {}", role, user.getId());

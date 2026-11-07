@@ -102,4 +102,31 @@ class LockoutServiceTest {
         clock.advance(Duration.ofMinutes(1));
         assertThat(service.isLocked(user)).isFalse();
     }
+
+    @Test
+    void shouldStartAFreshCountAfterTheLockoutExpires() {
+        UserRepository repository = mock(UserRepository.class);
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        IdentityProperties properties = new IdentityProperties();
+        properties.setMaxFailedAttempts(5);
+        properties.setLockoutDuration(Duration.ofMinutes(15));
+
+        MovableClock clock = new MovableClock(Instant.parse("2026-11-07T10:00:00Z"));
+        LockoutService service = new LockoutService(repository, properties, clock);
+        User user = User.create("a@b.test", "A", Role.EMPLOYEE, "hash", clock.instant());
+
+        for (int attempt = 0; attempt < 5; attempt++) {
+            service.registerFailure(user);
+        }
+        assertThat(service.isLocked(user)).isTrue();
+
+        clock.advance(Duration.ofMinutes(16));
+        assertThat(service.isLocked(user)).isFalse();
+
+        // One wrong password after the lockout must not lock the account again for 15 minutes.
+        service.registerFailure(user);
+        assertThat(service.isLocked(user)).isFalse();
+        assertThat(user.getFailedAttempts()).isEqualTo(1);
+    }
 }

@@ -8,7 +8,13 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
-/** The authenticated principal; also the shape the API returns for the current user. */
+/**
+ * The authenticated principal; also the shape the API returns for the current user.
+ *
+ * <p>The {@code passwordHash} is only present while the authentication manager checks a login.
+ * The principal stored in the session is built with {@code null}: Spring Session serializes it into
+ * {@code spring_session_attributes}, and a password hash has no business sitting there for hours.
+ */
 public record AppUserPrincipal(
         UUID id,
         String email,
@@ -17,6 +23,11 @@ public record AppUserPrincipal(
         String passwordHash,
         boolean mustChangePassword,
         boolean active) implements UserDetails {
+
+    /** The same principal without the credential, safe to keep in the session. */
+    public AppUserPrincipal withoutCredentials() {
+        return new AppUserPrincipal(id, email, displayName, role, null, mustChangePassword, active);
+    }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
@@ -53,7 +64,7 @@ public record AppUserPrincipal(
         return active;
     }
 
-    /** The hash never reaches a log line or a session dump (R-10: no password, not even its hash). */
+    /** Never print the credential (R-10: no password, not even its hash). */
     @Override
     public String toString() {
         return "AppUserPrincipal[id=" + id + ", email=" + email + ", role=" + role + "]";

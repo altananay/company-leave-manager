@@ -21,9 +21,6 @@ import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.sli
 /**
  * The forbidden dependencies of {@code docs/architecture.md}, enforced as tests: rules 1, 2, 3
  * (JPA entities stay inside their module) and 4.
- *
- * <p>The module packages do not exist yet, so every rule allows an empty match today and starts
- * biting the moment a module reaches into another one.
  */
 class ModuleBoundariesTest {
 

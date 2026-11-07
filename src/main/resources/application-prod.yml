@@ -1,0 +1,7 @@
+# Production profile: run with SPRING_PROFILES_ACTIVE=prod (or --spring.profiles.active=prod).
+# The session cookie is Secure here: production sits behind TLS (spec 0002, Constraints).
+server:
+  servlet:
+    session:
+      cookie:
+        secure: ${SESSION_COOKIE_SECURE:true}

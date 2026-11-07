@@ -38,10 +38,6 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
   onUnauthorized = handler
 }
 
-export function resetCsrfToken() {
-  csrfToken = null
-}
-
 async function csrf(): Promise<string> {
   if (csrfToken) {
     return csrfToken

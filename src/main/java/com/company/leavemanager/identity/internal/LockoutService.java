@@ -18,8 +18,17 @@ public class LockoutService {
         this.clock = clock;
     }
 
+    /**
+     * An expired lock clears the counter first: otherwise one wrong password after the lockout
+     * would immediately lock the account again for another full period.
+     */
     public boolean isLocked(User user) {
-        return user.isLocked(clock.instant());
+        Instant now = clock.instant();
+        if (!user.isLocked(now) && user.getLockedUntil() != null) {
+            user.resetFailures(now);
+            users.save(user);
+        }
+        return user.isLocked(now);
     }
 
     /** Counts one failed attempt and locks the account when the limit is reached. */

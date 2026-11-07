@@ -28,10 +28,14 @@
 
 - **AuthN (V1):** corporate e-mail + password, BCrypt hashing. No self-service sign-up; İK creates
   users and resets passwords. **Lockout:** five failed attempts lock the account for 15 minutes
-  (counter and lock time live in the database, so a restart does not reset them).
+  (counter and lock time live in the database, so a restart does not reset them; an expired lock
+  clears the counter, so the next failure starts a fresh count). Because the lockout is per account,
+  a targeted attack can keep one known account locked: the reverse proxy must add per-IP rate
+  limiting, which this application does not do itself.
 - **Session:** server-side session stored in PostgreSQL (Spring Session JDBC) so a restart does not
-  log 1,000 people out; cookie `HttpOnly`, `SameSite=Lax`, and `Secure` in production
-  (`SESSION_COOKIE_SECURE=true` — the local profile runs over plain HTTP and defaults to `false`);
+  log 1,000 people out; the stored principal carries **no password hash**; cookie `HttpOnly`,
+  `SameSite=Lax`, and `Secure` in production (the `prod` profile defaults it to `true`;
+  `SESSION_COOKIE_SECURE` can override).
   **30 minutes idle / 8 hours absolute**; the session id changes on login (fixation protection).
   CSRF token required for every state-changing request — the SPA reads it from
   `GET /api/auth/csrf` and sends `X-CSRF-TOKEN`. A state-changing request without a session is

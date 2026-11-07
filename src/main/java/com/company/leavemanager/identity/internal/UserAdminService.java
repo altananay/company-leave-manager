@@ -22,7 +22,7 @@ public class UserAdminService {
     public record CreateResult(CreateOutcome outcome, CreateUserResponse response) {
     }
 
-    public enum AdminOutcome { DONE, SELF_ACTION, NOT_FOUND }
+    public enum AdminOutcome { DONE, SELF_ACTION, PROTECTED_ACCOUNT, NOT_FOUND }
 
     public record AdminResult(AdminOutcome outcome, CreateUserResponse response) {
     }
@@ -81,6 +81,9 @@ public class UserAdminService {
             return new AdminResult(AdminOutcome.NOT_FOUND, null);
         }
         User user = found.get();
+        if (isProtected(user)) {
+            return new AdminResult(AdminOutcome.PROTECTED_ACCOUNT, null);
+        }
         user.deactivate(clock.instant());
         users.save(user);
         sessions.endAllFor(user.getEmail());
@@ -98,6 +101,9 @@ public class UserAdminService {
             return new AdminResult(AdminOutcome.NOT_FOUND, null);
         }
         User user = found.get();
+        if (isProtected(user)) {
+            return new AdminResult(AdminOutcome.PROTECTED_ACCOUNT, null);
+        }
         String temporaryPassword = TemporaryPassword.generate();
         user.changePassword(encoder.encode(temporaryPassword), true, clock.instant());
         users.save(user);
@@ -105,5 +111,13 @@ public class UserAdminService {
         audit.passwordReset(actorId, user.getId());
         return new AdminResult(AdminOutcome.DONE,
                 new CreateUserResponse(UserResponse.of(user), temporaryPassword));
+    }
+
+    /**
+     * HR and CEO accounts come from the environment seed (spec 0002, R-8): the admin screen must not
+     * be able to take them over or lock them out.
+     */
+    private static boolean isProtected(User user) {
+        return user.getRole() == Role.HR || user.getRole() == Role.CEO;
     }
 }

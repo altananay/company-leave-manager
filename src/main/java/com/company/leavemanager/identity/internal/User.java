@@ -129,4 +129,8 @@ public class User {
     public Instant getLockedUntil() {
         return lockedUntil;
     }
+
+    public int getFailedAttempts() {
+        return failedAttempts;
+    }
 }

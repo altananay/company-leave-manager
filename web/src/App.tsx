@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { LoginPage } from './features/auth/LoginPage'
 import { PasswordChangePage } from './features/auth/PasswordChangePage'
-import { authApi, setUnauthorizedHandler, type Me } from './features/auth/authApi'
+import { authApi, setUnauthorizedHandler, Unauthorized, type Me } from './features/auth/authApi'
 import { HealthStatus } from './features/health/HealthStatus'
 import { UsersPage } from './features/users/UsersPage'
 import { useI18n } from './i18n/I18nProvider'
@@ -85,15 +85,20 @@ function App() {
   }
 
   async function handleLogout() {
-    await authApi.logout().catch(() => undefined)
-    rememberSession(null)
+    // If the session was already gone, the 401 handler has just explained that: keep its notice.
+    const lost = await authApi
+      .logout()
+      .then(() => false)
+      .catch((failure) => failure instanceof Unauthorized)
+    rememberSession(lost ? SESSION_ENDED : null)
     setMe(null)
-    setSessionExpired(false)
+    setSessionExpired(lost)
     setView('login')
   }
 
   /** A new attempt on the login screen replaces the "session ended" notice with its own result. */
   function handleLoginAttempt() {
+    rememberSession(null)
     setSessionExpired(false)
   }
 
