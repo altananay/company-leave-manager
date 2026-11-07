@@ -89,9 +89,13 @@ describe('health status', () => {
 
     expect(await screen.findByText('Bağlantı hatası')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Yeniden dene' }))
+    // AC-8 covers the error state too: the language control translates the message and its retry button.
+    await user.click(screen.getByRole('button', { name: 'EN' }))
+    expect(screen.getByText('Connection error')).toBeInTheDocument()
 
-    expect(await screen.findByText('Sistem çalışıyor')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+
+    expect(await screen.findByText('System is up')).toBeInTheDocument()
   })
 })
 
