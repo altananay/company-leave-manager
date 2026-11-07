@@ -79,6 +79,7 @@ function setBrowserLanguage(language: string) {
 
 beforeEach(() => {
   localStorage.clear()
+  sessionStorage.clear()
   setBrowserLanguage('tr-TR')
   document.documentElement.lang = 'tr'
 })
@@ -144,6 +145,49 @@ describe('authentication', () => {
 
     expect(await screen.findByRole('heading', { name: 'Giriş' })).toBeInTheDocument()
     expect(screen.getByText('Oturum sona erdi. Lütfen yeniden giriş yapın.')).toBeInTheDocument()
+  })
+
+  it('shouldKeepTheSessionMessageAcrossAReload', async () => {
+    // The tab had a session before the reload; the marker outlives the page.
+    sessionStorage.setItem('leave-manager.had-session', '1')
+    anonymous()
+
+    renderApp()
+
+    expect(await screen.findByRole('heading', { name: 'Giriş' })).toBeInTheDocument()
+    expect(screen.getByText('Oturum sona erdi. Lütfen yeniden giriş yapın.')).toBeInTheDocument()
+  })
+
+  it('shouldReplaceTheSessionMessageWithTheLoginError', async () => {
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/users': () => json(401, { status: 401, code: 'SESSION_EXPIRED' }),
+    })
+    const user = userEvent.setup()
+    renderApp()
+
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    expect(
+      await screen.findByText('Oturum sona erdi. Lütfen yeniden giriş yapın.'),
+    ).toBeInTheDocument()
+
+    // A new attempt on the login screen shows its own result, not both messages.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/auth/login')) {
+          return Promise.resolve(json(401, { status: 401, code: 'NOT_AUTHENTICATED' }))
+        }
+        return Promise.resolve(json(401, null))
+      }),
+    )
+
+    await user.type(screen.getByLabelText('E-posta'), HR.email)
+    await user.type(screen.getByLabelText('Parola'), 'wrong-password')
+    await user.click(screen.getByRole('button', { name: 'Giriş yap' }))
+
+    expect(await screen.findByText('E-posta veya parola hatalı.')).toBeInTheDocument()
+    expect(screen.queryByText('Oturum sona erdi. Lütfen yeniden giriş yapın.')).toBeNull()
   })
 
   it('shouldShowForbiddenForNonHrUsers', async () => {

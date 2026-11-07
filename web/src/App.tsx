@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { LoginPage } from './features/auth/LoginPage'
 import { PasswordChangePage } from './features/auth/PasswordChangePage'
 import { authApi, setUnauthorizedHandler, type Me } from './features/auth/authApi'
@@ -9,21 +9,34 @@ import type { MessageKey } from './i18n/messages'
 
 type View = 'loading' | 'login' | 'password' | 'home' | 'users'
 
+// Per-tab marker: a session existed in this tab. sessionStorage (not memory) so a reload after the
+// session ended still shows "your session ended" instead of pretending it is a first visit.
+const SESSION_MARKER = 'leave-manager.had-session'
+
+function hadSessionMarker() {
+  return sessionStorage.getItem(SESSION_MARKER) === '1'
+}
+
+function rememberSession(remember: boolean) {
+  if (remember) {
+    sessionStorage.setItem(SESSION_MARKER, '1')
+  } else {
+    sessionStorage.removeItem(SESSION_MARKER)
+  }
+}
+
 function App() {
   const { lang, setLang, t } = useI18n()
   const [view, setView] = useState<View>('loading')
   const [me, setMe] = useState<Me | null>(null)
   const [sessionExpired, setSessionExpired] = useState(false)
-  // A 401 only means "your session ended" if there was a session: an anonymous first visit and a
-  // failed login are ordinary 401s and must not show that message (spec 0002, "Hata davranışı").
-  const hadSession = useRef(false)
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
-      if (hadSession.current) {
-        setSessionExpired(true)
-      }
-      hadSession.current = false
+      // A 401 means "your session ended" only if this tab had a session: an anonymous first visit
+      // and a failed login are ordinary 401s (spec 0002, "Hata davranışı").
+      setSessionExpired(hadSessionMarker())
+      rememberSession(false)
       setMe(null)
       setView('login')
     })
@@ -38,7 +51,7 @@ function App() {
         if (cancelled) {
           return
         }
-        hadSession.current = true
+        rememberSession(true)
         setMe(current)
         setView(current.mustChangePassword ? 'password' : 'home')
       })
@@ -53,7 +66,7 @@ function App() {
   }, [])
 
   function handleLoggedIn(current: Me) {
-    hadSession.current = true
+    rememberSession(true)
     setSessionExpired(false)
     setMe(current)
     setView(current.mustChangePassword ? 'password' : 'home')
@@ -61,10 +74,15 @@ function App() {
 
   async function handleLogout() {
     await authApi.logout().catch(() => undefined)
-    hadSession.current = false
+    rememberSession(false)
     setMe(null)
     setSessionExpired(false)
     setView('login')
+  }
+
+  /** A new attempt on the login screen replaces the "session ended" notice with its own result. */
+  function handleLoginAttempt() {
+    setSessionExpired(false)
   }
 
   function handlePasswordChanged() {
@@ -89,7 +107,11 @@ function App() {
       {view === 'loading' && <p>{t('loading')}</p>}
 
       {view === 'login' && (
-        <LoginPage onLoggedIn={handleLoggedIn} sessionExpired={sessionExpired} />
+        <LoginPage
+          onLoggedIn={handleLoggedIn}
+          onAttempt={handleLoginAttempt}
+          sessionExpired={sessionExpired}
+        />
       )}
 
       {view === 'password' && (

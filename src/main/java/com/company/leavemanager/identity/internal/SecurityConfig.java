@@ -21,6 +21,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.csrf.CsrfException;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
 
@@ -94,8 +95,14 @@ public class SecurityConfig {
                                     SecurityContextHolder.getContext().getAuthentication();
                             boolean anonymous = authentication == null
                                     || authentication instanceof AnonymousAuthenticationToken;
-                            problems.write(response, anonymous ? 401 : 403,
-                                    anonymous ? "NOT_AUTHENTICATED" : "NOT_AUTHORIZED");
+                            if (anonymous) {
+                                problems.write(response, 401, "NOT_AUTHENTICATED");
+                                return;
+                            }
+                            // With a live session the refusal is a CSRF failure or a role refusal;
+                            // the client needs to tell them apart.
+                            problems.write(response, 403,
+                                    failure instanceof CsrfException ? "CSRF_INVALID" : "NOT_AUTHORIZED");
                         }))
                 // Order matters: the absolute session age is judged before the must-change gate.
                 .addFilterAfter(sessionAge, SecurityContextHolderFilter.class)

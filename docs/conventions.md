@@ -46,11 +46,15 @@ Upgrades keep `scripts/check` green; a major upgrade that changes behavior is it
 
 ## Error handling
 
-- Every error is **RFC 9457 Problem Details**: `type`, `title`, `status`, `detail`, `instance`,
-  plus `code` and, for validation, `errors[]` (field → message).
+- Every error is **RFC 9457 Problem Details**: `type`, `title`, `status`, `instance`, plus `code`
+  and, for validation, `errors[]` (field → message). A 5xx also carries `requestId`.
 - One `@RestControllerAdvice` produces all error responses; no controller builds its own error body.
-- Business codes: `LEAVE_BALANCE_INSUFFICIENT`, `LEAVE_OVERLAP`, `LEAVE_PAST_DATE`,
-  `NOT_AUTHORIZED`, `VALIDATION_FAILED`, `NOT_FOUND`, `CONFLICT`.
+- Business codes: `NOT_AUTHENTICATED`, `NOT_AUTHORIZED`, `CSRF_INVALID`, `SESSION_EXPIRED`,
+  `PASSWORD_CHANGE_REQUIRED`, `ACCOUNT_LOCKED`, `INVALID_PASSWORD`, `PASSWORD_MISMATCH`,
+  `WEAK_PASSWORD`, `VALIDATION_FAILED`, `INVALID_REQUEST`, `INVALID_PARAMETER`, `INVALID_ROLE`,
+  `ROLE_NOT_ASSIGNABLE`, `EMAIL_EXISTS`, `SELF_ACTION_NOT_ALLOWED`, `NOT_FOUND`,
+  `METHOD_NOT_ALLOWED`, `UNSUPPORTED_MEDIA_TYPE`, `CONFLICT`, `INTERNAL_ERROR`, and the leave
+  codes `LEAVE_BALANCE_INSUFFICIENT`, `LEAVE_OVERLAP`, `LEAVE_PAST_DATE`.
 - 5xx never leaks internals or stack traces; the response carries `requestId` and the server logs
   the detail against the same `requestId`. 4xx never carries a stack trace either.
 - User-facing text comes from the UI catalogue (tr/en); the API returns a stable English `code` and

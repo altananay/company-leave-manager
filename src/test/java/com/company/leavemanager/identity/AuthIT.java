@@ -80,11 +80,11 @@ class AuthIT extends IdentityTestSupport {
     void shouldRejectAStateChangingRequestWithAWrongCsrfToken() throws Exception {
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
 
-        // A session exists, so the refusal is an authorization answer, not a lost session.
+        // A session exists, so the refusal is an authorization answer with its own code.
         HttpResponse<String> response = session.postWithToken("/api/auth/logout", "{}", "not-the-token");
 
         assertThat(response.statusCode()).isEqualTo(403);
-        assertThat(response.body()).contains("NOT_AUTHORIZED");
+        assertThat(response.body()).contains("CSRF_INVALID");
     }
 
     @Test

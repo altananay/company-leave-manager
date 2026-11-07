@@ -4,9 +4,11 @@ import { ApiError, authApi, type Me } from './authApi'
 
 export function LoginPage({
   onLoggedIn,
+  onAttempt,
   sessionExpired = false,
 }: {
   onLoggedIn: (me: Me) => void
+  onAttempt?: () => void
   sessionExpired?: boolean
 }) {
   const { t } = useI18n()
@@ -25,6 +27,8 @@ export function LoginPage({
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    // A new attempt replaces any previous notice (e.g. "session ended") with its own result.
+    onAttempt?.()
     setError(null)
     setBusy(true)
     try {

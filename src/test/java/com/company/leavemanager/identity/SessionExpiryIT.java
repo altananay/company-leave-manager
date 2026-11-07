@@ -1,5 +1,6 @@
 package com.company.leavemanager.identity;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -25,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Import(SessionExpiryIT.ClockConfig.class)
 class SessionExpiryIT extends IdentityTestSupport {
 
-    private static final MutableClock CLOCK = new MutableClock(Instant.parse("2026-11-07T10:00:00Z"));
+    private static final MutableClock CLOCK = new MutableClock();
 
     @TestConfiguration
     static class ClockConfig {
@@ -34,6 +35,11 @@ class SessionExpiryIT extends IdentityTestSupport {
         Clock testClock() {
             return CLOCK;
         }
+    }
+
+    @BeforeEach
+    void resetClock() {
+        CLOCK.reset();
     }
 
     @Test
@@ -55,7 +61,12 @@ class SessionExpiryIT extends IdentityTestSupport {
 
         CLOCK.advance(Duration.ofHours(9));
 
-        // The shell and the health probe must not be blocked by the expired session.
+        // The session is really gone...
+        HttpResponse<String> expired = session.get("/api/auth/me");
+        assertThat(expired.statusCode()).isEqualTo(401);
+        assertThat(expired.body()).contains("SESSION_EXPIRED");
+
+        // ...while the shell and the health probe stay reachable, so the SPA can show the login screen.
         assertThat(session.get("/").statusCode()).isEqualTo(200);
         assertThat(session.get("/api/health").statusCode()).isEqualTo(200);
     }
@@ -63,10 +74,12 @@ class SessionExpiryIT extends IdentityTestSupport {
     /** A clock the test moves forward; the production clock is fixed. */
     static final class MutableClock extends Clock {
 
-        private Instant now;
+        private static final Instant START = Instant.parse("2026-11-07T10:00:00Z");
 
-        private MutableClock(Instant now) {
-            this.now = now;
+        private Instant now = START;
+
+        void reset() {
+            now = START;
         }
 
         void advance(Duration duration) {

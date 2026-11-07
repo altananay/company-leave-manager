@@ -16,6 +16,7 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 import java.net.URI;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 /**
  * Every error leaves the API as RFC 9457 with the project's stable English {@code code}
@@ -48,18 +49,38 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                 ? existing
                 : ProblemDetail.forStatus(status);
         enrich(problem, codeFor(status));
+        if (status.is5xxServerError()) {
+            String requestId = serverError(problem, failure);
+            return ResponseEntity.status(status).headers(headers).body(problemWithId(problem, requestId));
+        }
         return ResponseEntity.status(status).headers(headers).body(problem);
     }
 
-    /** Never leak an internal message: the client gets a code, the log keeps the detail. */
+    /** Never leak an internal message: the client gets a code and a request id, the log the detail. */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> unexpected(Exception failure) {
-        log.error("Unexpected error", failure);
+        ProblemDetail problem = problem(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR");
+        String requestId = serverError(problem, failure);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(problem(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR"));
+                .body(problemWithId(problem, requestId));
+    }
+
+    /** Logs a 5xx with its correlation id and returns that id (docs/conventions.md, Error handling). */
+    private static String serverError(ProblemDetail problem, Exception failure) {
+        String requestId = UUID.randomUUID().toString();
+        log.error("Server error [{}] {}", requestId, problem.getStatus(), failure);
+        return requestId;
+    }
+
+    private static ProblemDetail problemWithId(ProblemDetail problem, String requestId) {
+        problem.setProperty("requestId", requestId);
+        return problem;
     }
 
     private static String codeFor(HttpStatusCode status) {
+        if (status.is5xxServerError()) {
+            return "INTERNAL_ERROR";
+        }
         return switch (status.value()) {
             case 400 -> "INVALID_REQUEST";
             case 404 -> "NOT_FOUND";

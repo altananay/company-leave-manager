@@ -68,8 +68,10 @@ aktarma (0003), e-posta ile parola sıfırlama, MFA.
 - **Oturum:** sunucu tarafı oturum PostgreSQL'de tutulur; çerez `HttpOnly`, `SameSite=Lax`;
   üretimde `Secure`. Durum değiştiren istekler CSRF belirteci ister: SPA belirteci
   `GET /api/auth/csrf` ile alır ve `X-CSRF-TOKEN` başlığıyla gönderir.
-- **Hata davranışı:** API oturumsuz istekte **401**, yetkisiz istekte **403** döner. SPA 401'de
-  giriş ekranına yönlendirir ve "oturum sona erdi" bilgisini gösterir; 403'te 403 ekranını açar.
+- **Hata davranışı:** API oturumsuz istekte **401**, yetkisiz istekte **403** döner. SPA, **var olan
+  bir oturum** 401 ile bittiyse giriş ekranına yönlendirir ve "oturum sona erdi" bilgisini gösterir
+  (bu bilgi sekme yenilense de gösterilir); ilk ziyaret ve hatalı giriş kendi mesajını gösterir.
+  403'te 403 ekranını açar; CSRF hatası ayrı kodla (`CSRF_INVALID`) döner.
 - **Kilit:** hatalı deneme sayacı ve kilit bitişi **veritabanında** tutulur; uygulama yeniden
   başlasa da kilit sürer.
 - **Parola:** BCrypt ile saklanır; en az 12 karakter; hiçbir yerde düz metin yok.

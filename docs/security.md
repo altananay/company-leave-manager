@@ -37,9 +37,11 @@
   `GET /api/auth/csrf` and sends `X-CSRF-TOKEN`. A state-changing request without a session is
   answered with **401** (a lost session), not 403.
 - **Error contract:** every error is RFC 9457 (`type`, `title`, `status`, plus the project's stable
-  English `code`, and `errors[]` for validation). An unauthenticated request gets **401**, an
-  authenticated but unauthorized one **403**; the SPA redirects to the login screen on 401 (with an
-  "session ended" message) and shows the forbidden screen on 403.
+  English `code`, `errors[]` for validation, and `requestId` on a 5xx). An unauthenticated request
+  gets **401**, an authenticated but unauthorized one **403** (a CSRF refusal carries its own
+  `CSRF_INVALID` code). The SPA sends the user back to the login screen with an "session ended"
+  message **when a session really ended** — a first visit and a failed login keep their own message —
+  and shows the forbidden screen on 403.
 - **AuthZ:** RBAC (role) **and** data scope, enforced server-side on every request — the SPA hiding
   a button is UX, never authorization. Default deny: only the SPA shell, its assets, `/error`,
   `/api/health`, `/api/auth/login` and `/api/auth/csrf` are public; every other path is denied.
