@@ -30,15 +30,17 @@
 - The **authorization matrix**: each of the four roles against each read/write scope
   (BR-12, sensitive area *Yetkilendirme*) — a denied case is as important as an allowed one.
 - The forbidden dependencies (ArchUnit), in the same `check` run.
-- The single e2e journey: **employee requests annual leave → manager approves → balance decreases**.
+- The e2e journeys (at most two, `~3 minutes` total): the **smoke** journey — the app opens against
+  a real database and reports healthy — and the **leave** journey — employee requests annual leave
+  → manager approves → balance decreases (added by its own spec).
 
 ## Test layers
 
 1. **The cheapest test that proves the criterion.** Unit first, then component or integration
    (UI states render in component tests), and a browser end-to-end test only for what no lower
    layer can prove. A test sits at the lowest layer that fails for the right reason.
-2. **e2e is optional, and budgeted.** This project has exactly **one** e2e journey (above), a budget
-   of **~2 minutes**, one worker, headless. Over budget, no e2e test is added: the next test goes a
+2. **e2e is optional, and budgeted.** This project has at most **two** e2e journeys (above), a budget
+   of **~3 minutes**, one worker, headless. Over budget, no e2e test is added: the next test goes a
    layer down, or an existing one moves down.
 3. **What exists runs in check.** Every test, e2e included, is a check step — slow suites
    full-only (Two speeds). A suite outside check costs its upkeep and proves nothing: it is never

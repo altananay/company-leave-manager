@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: leave-manager
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/leave_manager}
+    username: ${DB_USER:leave}
+    password: ${DB_PASSWORD:leave}
+    hikari:
+      # The health check must answer within 2 seconds even when the database is unreachable.
+      connection-timeout: 2000
+      validation-timeout: 1000
+  flyway:
+    enabled: true
+
+server:
+  port: ${PORT:8080}
+
+management:
+  endpoints:
+    web:
+      # The contract is GET /api/health (docs/architecture.md, single origin).
+      base-path: /api
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

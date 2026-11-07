@@ -11,6 +11,9 @@
   `Status:` values (Draft / Approved / In progress / Shipped), `Approved by / on:`, `Source:`.
 - Code identifiers, branch names, commit messages: **English** — commit subject and body are both
   English (Conventional Commits).
+- UI language: **Turkish + English**, user-selectable (TR/EN control); the default comes from the
+  browser language (tr → Turkish, en → English, anything else → Turkish). All user-facing text
+  lives in the SPA catalogue (`web/src/i18n/messages.ts`) — never inline in a component.
 - Agent messages (handoff summaries, refusals, `Next:` lines): chat language; command names, file
   paths and protocol fields verbatim.
 
@@ -25,7 +28,7 @@
 | Node | **24 LTS** (24.11.1) | Vite 8 requires `>=22.12` |
 | React | **19.3.1** | no LTS line — current stable, pinned |
 | Vite | **8.3.6** | no LTS line — current stable, pinned |
-| TypeScript | **7.0.2** | Vite 8 template compatible |
+| TypeScript | **6.0.3** | `typescript-eslint` supports `<6.1`; TS 7 upgrade when the tooling catches up (plan 0001 A-1) |
 | Vitest / Playwright | **5.1.0** / **1.65.0** | component / e2e |
 | Docker | 28.5.1 | local PostgreSQL and deployment |
 
@@ -50,7 +53,8 @@ Upgrades keep `scripts/check` green; a major upgrade that changes behavior is it
   `NOT_AUTHORIZED`, `VALIDATION_FAILED`, `NOT_FOUND`, `CONFLICT`.
 - 5xx never leaks internals or stack traces; the response carries `requestId` and the server logs
   the detail against the same `requestId`. 4xx never carries a stack trace either.
-- Messages are user-facing and in Turkish; the `code` is stable and English.
+- User-facing text comes from the UI catalogue (tr/en); the API returns a stable English `code` and
+  no prose.
 
 ## Data rules
 

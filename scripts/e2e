@@ -1,0 +1,53 @@
+#!/bin/sh
+# e2e — the single browser journey (docs/testing.md, Test layers).
+# Starts the compose database and the packaged app, waits for health, runs Playwright, and tears
+# everything down on every path (resource hygiene, rule 4). Its exit code is the check step's.
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$ROOT"
+
+DB_PORT="${DB_PORT:-5433}"
+# A dedicated port: 8080 is often taken by unrelated local apps on a developer machine.
+APP_PORT="${PORT:-18080}"
+LOG="$ROOT/target/e2e-app.log"
+
+JAR=$(ls target/leave-manager-*.jar 2>/dev/null | head -n 1 || true)
+if [ -z "$JAR" ]; then
+  echo "e2e: no jar in target/ — the build step must run first" >&2
+  exit 1
+fi
+
+APP_PID=
+cleanup() {
+  if [ -n "$APP_PID" ]; then
+    kill "$APP_PID" 2>/dev/null || true
+    wait "$APP_PID" 2>/dev/null || true
+  fi
+  docker compose down -v --remove-orphans >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
+
+docker compose up -d --wait db
+
+DB_URL="jdbc:postgresql://localhost:$DB_PORT/leave_manager" \
+DB_USER=leave DB_PASSWORD=leave PORT="$APP_PORT" \
+  java -jar "$JAR" >"$LOG" 2>&1 &
+APP_PID=$!
+
+i=0
+while [ "$i" -lt 60 ]; do
+  if curl -fsS "http://localhost:$APP_PORT/api/health" >/dev/null 2>&1; then
+    break
+  fi
+  i=$((i + 1))
+  sleep 1
+done
+
+if ! curl -fsS "http://localhost:$APP_PORT/api/health" >/dev/null 2>&1; then
+  echo "e2e: the app did not become healthy — log follows" >&2
+  cat "$LOG" >&2 || true
+  exit 1
+fi
+
+E2E_BASE_URL="http://localhost:$APP_PORT" npm --prefix web run e2e
