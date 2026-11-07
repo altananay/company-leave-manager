@@ -13,3 +13,5 @@ step 7). Nothing lands here without that decision; noise is rejected in the tria
   — Recommendation: <the reviewer's action> — Deferred by: <name>, <YYYY-MM-DD>, <why>
   A decision deferred at bootstrap (its REPORT) uses Source: bootstrap <YYYY-MM-DD>.
 -->
+
+- **B-1** — Merkezi log platformu: ELK (Elasticsearch + Kibana + toplayıcı) bu projeye kurulsun mu, yoksa stdout + Docker log rotation yeterli mi? — Source: bootstrap 2026-11-07 — Severity: low (operational) — Recommendation: V1 stdout + rotation ile ilerlesin; ELK ayrı bir altyapı spec'i olarak, docker-compose'da opsiyonel `logging` profiliyle eklensin (uygulama sözleşmesi iki durumda da JSON stdout; ILM ile 30 gün saklama). — Deferred by: human, 2026-11-07, bir sonraki oturumda değerlendirilecek.
