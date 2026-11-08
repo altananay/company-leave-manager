@@ -344,7 +344,7 @@ describe('users screen', () => {
   it('shouldFocusTheEmailFieldWhenTheAddressIsTaken', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn((input: RequestInfo | URL) => {
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
         if (url.includes('/api/auth/csrf')) {
           return Promise.resolve(json(200, { token: 't' }))
@@ -355,8 +355,11 @@ describe('users screen', () => {
         if (url.includes('/api/health')) {
           return Promise.resolve(json(200, { status: 'UP' }))
         }
-        if (url.includes('/api/users') && String(input).includes('/api/users')) {
+        if (url.includes('/api/users') && init?.method === 'POST') {
           return Promise.resolve(json(409, { status: 409, code: 'EMAIL_EXISTS' }))
+        }
+        if (url.includes('/api/users')) {
+          return Promise.resolve(json(200, users))
         }
         return Promise.resolve(json(404, null))
       }),
@@ -373,6 +376,43 @@ describe('users screen', () => {
 
     expect(await screen.findByText('Bu e-posta ile bir kullanıcı zaten var.')).toBeInTheDocument()
     expect(email).toHaveFocus()
+  })
+
+  it('shouldFocusTheNameFieldWhenTheServerRejectsTheForm', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(json(200, HR))
+        }
+        if (url.includes('/api/health')) {
+          return Promise.resolve(json(200, { status: 'UP' }))
+        }
+        if (url.includes('/api/users') && init?.method === 'POST') {
+          return Promise.resolve(json(400, { status: 400, code: 'VALIDATION_FAILED' }))
+        }
+        if (url.includes('/api/users')) {
+          return Promise.resolve(json(200, users))
+        }
+        return Promise.resolve(json(404, null))
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+
+    const displayName = await screen.findByLabelText('Ad soyad')
+    await user.type(screen.getByLabelText('E-posta'), 'someone@acme.test')
+    await user.type(displayName, 'Some Name')
+    await user.click(screen.getByRole('button', { name: 'Oluştur' }))
+
+    expect(await screen.findByText('Lütfen alanları kontrol edin.')).toBeInTheDocument()
+    expect(displayName).toHaveFocus()
   })
 
   it('shouldAskForConfirmationBeforeDeactivating', async () => {
@@ -484,6 +524,40 @@ describe('password change', () => {
 
     expect(await screen.findByText('Parola en az 12 karakter olmalı.')).toBeInTheDocument()
     expect(next).toHaveFocus()
+  })
+
+  it('shouldFocusTheConfirmationFieldOnAMismatch', async () => {
+    authenticated({ ...EMPLOYEE, mustChangePassword: true })
+
+    const user = userEvent.setup()
+    renderApp()
+
+    const confirm = await screen.findByLabelText('Yeni parola (tekrar)')
+    await user.type(screen.getByLabelText('Mevcut parola'), 'current-password-123')
+    await user.type(screen.getByLabelText('Yeni parola', { exact: true }), 'brand-new-pass-123')
+    await user.type(confirm, 'brand-new-pass-999')
+    await user.click(screen.getByRole('button', { name: 'Parolayı değiştir' }))
+
+    expect(await screen.findByText('Parolalar eşleşmiyor.')).toBeInTheDocument()
+    expect(confirm).toHaveFocus()
+  })
+
+  it('shouldFocusTheCurrentPasswordFieldWhenTheServerRejectsIt', async () => {
+    authenticated({ ...EMPLOYEE, mustChangePassword: true }, () => json(200, { status: 'UP' }), {
+      '/api/auth/password': () => json(400, { status: 400, code: 'INVALID_PASSWORD' }),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+
+    const current = await screen.findByLabelText('Mevcut parola')
+    await user.type(current, 'wrong-current-one')
+    await user.type(screen.getByLabelText('Yeni parola', { exact: true }), 'brand-new-pass-123')
+    await user.type(screen.getByLabelText('Yeni parola (tekrar)'), 'brand-new-pass-123')
+    await user.click(screen.getByRole('button', { name: 'Parolayı değiştir' }))
+
+    expect(await screen.findByText('Mevcut parola hatalı.')).toBeInTheDocument()
+    expect(current).toHaveFocus()
   })
 })
 

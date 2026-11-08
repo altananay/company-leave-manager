@@ -36,9 +36,11 @@ class AuditIT extends IdentityTestSupport {
 
         // A failed login and the lockout that follows it, on a second (active) account.
         String lockedEmail = "locked-" + System.nanoTime() + "@acme.test";
-        assertThat(session.post("/api/users",
-                "{\"email\":\"" + lockedEmail + "\",\"displayName\":\"Locked Person\",\"role\":\"EMPLOYEE\"}")
-                .statusCode()).isEqualTo(201);
+        HttpResponse<String> lockedCreated = session.post("/api/users",
+                "{\"email\":\"" + lockedEmail + "\",\"displayName\":\"Locked Person\",\"role\":\"EMPLOYEE\"}");
+        assertThat(lockedCreated.statusCode()).isEqualTo(201);
+        String lockedId = extract(lockedCreated.body(), "id");
+        String lockedTemporaryPassword = extract(lockedCreated.body(), "temporaryPassword");
         Session attacker = new Session();
         for (int attempt = 0; attempt < 5; attempt++) {
             attacker.login(lockedEmail, "wrong-password-123");
@@ -61,14 +63,16 @@ class AuditIT extends IdentityTestSupport {
                 .findFirst()
                 .orElseThrow();
         // The address is masked: the first letter, then the domain (docs/conventions.md, Data rules).
+        assertThat(failedLogin.getDetails()).contains("l***@acme.test");
         assertThat(failedLogin.getDetails()).contains("***@acme.test");
         assertThat(failedLogin.getDetails()).doesNotContain(lockedEmail);
 
-        // No password, no BCrypt hash, anywhere in the trail.
+        // No password, no BCrypt hash, anywhere in the trail — for both created accounts.
         assertThat(events).allSatisfy(event -> {
             String details = event.getDetails();
             if (details != null) {
-                assertThat(details).doesNotContain(temporaryPassword == null ? "" : temporaryPassword);
+                assertThat(details).doesNotContain(temporaryPassword);
+                assertThat(details).doesNotContain(lockedTemporaryPassword);
                 assertThat(details).doesNotContain("$2a$").doesNotContain("$2b$").doesNotContain("$2y$");
                 assertThat(details).doesNotContain(HR_PASSWORD);
             }
@@ -119,12 +123,24 @@ class AuditIT extends IdentityTestSupport {
                     assertThat(event.getTargetUserId()).as("target of %s", event.getEventType()).isEqualTo(actor);
                 });
 
+        // The failed-login and lockout rows name the attacked account, not somebody else.
+        UUID victim = UUID.fromString(lockedId);
+        assertThat(events)
+                .filteredOn(event -> "LOGIN_FAILED".equals(event.getEventType()))
+                .isNotEmpty()
+                .allSatisfy(event -> {
+                    assertThat(event.getActorUserId()).as("actor of LOGIN_FAILED").isEqualTo(victim);
+                    assertThat(event.getTargetUserId()).as("target of LOGIN_FAILED").isNull();
+                });
+
         assertThat(events)
                 .filteredOn(event -> "ACCOUNT_LOCKED".equals(event.getEventType()))
                 .isNotEmpty()
-                .allSatisfy(event -> assertThat(event.getTargetUserId())
-                        .as("target of ACCOUNT_LOCKED")
-                        .isNotEqualTo(actor));
+                .allSatisfy(event -> {
+                    // Self-service: the locked account is both the actor and the target.
+                    assertThat(event.getActorUserId()).as("actor of ACCOUNT_LOCKED").isEqualTo(victim);
+                    assertThat(event.getTargetUserId()).as("target of ACCOUNT_LOCKED").isEqualTo(victim);
+                });
 
         AuditEvent createdEvent = events.stream()
                 .filter(event -> "USER_CREATED".equals(event.getEventType()))

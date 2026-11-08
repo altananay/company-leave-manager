@@ -1,8 +1,16 @@
 package com.company.leavemanager.web;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -10,6 +18,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ApiExceptionHandlerTest {
 
     private final ApiExceptionHandler handler = new ApiExceptionHandler();
+    private final Logger logger = (Logger) LoggerFactory.getLogger(ApiExceptionHandler.class);
+    private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
+
+    @BeforeEach
+    void attachAppender() {
+        logs.start();
+        logger.addAppender(logs);
+    }
+
+    @AfterEach
+    void detachAppender() {
+        logger.detachAppender(logs);
+    }
 
     @Test
     void shouldAnswer500WithOneCodeAndARequestId() {
@@ -32,5 +53,23 @@ class ApiExceptionHandlerTest {
                 .getProperties().get("requestId");
 
         assertThat(first).isNotEqualTo(second);
+    }
+
+    @Test
+    void shouldNotLogTheExceptionMessage() {
+        // A database error can quote the row it refused; that row may hold personal data.
+        handler.unexpected(new IllegalStateException("duplicate key: someone@acme.test"));
+
+        List<String> messages = logs.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+
+        assertThat(messages).isNotEmpty();
+        assertThat(messages).allSatisfy(message -> {
+            assertThat(message).doesNotContain("someone@acme.test");
+            assertThat(message).contains("java.lang.IllegalStateException");
+        });
+        // The stack trace is still available, at DEBUG only.
+        assertThat(logs.list)
+                .filteredOn(event -> event.getLevel().toString().equals("DEBUG"))
+                .allSatisfy(event -> assertThat(event.getThrowableProxy()).isNotNull());
     }
 }
