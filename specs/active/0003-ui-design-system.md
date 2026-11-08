@@ -1,6 +1,6 @@
 # Spec 0003 — UI design system
 
-- Status: Approved
+- Status: In progress
 - Mode: lite
 - Plan: `specs/plans/0003-plan.md`
 - Self-critique: done (C1–C7 onaylandı, 2026-11-08)

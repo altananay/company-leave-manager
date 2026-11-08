@@ -1,179 +1,139 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Design tokens — the single source of every visual value (spec 0003, AC-5).
+   No component may hard-code a colour; `scripts/tokens` fails the build if one does.
+   The dark block below is the seam for a later slice: nothing sets `.dark` yet,
+   so it is inert today and costs one file to enable.
+   --------------------------------------------------------------------------- */
+
 :root {
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.5;
-  color: #1f2933;
-  background-color: #f5f7fa;
-  color-scheme: light;
+  --background: oklch(0.988 0.002 247);
+  --foreground: oklch(0.21 0.02 258);
+
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+
+  --primary: oklch(0.51 0.19 262);
+  --primary-foreground: oklch(0.99 0.005 250);
+
+  --secondary: oklch(0.962 0.006 250);
+  --secondary-foreground: oklch(0.28 0.02 258);
+
+  --muted: oklch(0.962 0.006 250);
+  --muted-foreground: oklch(0.53 0.015 255);
+
+  --accent: oklch(0.95 0.02 255);
+  --accent-foreground: oklch(0.28 0.02 258);
+
+  --destructive: oklch(0.55 0.19 27);
+  --destructive-foreground: oklch(0.99 0.005 250);
+
+  --success: oklch(0.52 0.12 155);
+  --success-foreground: oklch(0.99 0.005 250);
+
+  --border: oklch(0.918 0.008 255);
+  --input: oklch(0.9 0.01 255);
+  --ring: oklch(0.51 0.19 262);
+
+  --radius: 0.625rem;
 }
 
-* {
-  box-sizing: border-box;
+.dark {
+  --background: oklch(0.19 0.02 258);
+  --foreground: oklch(0.96 0.005 250);
+
+  --card: oklch(0.24 0.02 258);
+  --card-foreground: var(--foreground);
+
+  --primary: oklch(0.68 0.16 262);
+  --primary-foreground: oklch(0.19 0.02 258);
+
+  --secondary: oklch(0.28 0.02 258);
+  --secondary-foreground: var(--foreground);
+
+  --muted: oklch(0.28 0.02 258);
+  --muted-foreground: oklch(0.7 0.015 255);
+
+  --accent: oklch(0.31 0.03 258);
+  --accent-foreground: var(--foreground);
+
+  --destructive: oklch(0.65 0.18 27);
+  --destructive-foreground: oklch(0.19 0.02 258);
+
+  --success: oklch(0.68 0.13 155);
+  --success-foreground: oklch(0.19 0.02 258);
+
+  --border: oklch(0.32 0.02 258);
+  --input: oklch(0.36 0.02 258);
+  --ring: oklch(0.68 0.16 262);
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
 }
 
-.shell {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
-}
+@layer base {
+  * {
+    border-color: var(--border);
+  }
 
-.shell-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
 
-.shell-header h1 {
-  font-size: 1.5rem;
-  margin: 0;
-}
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
 
-.lang-switch {
-  display: flex;
-  gap: 0.25rem;
-}
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
 
-.lang-switch button,
-.status button {
-  font: inherit;
-  padding: 0.25rem 0.75rem;
-  border: 1px solid #94a3b8;
-  border-radius: 0.375rem;
-  background: #fff;
-  color: #1f2933;
-  cursor: pointer;
-}
+  ::selection {
+    background-color: var(--accent);
+    color: var(--accent-foreground);
+  }
 
-.lang-switch button[aria-pressed='true'] {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
-  color: #fff;
-}
-
-button:focus-visible {
-  outline: 3px solid #b45309;
-  outline-offset: 2px;
-}
-
-.status {
-  margin-top: 2rem;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.status-text {
-  margin: 0;
-  font-weight: 600;
-}
-
-.status-up {
-  color: #047857;
-}
-
-.status-down {
-  color: #b91c1c;
-}
-
-.signed-in {
-  margin-top: 1.5rem;
-}
-
-.actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.card {
-  margin-top: 1.5rem;
-  padding: 1.5rem;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.card h2,
-.card h3 {
-  margin: 0;
-}
-
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-weight: 600;
-}
-
-input,
-select {
-  font: inherit;
-  padding: 0.4rem 0.6rem;
-  border: 1px solid #94a3b8;
-  border-radius: 0.375rem;
-  background: #fff;
-}
-
-.error {
-  margin: 0;
-  color: #b91c1c;
-  font-weight: 600;
-}
-
-.notice {
-  margin: 0;
-  padding: 0.75rem;
-  background: #ecfdf5;
-  border: 1px solid #6ee7b7;
-  border-radius: 0.375rem;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-button.secondary {
-  background: #e2e8f0;
-  border-color: #94a3b8;
-}
-
-button.danger {
-  background: #fee2e2;
-  border-color: #fca5a5;
-  color: #991b1b;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.95rem;
-}
-
-th,
-td {
-  text-align: left;
-  padding: 0.4rem 0.5rem;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-td button {
-  margin-right: 0.25rem;
-  white-space: nowrap;
+  h1,
+  h2,
+  h3 {
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
 }

@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { useI18n } from '../../i18n/I18nProvider'
+
+import { useI18n } from '@/i18n/I18nProvider'
+import { Alert } from '@/ui/alert'
+import { Button } from '@/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/card'
+import { Field } from '@/ui/field'
 import { ApiError, authApi, type Me } from './authApi'
 
 export function LoginPage({
@@ -45,44 +50,41 @@ export function LoginPage({
   }
 
   return (
-    <form className="card" onSubmit={submit}>
-      <h2>{t('loginTitle')}</h2>
-      {sessionExpired && (
-        <p className="notice" role="status">
-          {t('sessionExpired')}
-        </p>
-      )}
-      <label>
-        {t('email')}
-        <input
-          type="email"
-          autoComplete="username"
-          value={email}
-          aria-invalid={error === 'loginFailed'}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-      </label>
-      <label>
-        {t('password')}
-        <input
-          ref={passwordRef}
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          aria-invalid={error === 'loginFailed'}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-      </label>
-      {error && (
-        <p className="error" role="alert">
-          {t(error)}
-        </p>
-      )}
-      <button type="submit" disabled={busy}>
-        {busy ? t('signingIn') : t('signIn')}
-      </button>
-    </form>
+    <Card>
+      <CardHeader>
+        <CardTitle>{t('loginTitle')}</CardTitle>
+        <CardDescription>{t('loginSubtitle')}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {sessionExpired && <Alert variant="info">{t('sessionExpired')}</Alert>}
+        <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
+          <Field
+            label={t('email')}
+            type="email"
+            autoComplete="username"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <Field
+            label={t('password')}
+            inputRef={passwordRef}
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          {error && (
+            <Alert variant="destructive">
+              <p className="font-medium">{t(error)}</p>
+            </Alert>
+          )}
+          <Button type="submit" disabled={busy} className="w-full">
+            {busy ? t('signingIn') : t('signIn')}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   )
 }

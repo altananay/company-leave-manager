@@ -1,7 +1,24 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { useI18n } from '../../i18n/I18nProvider'
-import type { MessageKey } from '../../i18n/messages'
-import { ApiError, authApi, type CreatedUser, type User } from '../auth/authApi'
+
+import { useI18n } from '@/i18n/I18nProvider'
+import type { MessageKey } from '@/i18n/messages'
+import { ApiError, authApi, type CreatedUser, type User } from '@/features/auth/authApi'
+import { Alert } from '@/ui/alert'
+import { Badge } from '@/ui/badge'
+import { Button } from '@/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/ui/card'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/ui/dialog'
+import { Field } from '@/ui/field'
+import { Label } from '@/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
 
 type ErrorKey =
   | 'emailExists'
@@ -30,7 +47,11 @@ function errorKeyFor(failure: unknown): ErrorKey {
   }
 }
 
-export function UsersPage({ onBack }: { onBack: () => void }) {
+/** One responsive row: stacked card on a phone, table-like grid from `md` up (AC-4, AC-6). */
+const rowClass =
+  'flex flex-col gap-2 py-4 md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(0,1.6fr)_minmax(0,0.8fr)_minmax(0,0.6fr)_auto] md:items-center md:gap-4 md:py-3'
+
+function UsersPage({ onBack }: { onBack: () => void }) {
   const { t } = useI18n()
   const [users, setUsers] = useState<User[]>([])
   const [forbidden, setForbidden] = useState(false)
@@ -40,7 +61,7 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
   const [displayName, setDisplayName] = useState('')
   const [role, setRole] = useState('EMPLOYEE')
   const [busy, setBusy] = useState(false)
-  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState<User | null>(null)
   const emailRef = useRef<HTMLInputElement>(null)
   const displayNameRef = useRef<HTMLInputElement>(null)
 
@@ -105,7 +126,7 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
 
   async function deactivate(user: User) {
     setError(null)
-    setConfirmingId(null)
+    setConfirming(null)
     try {
       await authApi.deactivate(user.id)
       await load()
@@ -126,127 +147,175 @@ export function UsersPage({ onBack }: { onBack: () => void }) {
 
   if (forbidden) {
     return (
-      <section className="card">
-        <h2>{t('forbiddenTitle')}</h2>
-        <button type="button" onClick={onBack}>
-          {t('back')}
-        </button>
-      </section>
+      <Card className="mx-auto max-w-md">
+        <CardHeader>
+          <CardTitle>{t('forbiddenTitle')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Button type="button" variant="secondary" onClick={onBack}>
+            {t('back')}
+          </Button>
+        </CardContent>
+      </Card>
     )
   }
 
   return (
-    <section className="card">
-      <div className="row">
-        <h2>{t('usersTitle')}</h2>
-        <button type="button" className="secondary" onClick={onBack}>
-          {t('back')}
-        </button>
-      </div>
+    <div className="flex flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle>{t('usersTitle')}</CardTitle>
+            <Button type="button" variant="secondary" size="sm" onClick={onBack}>
+              {t('back')}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {created && (
+            <Alert variant="success">
+              <div className="flex flex-col gap-1">
+                <span className="font-medium">{t('temporaryPasswordOnce')}</span>
+                <code className="rounded bg-card px-2 py-1 font-mono text-sm">
+                  {created.temporaryPassword}
+                </code>
+              </div>
+            </Alert>
+          )}
+          {error && (
+            <Alert variant="destructive">
+              <p className="font-medium">{t(error)}</p>
+            </Alert>
+          )}
 
-      {created && (
-        <p className="notice" role="status">
-          {t('temporaryPasswordOnce')} <code>{created.temporaryPassword}</code>
-        </p>
-      )}
-      {error && (
-        <p className="error" role="alert">
-          {t(error)}
-        </p>
-      )}
+          <form className="flex flex-col gap-4" onSubmit={create} noValidate>
+            <h3 className="text-sm font-semibold">{t('newUser')}</h3>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label={t('email')}
+                inputRef={emailRef}
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+              />
+              <Field
+                label={t('displayName')}
+                inputRef={displayNameRef}
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1.5 sm:max-w-xs">
+              <Label htmlFor="new-user-role">{t('role')}</Label>
+              <Select value={role} onValueChange={setRole}>
+                <SelectTrigger id="new-user-role" aria-label={t('role')}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="EMPLOYEE">{t('roleEmployee')}</SelectItem>
+                  <SelectItem value="MANAGER">{t('roleManager')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="submit" disabled={busy} className="self-start">
+              {t('create')}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
-      <form className="stack" onSubmit={create}>
-        <h3>{t('newUser')}</h3>
-        <label>
-          {t('email')}
-          <input
-            ref={emailRef}
-            type="email"
-            value={email}
-            aria-invalid={error === 'emailExists' || error === 'validationFailed'}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-          />
-        </label>
-        <label>
-          {t('displayName')}
-          <input
-            ref={displayNameRef}
-            value={displayName}
-            aria-invalid={error === 'validationFailed'}
-            onChange={(event) => setDisplayName(event.target.value)}
-            required
-          />
-        </label>
-        <label>
-          {t('role')}
-          <select value={role} onChange={(event) => setRole(event.target.value)}>
-            <option value="EMPLOYEE">{t('roleEmployee')}</option>
-            <option value="MANAGER">{t('roleManager')}</option>
-          </select>
-        </label>
-        <button type="submit" disabled={busy}>
-          {t('create')}
-        </button>
-      </form>
+      <Card>
+        <CardContent>
+          <div className={`${rowClass} hidden md:grid`} aria-hidden="true">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t('displayName')}
+            </span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t('email')}
+            </span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t('role')}
+            </span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t('active')}
+            </span>
+            <span />
+          </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>{t('displayName')}</th>
-            <th>{t('email')}</th>
-            <th>{t('role')}</th>
-            <th>{t('active')}</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((user) => (
-            <tr key={user.id}>
-              <td>{user.displayName}</td>
-              <td>{user.email}</td>
-              <td>{t(roleKey(user.role))}</td>
-              <td>{user.active ? t('active') : t('inactive')}</td>
-              <td>
-                {isProtected(user) ? (
-                  // The server refuses these rows (PROTECTED_ACCOUNT); the UI must not offer them.
-                  <span className="muted">{t('protectedAccount')}</span>
-                ) : (
-                  <>
-                    <button type="button" className="secondary" onClick={() => resetPassword(user)}>
-                      {t('resetPassword')}
-                    </button>
-                    {confirmingId === user.id ? (
-                      <>
-                        <span className="confirm-text">{t('confirmDeactivate')}</span>
-                        <button type="button" className="danger" onClick={() => deactivate(user)}>
-                          {t('confirm')}
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => setConfirmingId(null)}
-                        >
-                          {t('cancel')}
-                        </button>
-                      </>
+          {users.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground" role="status">
+              {t('noUsers')}
+            </p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {users.map((user) => (
+                <li key={user.id} className={rowClass}>
+                  <span className="font-medium md:truncate">{user.displayName}</span>
+                  <span className="text-sm text-muted-foreground md:truncate">{user.email}</span>
+                  <span>
+                    <Badge variant="default">{t(roleKey(user.role))}</Badge>
+                  </span>
+                  <span>
+                    <Badge variant={user.active ? 'success' : 'muted'}>
+                      {user.active ? t('active') : t('inactive')}
+                    </Badge>
+                  </span>
+                  <span className="flex flex-wrap items-center gap-2 md:justify-end">
+                    {isProtected(user) ? (
+                      <span className="text-xs text-muted-foreground">{t('protectedAccount')}</span>
                     ) : (
-                      <button
-                        type="button"
-                        className="danger"
-                        onClick={() => setConfirmingId(user.id)}
-                      >
-                        {t('deactivate')}
-                      </button>
+                      <>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => resetPassword(user)}
+                        >
+                          {t('resetPassword')}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setConfirming(user)}
+                        >
+                          {t('deactivate')}
+                        </Button>
+                      </>
                     )}
-                  </>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('deactivate')}</DialogTitle>
+            <DialogDescription>{t('confirmDeactivate')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="secondary">
+                {t('cancel')}
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => confirming && deactivate(confirming)}
+            >
+              {t('confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }
 
@@ -267,3 +336,5 @@ function roleKey(role: string): MessageKey {
       return 'roleEmployee'
   }
 }
+
+export { UsersPage }
