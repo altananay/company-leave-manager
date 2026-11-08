@@ -80,4 +80,5 @@ step 8).
 `./scripts/doctor` warns on a plan whose spec is not Approved / In progress / Shipped, and on a
 spec `In progress` whose plan has no recorded approval. `./scripts/doctor --strict` turns those
 warnings into failures — CI runs it that way, so the gates hold whichever tool produced the PR.
-The PR template (`.github/pull_request_template.md`) asks for the same file evidence.
+The PR template stays short: purpose, one-paragraph summary, spec/plan links. The gate records are
+the files themselves, not a second copy in the PR body.

@@ -26,14 +26,35 @@
 
 ## AuthN / AuthZ
 
-- **AuthN (V1):** corporate e-mail + password, BCrypt hashing (Spring Security's delegating
-  encoder). No self-service sign-up; İK creates users and resets passwords. Login rate limiting sits
-  at the reverse proxy.
+- **AuthN (V1):** corporate e-mail + password, BCrypt hashing. No self-service sign-up; İK creates
+  users and resets passwords. **Lockout:** five failed attempts lock the account for 15 minutes
+  (counter and lock time live in the database, so a restart does not reset them; an expired lock
+  clears the counter, so the next failure starts a fresh count). Because the lockout is per account,
+  a targeted attack can keep one known account locked: the reverse proxy must add per-IP rate
+  limiting, which this application does not do itself.
 - **Session:** server-side session stored in PostgreSQL (Spring Session JDBC) so a restart does not
-  log 1,000 people out; cookie `HttpOnly`, `Secure`, `SameSite=Lax`; CSRF token required for every
-  state-changing request.
+  log 1,000 people out; the stored principal carries **no password hash**; cookie `HttpOnly`,
+  `SameSite=Lax`, and `Secure` in production (the `prod` profile defaults it to `true`;
+  `SESSION_COOKIE_SECURE` can override).
+  **30 minutes idle / 8 hours absolute**; the session id changes on login (fixation protection).
+  CSRF token required for every state-changing request — the SPA reads it from
+  `GET /api/auth/csrf` and sends `X-CSRF-TOKEN`. A state-changing request without a session is
+  answered with **401** (a lost session), not 403.
+- **Error contract:** every error is RFC 9457 (`type`, `title`, `status`, plus the project's stable
+  English `code`, `errors[]` for validation, and `requestId` on a 5xx). An unauthenticated request
+  gets **401**, an authenticated but unauthorized one **403** (a CSRF refusal carries its own
+  `CSRF_INVALID` code). The SPA sends the user back to the login screen with an "session ended"
+  message **when a session really ended** — a first visit and a failed login keep their own message —
+  and shows the forbidden screen on 403.
 - **AuthZ:** RBAC (role) **and** data scope, enforced server-side on every request — the SPA hiding
-  a button is UX, never authorization. Default deny: a missing rule denies.
+  a button is UX, never authorization. Default deny: only the SPA shell, its assets, `/error`,
+  `/api/health`, `/api/auth/login` and `/api/auth/csrf` are public; every other path is denied.
+  İK can assign only `EMPLOYEE` and `MANAGER`; the `HR`/`CEO` roles come from the environment seed.
+  İK cannot deactivate itself or reset its own password through the admin screen, and cannot
+  deactivate or reset a seeded `HR`/`CEO` account (`403 PROTECTED_ACCOUNT`): those accounts are
+  managed by the environment only.
+- **No SPA deep links:** the shell is served at `/`; client-side routes are view state, so an
+  unknown non-API path is denied rather than forwarded to `index.html`.
 - **Object-level checks:** every endpoint that takes an employee or request identifier verifies the
   caller's scope before loading the object, not after.
 

@@ -18,10 +18,12 @@
 
 - Unit tests never touch the database; integration tests use a fresh Testcontainers database per
   run (resource hygiene, rule 5).
-- Component tests stub the global `fetch` (the health hook calls it directly); there is no API
-  client layer yet.
-- Determinism: no wall-clock logic exists yet — when domain dates arrive they read an injected
-  `Clock` (never `LocalDate.now()` directly); the SPA's locale is fixed in test setup, seeds are
+- Component tests stub the global `fetch`; the SPA's API client (`web/src/features/auth/authApi.ts`)
+  turns a 401 into one "session ended" signal the app handles in a single place — except for the
+  login request, whose 401 is an ordinary wrong-password answer.
+- Determinism: time-dependent logic reads the injected `Clock` bean (lockout, session age, audit
+  timestamps) — never `LocalDate.now()`/`Instant.now()` directly; the SPA's locale is fixed in test
+  setup, seeds are
   fixed, animations/transitions are off.
 
 ## What must be tested
@@ -31,8 +33,8 @@
 - The **authorization matrix**: each of the four roles against each read/write scope
   (BR-12, sensitive area *Yetkilendirme*) — a denied case is as important as an allowed one.
 - The forbidden dependencies (ArchUnit), in the same `check` run.
-- The e2e journeys (at most two, `~3 minutes` total): the **smoke** journey — the app opens against
-  a real database and reports healthy — and the **leave** journey — employee requests annual leave
+- The e2e journeys (at most two, `~3 minutes` total): the **auth** journey — sign in, create a user,
+  sign out, and a forbidden screen — and the **leave** journey — employee requests annual leave
   → manager approves → balance decreases (added by its own spec).
 
 ## Test layers
@@ -205,8 +207,8 @@ result depends on the machine's speed. Turn motion off in both places the stack 
 tool's setting (Playwright `reducedMotion: 'reduce'`) and the app's own switch for test builds
 (a `prefers-reduced-motion` stylesheet and a test-build flag that disables transitions).
 
-This project's determinism settings: the backend has no wall-clock logic yet — when domain dates
-arrive they read an injected `Clock` (Europe/Istanbul, no `LocalDate.now()` outside it); every
-Testcontainers database starts empty and is migrated by Flyway's `V1`; the SPA's locale is pinned
-to `tr-TR`; Playwright runs `--workers=1`, headless, `reducedMotion: 'reduce'`, with a fixed
+This project's determinism settings: the backend reads an injected `Clock` bean (UTC) for every
+time-dependent decision — lockout, session age, audit timestamps; every Testcontainers database
+starts empty and is migrated by Flyway; the SPA's locale is pinned to `tr-TR`; Playwright runs
+`--workers=1`, headless, `reducedMotion: 'reduce'`, with a fixed
 viewport and locale.

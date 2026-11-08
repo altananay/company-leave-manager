@@ -2,7 +2,8 @@ spring:
   application:
     name: leave-manager
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5433/leave_manager}
+    # Matches compose.yaml: 5432 is a local PostgreSQL, 5433 another project's container.
+    url: ${DB_URL:jdbc:postgresql://localhost:5434/leave_manager}
     username: ${DB_USER:leave}
     password: ${DB_PASSWORD:leave}
     hikari:
@@ -11,9 +12,27 @@ spring:
       validation-timeout: 1000
   flyway:
     enabled: true
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  session:
+    # Spring Session (spring-boot-session): idle timeout and cookie attributes.
+    timeout: ${SESSION_IDLE_TIMEOUT:30m}
+    jdbc:
+      # The session tables are a Flyway migration (V2), not startup DDL.
+      initialize-schema: never
 
 server:
   port: ${PORT:8080}
+  servlet:
+    session:
+      timeout: ${SESSION_IDLE_TIMEOUT:30m}
+      cookie:
+        http-only: true
+        same-site: lax
+        # Behind TLS in production; the local profile runs over plain HTTP.
+        secure: ${SESSION_COOKIE_SECURE:false}
 
 management:
   endpoints:
@@ -29,3 +48,14 @@ management:
       probes:
         enabled: false
       show-details: never
+
+app:
+  identity:
+    max-failed-attempts: 5
+    lockout-duration: 15m
+    session-max-age: 8h
+  seed:
+    hr-email: ${SEED_HR_EMAIL:}
+    hr-password: ${SEED_HR_PASSWORD:}
+    ceo-email: ${SEED_CEO_EMAIL:}
+    ceo-password: ${SEED_CEO_PASSWORD:}

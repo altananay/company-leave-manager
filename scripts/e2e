@@ -47,6 +47,8 @@ DB_PORT=$(docker compose -p "$COMPOSE_PROJECT" port db 5432 | head -n 1 | sed 's
 
 DB_URL="jdbc:postgresql://localhost:$DB_PORT/$DB_NAME" \
 DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" PORT="$APP_PORT" \
+SEED_HR_EMAIL="hr@e2e.test" SEED_HR_PASSWORD="hr-e2e-password-123" \
+SEED_CEO_EMAIL="ceo@e2e.test" SEED_CEO_PASSWORD="ceo-e2e-password-123" \
   java -jar "$JAR" >"$LOG" 2>&1 &
 APP_PID=$!
 

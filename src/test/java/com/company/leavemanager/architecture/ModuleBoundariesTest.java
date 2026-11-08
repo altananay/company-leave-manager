@@ -1,25 +1,26 @@
 package com.company.leavemanager.architecture;
 
+import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaAccess;
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
 /**
- * The forbidden dependencies of {@code docs/architecture.md}, enforced as tests.
- *
- * <p>Rules 1, 2 and 4 are covered here. Rule 3 (JPA entities never leave their module) has no
- * entity to check yet — the skeleton uses JDBC — and is enforced when JPA arrives
- * ({@code specs/backlog.md} B-3).
- *
- * <p>The module packages do not exist yet, so every rule allows an empty match today and starts
- * biting the moment a module reaches into another one.
+ * The forbidden dependencies of {@code docs/architecture.md}, enforced as tests: rules 1, 2, 3
+ * (JPA entities stay inside their module) and 4.
  */
 class ModuleBoundariesTest {
 
@@ -44,11 +45,16 @@ class ModuleBoundariesTest {
     }
 
     @Test
-    void web_classes_never_depend_on_repositories_directly() {
+    void controllers_never_depend_on_repositories_directly() {
+        // Controllers live in <module>.api and repositories in <module>.internal, so the rule matches
+        // the real packages: a controller must go through a use case, never through a repository.
+        // Spring's own abstractions (e.g. SecurityContextRepository) are not storage and are excluded.
         noClasses()
-                .that().resideInAPackage("..web..")
-                .should().dependOnClassesThat().resideInAnyPackage("..repository..", "..internal.repository..")
-                .because("controllers go through the module's public API, not its storage")
+                .that().haveSimpleNameEndingWith("Controller")
+                .should().dependOnClassesThat(DescribedPredicate.and(
+                        JavaClass.Predicates.resideInAPackage("com.company.leavemanager.."),
+                        JavaClass.Predicates.simpleNameEndingWith("Repository")))
+                .because("controllers go through the module's use cases, not its storage")
                 .allowEmptyShould(true)
                 .check(CLASSES);
     }
@@ -71,5 +77,34 @@ class ModuleBoundariesTest {
                 .should().beFreeOfCycles()
                 .allowEmptyShould(true)
                 .check(CLASSES);
+    }
+
+    /** Rule 3: a JPA entity is only touched by classes of its own module. */
+    @Test
+    void jpa_entities_never_leave_their_module() {
+        classes()
+                .that().areAnnotatedWith(jakarta.persistence.Entity.class)
+                .should(new ArchCondition<JavaClass>("be accessed only from their own module") {
+                    @Override
+                    public void check(JavaClass entity, ConditionEvents events) {
+                        String module = moduleOf(entity.getPackageName());
+                        for (JavaAccess<?> access : entity.getAccessesToSelf()) {
+                            String origin = access.getOriginOwner().getPackageName();
+                            if (!origin.startsWith("com.company.leavemanager." + module)) {
+                                events.add(SimpleConditionEvent.violated(entity,
+                                        origin + " accesses the entity " + entity.getName()));
+                            }
+                        }
+                    }
+                })
+                .allowEmptyShould(true)
+                .check(CLASSES);
+    }
+
+    private static String moduleOf(String packageName) {
+        String prefix = "com.company.leavemanager.";
+        String rest = packageName.startsWith(prefix) ? packageName.substring(prefix.length()) : packageName;
+        int dot = rest.indexOf('.');
+        return dot < 0 ? rest : rest.substring(0, dot);
     }
 }

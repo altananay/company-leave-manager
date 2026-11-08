@@ -22,6 +22,7 @@ class FlywayIdempotencyIT {
 
         assertThat(flyway.migrate().migrationsExecuted).isPositive();
         assertThat(flyway.migrate().migrationsExecuted).isZero();
-        assertThat(flyway.info().applied()).hasSize(1);
+        // V1 (app_metadata) and V2 (identity, audit, sessions) are both applied exactly once.
+        assertThat(flyway.info().applied()).hasSize(2);
     }
 }

@@ -8,7 +8,7 @@ export function HealthStatus() {
   return (
     <div className="status">
       <p className={`status-text status-${state}`} role="status" aria-live="polite">
-        {t(state)}
+        {state === 'loading' ? t('checking') : t(state)}
       </p>
       {state === 'down' && (
         <button type="button" onClick={retry}>

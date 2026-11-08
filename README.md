@@ -14,14 +14,30 @@ Java 25 + Spring Boot 4.1.2 API, PostgreSQL 18 ve React 19 + Vite 8 SPA (tek ori
 
 ```bash
 cp .env.example .env            # Docker Compose bu dosyayı okur (uygulama okumaz — aşağıya bak)
-docker compose up -d db         # PostgreSQL 18 (host portu: .env'deki DB_HOST_PORT)
+docker compose up -d db         # PostgreSQL 18 — host portu .env'deki DB_HOST_PORT (varsayılan 5434)
 ./mvnw spring-boot:run          # API: http://localhost:8080
 npm --prefix web run dev        # SPA: http://localhost:5173 (/api → :8080 proxy)
 ```
 
-> Uygulama `.env` dosyasını okumaz; veritabanı ayarları **ortam değişkeni** olarak verilir:
-> `DB_URL`, `DB_USER`, `DB_PASSWORD`. `.env`deki değerleri değiştirdiysen aynılarını bu
-> değişkenlerle de ver (ör. Git Bash: `DB_URL=... DB_USER=... DB_PASSWORD=... ./mvnw spring-boot:run`).
+> **Port çakışması:** Bu makinede 5432 yerel bir PostgreSQL'e, 5433 başka bir projenin konteynerine
+> ait. Bu yüzden projenin veritabanı varsayılanı **5434**'tür (`application.yml` ve `compose.yaml`
+> aynı değeri kullanır). Gerekirse `.env` içinde `DB_HOST_PORT` ve `DB_URL` birlikte değiştirin;
+> `DB_HOST_PORT=0` rastgele boş bir port verir (e2e bunu kullanır).
+>
+> **Üretim profili:** `SPRING_PROFILES_ACTIVE=prod` oturum çerezini `Secure` yapar
+> (`application-prod.yml`); TLS arkasında bu profili kullanın.
+
+> Uygulama `.env` dosyasını okumaz; veritabanı ayarları ve ilk hesaplar **ortam değişkeni** olarak
+> verilir: `DB_URL`, `DB_USER`, `DB_PASSWORD`, `SEED_HR_EMAIL`, `SEED_HR_PASSWORD`,
+> `SEED_CEO_EMAIL`, `SEED_CEO_PASSWORD`. Seed her hesap için yalnızca o e-posta yoksa çalışır ve en
+> az 12 karakterlik parola ister; değişkenler verilmezse uygulama açılır ama kimse giriş yapamaz.
+> Oturum için `SESSION_IDLE_TIMEOUT` (varsayılan `30m`) ve `SESSION_COOKIE_SECURE` (TLS arkasında
+> **`true`** olmalı) kullanılır. Örnek (Git Bash):
+>
+> ```bash
+> SEED_HR_EMAIL=hr@example.test SEED_HR_PASSWORD=change-this-hr-password \
+> DB_URL=... ./mvnw spring-boot:run
+> ```
 
 Sağlık kontrolü: `curl http://localhost:8080/api/health` → `{"status":"UP"}`
 

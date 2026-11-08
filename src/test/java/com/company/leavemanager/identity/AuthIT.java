@@ -1,0 +1,134 @@
+package com.company.leavemanager.identity;
+
+import com.company.leavemanager.identity.internal.SessionInvalidator;
+import com.company.leavemanager.identity.internal.UserRepository;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.time.Instant;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/** AC-1, AC-2, AC-3 and the CSRF contract of spec 0002. */
+class AuthIT extends IdentityTestSupport {
+
+    @Autowired
+    SessionInvalidator sessionInvalidator;
+
+    @Autowired
+    UserRepository users;
+
+    @Test
+    void shouldLoginThenLogout() throws Exception {
+        HttpResponse<String> login = session.login(HR_EMAIL, HR_PASSWORD);
+
+        assertThat(login.statusCode()).isEqualTo(200);
+        assertThat(login.body()).contains("\"role\":\"HR\"");
+        assertThat(hasSessionCookie(login)).isTrue();
+        assertThat(login.headers().allValues("set-cookie"))
+                .anyMatch(cookie -> cookie.toLowerCase().contains("httponly"))
+                .anyMatch(cookie -> cookie.contains("SameSite=Lax"));
+
+        assertThat(session.get("/api/auth/me").statusCode()).isEqualTo(200);
+
+        assertThat(session.post("/api/auth/logout", "{}").statusCode()).isEqualTo(204);
+        assertThat(session.get("/api/auth/me").statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void shouldRejectWrongPasswordWithAGenericError() throws Exception {
+        HttpResponse<String> response = session.login(HR_EMAIL, "wrong-password-123");
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).contains("NOT_AUTHENTICATED");
+        assertThat(response.body().toLowerCase()).doesNotContain("password");
+    }
+
+    @Test
+    void shouldAnswerTheSameWayForAnUnknownEmail() throws Exception {
+        // The response must not reveal whether the address exists.
+        HttpResponse<String> response = session.login("nobody-" + System.nanoTime() + "@acme.test",
+                "some-password-123");
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).contains("NOT_AUTHENTICATED");
+        assertThat(response.body()).doesNotContain("nobody-");
+    }
+
+    @Test
+    void shouldRejectEndedSession() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        assertThat(session.get("/api/auth/me").statusCode()).isEqualTo(200);
+
+        sessionInvalidator.endAllFor(HR_EMAIL);
+
+        assertThat(session.get("/api/auth/me").statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void shouldAnswer401WhenAStateChangingRequestLosesItsSession() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        assertThat(session.get("/api/auth/me").statusCode()).isEqualTo(200);
+
+        sessionInvalidator.endAllFor(HR_EMAIL);
+
+        // A POST without a session fails the CSRF check first; the client must see "session gone"
+        // (401), not "not allowed" (403), so the SPA can send the user back to the login screen.
+        HttpResponse<String> response = session.post("/api/users", "{\"email\":\"x@acme.test\","
+                + "\"displayName\":\"X\",\"role\":\"EMPLOYEE\"}");
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).contains("NOT_AUTHENTICATED");
+    }
+
+    @Test
+    void shouldRejectAStateChangingRequestWithoutASession() throws Exception {
+        // No session at all: the CSRF check fails first, but the answer is "session gone" (401).
+        HttpResponse<String> response = session.postWithoutCsrf("/api/auth/login",
+                "{\"email\":\"" + HR_EMAIL + "\",\"password\":\"" + HR_PASSWORD + "\"}");
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).contains("NOT_AUTHENTICATED");
+    }
+
+    @Test
+    void shouldRejectAStateChangingRequestWithAWrongCsrfToken() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+
+        // A session exists, so the refusal is an authorization answer with its own code.
+        HttpResponse<String> response = session.postWithToken("/api/auth/logout", "{}", "not-the-token");
+
+        assertThat(response.statusCode()).isEqualTo(403);
+        assertThat(response.body()).contains("CSRF_INVALID");
+    }
+
+    @Test
+    void shouldLockAfterFiveFailures() throws Exception {
+        Session hr = new Session();
+        assertThat(hr.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String email = "lock-" + System.nanoTime() + "@acme.test";
+        HttpResponse<String> created = hr.post("/api/users",
+                "{\"email\":\"" + email + "\",\"displayName\":\"Lock Test\",\"role\":\"EMPLOYEE\"}");
+        assertThat(created.statusCode()).isEqualTo(201);
+        String temporaryPassword = extract(created.body(), "temporaryPassword");
+
+        Session attacker = new Session();
+        for (int attempt = 0; attempt < 5; attempt++) {
+            assertThat(attacker.login(email, "wrong-password-123").statusCode()).isEqualTo(401);
+        }
+
+        HttpResponse<String> locked = attacker.login(email, temporaryPassword);
+
+        assertThat(locked.statusCode()).isEqualTo(423);
+        assertThat(locked.body()).contains("ACCOUNT_LOCKED");
+
+        // The 15 minutes come from the running configuration, not from the test (AC-3).
+        Instant lockedUntil = users.findByEmailIgnoreCase(email).orElseThrow().getLockedUntil();
+        assertThat(lockedUntil)
+                .as("lockout duration from application.yml")
+                .isAfter(Instant.now().plus(Duration.ofMinutes(14)))
+                .isBefore(Instant.now().plus(Duration.ofMinutes(16)));
+    }
+}

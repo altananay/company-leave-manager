@@ -46,11 +46,17 @@ Upgrades keep `scripts/check` green; a major upgrade that changes behavior is it
 
 ## Error handling
 
-- Every error is **RFC 9457 Problem Details**: `type`, `title`, `status`, `detail`, `instance`,
-  plus `code` and, for validation, `errors[]` (field → message).
-- One `@RestControllerAdvice` produces all error responses; no controller builds its own error body.
-- Business codes: `LEAVE_BALANCE_INSUFFICIENT`, `LEAVE_OVERLAP`, `LEAVE_PAST_DATE`,
-  `NOT_AUTHORIZED`, `VALIDATION_FAILED`, `NOT_FOUND`, `CONFLICT`.
+- Every error is **RFC 9457 Problem Details**: `type`, `title`, `status`, plus `code`
+  and, for validation, `errors[]` (field → message). A 5xx also carries `requestId`. `instance` is
+  optional in RFC 9457 and this project does not set it.
+- One `@RestControllerAdvice` produces the error shape: `ApiExceptionHandler.problem(...)` is the
+  only place a body is built, and controllers return its result — they never format JSON themselves.
+- Business codes: `NOT_AUTHENTICATED`, `NOT_AUTHORIZED`, `CSRF_INVALID`, `SESSION_EXPIRED`,
+  `PASSWORD_CHANGE_REQUIRED`, `ACCOUNT_LOCKED`, `INVALID_PASSWORD`, `PASSWORD_MISMATCH`,
+  `WEAK_PASSWORD`, `VALIDATION_FAILED`, `INVALID_REQUEST`, `INVALID_PARAMETER`, `INVALID_ROLE`,
+  `ROLE_NOT_ASSIGNABLE`, `PROTECTED_ACCOUNT`, `EMAIL_EXISTS`, `SELF_ACTION_NOT_ALLOWED`, `NOT_FOUND`,
+  `METHOD_NOT_ALLOWED`, `UNSUPPORTED_MEDIA_TYPE`, `CONFLICT`, `INTERNAL_ERROR`, and the leave
+  codes `LEAVE_BALANCE_INSUFFICIENT`, `LEAVE_OVERLAP`, `LEAVE_PAST_DATE`.
 - 5xx never leaks internals or stack traces; the response carries `requestId` and the server logs
   the detail against the same `requestId`. 4xx never carries a stack trace either.
 - User-facing text comes from the UI catalogue (tr/en); the API returns a stable English `code` and
@@ -77,8 +83,8 @@ it in the fix round. Builders read this section before the first plan step.
 ## Enforced by tooling
 
 - `scripts/check` — the single gate: build, unit, component, integration and e2e steps.
-- **ArchUnit** — the forbidden dependencies in `docs/architecture.md`; today rules 1, 2 and 4
-  (rule 3, JPA entities, arrives with JPA — `specs/backlog.md` B-3).
+- **ArchUnit** — the forbidden dependencies in `docs/architecture.md`, rules 1–4 (rule 3, JPA
+  entities, arrived with spec 0002).
 - **oxlint + Prettier** — frontend lint and formatting, in `check` (oxlint because it supports
   TypeScript 7; `typescript-eslint` does not yet).
 - Compiler — Java 25 types and null-checks as configured; no Java format gate.

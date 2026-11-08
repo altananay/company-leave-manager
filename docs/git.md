@@ -46,7 +46,9 @@
 
 ## Pull requests
 
-- PR template checklist completed; `scripts/check` green in CI.
+- PR template filled in: the purpose, a one-paragraph summary, and the spec/plan links. The gate
+  records live in the plan file (`## Triage`, criterion ↔ test map) and in CI (`doctor`, `check`),
+  so the PR does not repeat them.
 - **Merge with a merge commit (GitHub's default), not a squash.** The branch history stays, and
   conflicts are resolved once on the branch instead of re-appearing at every squash.
 - Solo project: **0 required approvals** (GitHub cannot approve your own PR); the independent review
