@@ -29,6 +29,14 @@ type ErrorKey =
   | 'selfAction'
   | 'genericError'
 
+/**
+ * Under md the table becomes a stack of cards: each cell prints its column name with `before:`.
+ * The label never wraps and never shrinks, so a long value (an address) wraps instead of pushing
+ * "E-POSTA" onto two lines.
+ */
+const CELL_LABEL =
+  'flex items-baseline justify-between gap-4 py-1 before:shrink-0 before:whitespace-nowrap before:text-xs before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none'
+
 function errorKeyFor(failure: unknown): ErrorKey {
   const code = failure instanceof ApiError ? failure.code : 'ERROR'
   switch (code) {
@@ -264,30 +272,18 @@ function UsersPage({ onBack }: { onBack: () => void }) {
               <TableBody>
                 {users.map((user) => (
                   <TableRow key={user.id} className="block py-4 md:table-row md:py-0">
-                    <TableCell
-                      data-label={t('displayName')}
-                      className="flex items-baseline justify-between gap-4 py-1 before:text-xs before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none"
-                    >
+                    <TableCell data-label={t('displayName')} className={CELL_LABEL}>
                       <span className="font-medium md:truncate">{user.displayName}</span>
                     </TableCell>
-                    <TableCell
-                      data-label={t('email')}
-                      className="flex items-baseline justify-between gap-4 py-1 before:text-xs before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none"
-                    >
+                    <TableCell data-label={t('email')} className={CELL_LABEL}>
                       <span className="block text-sm text-muted-foreground [overflow-wrap:anywhere] md:max-w-[16rem] md:truncate">
                         {user.email}
                       </span>
                     </TableCell>
-                    <TableCell
-                      data-label={t('role')}
-                      className="flex items-baseline justify-between gap-4 py-1 before:text-xs before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none"
-                    >
+                    <TableCell data-label={t('role')} className={CELL_LABEL}>
                       <Badge variant="default">{t(roleKey(user.role))}</Badge>
                     </TableCell>
-                    <TableCell
-                      data-label={t('active')}
-                      className="flex items-baseline justify-between gap-4 py-1 before:text-xs before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none"
-                    >
+                    <TableCell data-label={t('active')} className={CELL_LABEL}>
                       <Badge variant={user.active ? 'success' : 'muted'}>
                         {user.active ? t('active') : t('inactive')}
                       </Badge>

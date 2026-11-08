@@ -131,6 +131,18 @@
     outline-offset: 2px;
   }
 
+  /* `main` takes focus on every view change so a screen reader lands on the content (AC-3). A ring
+     around the whole content area reads as a rendering error on a mouse-driven first paint, so it
+     is drawn only once the user is keyboarding (`data-input` is set by App on the first Tab). */
+  main:focus-visible {
+    outline: none;
+  }
+
+  html[data-input='keyboard'] main:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+  }
+
   ::selection {
     background-color: var(--accent);
     color: var(--accent-foreground);

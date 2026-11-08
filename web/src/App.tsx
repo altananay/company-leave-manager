@@ -127,6 +127,26 @@ function App() {
     mainRef.current?.focus()
   }, [view])
 
+  // The content region's focus ring is for keyboard users only: a mouse user never sees a box
+  // around the whole page. One listener pair records the last input modality (AC-3).
+  useEffect(() => {
+    const root = document.documentElement
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Tab') {
+        root.dataset.input = 'keyboard'
+      }
+    }
+    const onPointerDown = () => {
+      delete root.dataset.input
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [])
+
   return (
     <div className="relative flex min-h-dvh flex-col bg-background">
       {/* A quiet accent behind the content; decoration only, so it never carries meaning. */}
@@ -179,8 +199,8 @@ function App() {
         tabIndex={-1}
         className={
           centered
-            ? 'relative mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-10 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:px-6'
-            : 'relative mx-auto w-full max-w-5xl flex-1 px-4 py-8 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:px-6'
+            ? 'relative mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-10 sm:px-6'
+            : 'relative mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6'
         }
       >
         {view === 'loading' && (

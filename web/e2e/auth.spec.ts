@@ -208,6 +208,36 @@ test('shouldNotScrollInsideTheTableWithALongAddress', async ({ page }) => {
   }
 })
 
+test('shouldShowTheContentFocusRingOnlyForTheKeyboard', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+
+  const mainOutline = () =>
+    page.evaluate(() => {
+      const main = document.querySelector('main')
+      if (!main) {
+        return 'missing'
+      }
+      const style = getComputedStyle(main)
+      return style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) > 0
+        ? 'ring'
+        : 'none'
+    })
+
+  // First paint: the content region holds focus, but a mouse user sees no box around the page.
+  await expect(page.getByRole('main')).toBeFocused()
+  expect(await mainOutline(), 'first paint').toBe('none')
+
+  // A keyboard user gets the ring: submit the form from the keyboard.
+  await page.getByLabel('E-posta').fill(HR_EMAIL)
+  await page.getByLabel('Parola').fill(HR_PASSWORD)
+  await page.getByLabel('Parola').press('Tab')
+  await page.keyboard.press('Enter')
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+  await expect(page.getByRole('main')).toBeFocused()
+  expect(await mainOutline(), 'after a keyboard submit').toBe('ring')
+})
+
 /** Every control a thumb has to hit: buttons, fields, the combobox and listbox options (AC-8). */
 async function expectTouchTargets(
   page: import('@playwright/test').Page,
