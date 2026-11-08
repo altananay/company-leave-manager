@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
  * Inline message: errors and notices use the same component so the two never drift apart (AC-6).
  * `role="alert"` on the destructive variant is what a screen reader announces (AC-3).
  */
-const alertVariants = cva('flex items-start gap-3 rounded-lg border px-4 py-3 text-sm', {
+const alertVariants = cva('flex items-start gap-3 rounded-panel border px-4 py-3 text-body', {
   variants: {
     variant: {
       info: 'border-border bg-muted text-foreground',

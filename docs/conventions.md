@@ -78,18 +78,34 @@ Upgrades keep `scripts/check` green; a major upgrade that changes behavior is it
 
 - **Tailwind CSS v4 + shadcn/ui** (ADR 0003). Components live in `web/src/ui/`; a screen composes
   them instead of writing styles of its own.
-- **Colours, radii and fonts come from tokens** in `web/src/index.css`. A colour literal anywhere
-  else in `web/src` fails `scripts/tokens`; a line that genuinely needs one opts out with
-  `tokens-allow`. Assets (`web/public/*.svg`) and `web/index.html` are outside that scan — an SVG
-  cannot read a CSS variable.
+- **Colours, radii, shadows, motion and fonts come from tokens** in `web/src/index.css`. A colour
+  literal, a numeric arbitrary `rounded-[10px]` / `shadow-[0_1px_2px_…]` / `text-[13px]` value, a
+  colour keyword in an arbitrary utility (`text-[coral]`), or a named Tailwind step (`text-sm`,
+  `text-lg`, `shadow-sm`, `shadow-lg`, `rounded-lg`, …) anywhere else in `web/src` fails
+  `scripts/tokens`; every CSS file except `index.css` is scanned too. A line that genuinely needs an
+  exception opts out with `tokens-allow`. Assets (`web/public/*.svg`) and `web/index.html` are outside
+  that scan — an SVG cannot read a CSS variable.
+- **Type scale, not one-off sizes**: `text-display`, `text-h1`, `text-h2`, `text-body`, `text-small`,
+  `text-label`. The radius scale names the job: `rounded-chip`, `rounded-control`, `rounded-panel`,
+  `rounded-card`, `rounded-pill`. A screen picks a step; `text-lg`/`rounded-lg` in a screen is a
+  defect.
+- **The shell owns the frame**: `web/src/app/AppShell.tsx` draws the sidebar (1024 px and up), the
+  sheet below it, the breadcrumb and the account menu. A screen renders its content inside it and
+  never draws its own header or navigation. `web/src/app/PageHeader.tsx` is the one way to start a
+  screen (title, one line of description, the primary action).
 - One component per job: `Button`, `Input`, `Field`, `Alert`, `Card`, `Badge`, `Table`, `Select`,
-  `Dialog`. A second, hand-styled version of any of them is a defect.
+  `Dialog`, `Avatar`, `Skeleton`, `Sheet`, `DropdownMenu`, `Breadcrumb`. A second, hand-styled
+  version of any of them is a defect.
+- **Motion is token-driven and short** (`--duration-fast/base`, 150–200 ms) and switches off under
+  `prefers-reduced-motion`; a new animation without a token is a defect.
 - Icons come from `lucide-react`, only the ones used; the font is the system stack (no webfont).
 - Accessibility is part of the definition of done: every screen is keyboard reachable, every field
   is labelled, errors use `role="alert"`, and `jest-axe` runs on every screen in the component tests
   for the structural rules. **Contrast is measured in the real browser**: text contrast by the axe
-  scan in `web/e2e/accessibility.spec.ts`, control boundaries (WCAG 1.4.11) by the computed-colour
-  check in `web/e2e/contrast.spec.ts` — jsdom has no stylesheet, and axe has no rule for the latter.
+  scan in `web/e2e/accessibility.spec.ts`; the gradient sign-in panel by computing its text against
+  every gradient stop (`::shouldKeepTheBrandPanelTextReadable`); control boundaries (WCAG 1.4.11) by
+  the computed-colour check in `web/e2e/contrast.spec.ts` — jsdom has no stylesheet, axe cannot
+  resolve a background image, and axe has no rule for non-text contrast.
 - Layout is mobile-first: 360 px is the smallest width to keep working, 1024 px and up is the target.
 
 ## Known traps
@@ -105,7 +121,10 @@ it in the fix round. Builders read this section before the first plan step.
   entities, arrived with spec 0002).
 - **oxlint + Prettier** — frontend lint and formatting, in `check` (oxlint because it supports
   TypeScript 7; `typescript-eslint` does not yet).
-- **`scripts/tokens`** — no colour literal outside `web/src/index.css` (ADR 0003).
+- **`scripts/tokens`** — no colour literal; no named Tailwind `text-*` size, `shadow-*` or
+  `rounded-*` step; no numeric arbitrary `text-[…]`, `shadow-[…]` or `rounded-[…]` value; and no
+  colour keyword inside an arbitrary colour utility (`bg-[coral]`, `text-[coral]`, …), outside
+  `web/src/index.css`; every other stylesheet under `web/src` is scanned too (ADR 0003).
 - Compiler — Java 25 types and null-checks as configured; no Java format gate.
 - **Formatting is not tool-enforced on the Java side:** IntelliJ IDEA's default formatter is the
   project style, pinned by `.editorconfig` (LF, UTF-8, 4-space Java / 2-space web). No

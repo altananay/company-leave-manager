@@ -57,3 +57,30 @@ Icons come from `lucide-react` (only the used ones) and the font is the system s
 The component set grows past what a copy-in model can maintain (many contributors, frequent
 upstream fixes); the design needs a brand identity that the token file cannot express; the bundle
 becomes a measured problem on the target hardware.
+
+## A-5 — the visual language, second pass (2026-11-08)
+
+The first pass produced a correct but flat interface: one card per screen, one type size, no frame.
+At the ship gate the human rejected it ("looks like Bootstrap, not shadcn") and asked for a real
+design pass. The direction was chosen from four rendered mockups: **application shell + a measured
+amount of life + a two-column sign-in**.
+
+- **Shell over top bar.** The product is an internal tool used daily, and the leave flow adds
+  destinations (requests, balances, reports). A 240 px sidebar carries them; a top bar with pills
+  would not. Below 1024 px the same navigation becomes a sheet, so there is one navigation model.
+- **Type scale, not sizes.** `--text-display … --text-label` carry size, line height, tracking and
+  weight together, the way Vercel's Geist does it, and the semantic radius steps name the job
+  (`chip`, `control`, `panel`, `card`, `pill`). Screens pick a step; `scripts/tokens` fails an
+  arbitrary `text-[13px]`, `rounded-[10px]` or `shadow-[…]` and a named Tailwind step such as
+  `text-sm`, `shadow-lg` or `rounded-lg`, so the scale cannot erode.
+- **Dose of life.** One gradient (the sign-in panel and every primary action), three shadow steps,
+  tinted status badges and 150–200 ms transitions. Everything else stays flat and quiet: a corporate
+  tool that glows on every card is tiring to look at for eight hours.
+- **Costs, stated.** Five new primitives to keep (`Avatar`, `Skeleton`, `Sheet`, `DropdownMenu`,
+  `Breadcrumb`; `Separator` and `Tooltip` were never used, so they were never added at all), a
+  shell that every screen now depends on, and a heavier first render (the SPA went from 374 KB to
+  ~405 KB raw, 119 KB to ~127 KB gzip). The table gained client-side search, a role filter and
+  pagination — state that has to be tested.
+- **Guardrails.** The shell is the only place that draws navigation; `PageHeader` is the only way to
+  start a screen; the token gate refuses named/arbitrary radii, shadows and text sizes; motion is
+  token-driven and switches off under `prefers-reduced-motion`.

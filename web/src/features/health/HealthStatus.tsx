@@ -31,7 +31,7 @@ export function HealthStatus() {
           <p
             ref={statusRef}
             tabIndex={-1}
-            className="m-0 rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="m-0 rounded-chip text-body font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             role="status"
             aria-live="polite"
           >

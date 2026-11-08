@@ -16,7 +16,10 @@ function SelectTrigger({
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       className={cn(
-        'flex h-11 w-full items-center justify-between gap-2 rounded-md border border-control bg-card px-3 py-2 text-base shadow-xs md:text-sm',
+        // The 16 px mobile control size avoids the iOS focus zoom; from md the trigger takes the
+        // scale step.
+        'flex h-11 w-full items-center justify-between gap-2 rounded-control border border-control bg-card px-3 py-2 text-base shadow-1 md:text-body', // tokens-allow: iOS zoom guard (16 px on mobile)
+
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         'disabled:cursor-not-allowed disabled:opacity-50',
         className,
@@ -42,7 +45,7 @@ function SelectContent({
         data-slot="select-content"
         position="popper"
         className={cn(
-          'z-50 min-w-[8rem] overflow-hidden rounded-md border border-control bg-card text-card-foreground shadow-md',
+          'z-50 min-w-[8rem] overflow-hidden rounded-control border border-control bg-card text-card-foreground shadow-2',
           className,
         )}
         {...props}
@@ -62,7 +65,7 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        'relative flex min-h-11 w-full cursor-default select-none items-center gap-2 rounded-sm py-2 pl-8 pr-2 text-base md:text-sm',
+        'relative flex min-h-11 w-full cursor-default select-none items-center gap-2 rounded-chip py-2 pl-8 pr-2 text-body',
         // Radix keeps focus on the trigger and highlights the active row with data-highlighted, so
         // the indicator hangs off that attribute: an outline in the ring colour (AC-3).
         'data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground',

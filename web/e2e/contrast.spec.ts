@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
+import { goToUsers } from './navigation'
+
 const HR_EMAIL = 'hr@e2e.test'
 const HR_PASSWORD = 'hr-e2e-password-123'
 
@@ -63,16 +65,17 @@ test('shouldKeepControlBoundariesAtThreeToOne', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
 
-  expect(
-    await controlContrast(page, 'input', '[data-slot="card"]'),
-    'input border',
-  ).toBeGreaterThanOrEqual(3)
+  // The login form sits on the page surface, not in a card.
+  expect(await controlContrast(page, 'input', 'body'), 'input border').toBeGreaterThanOrEqual(3)
 
   await page.getByLabel('E-posta').fill(HR_EMAIL)
   await page.getByLabel('Parola').fill(HR_PASSWORD)
   await page.getByRole('button', { name: 'Giriş yap' }).click()
   await expect(page.getByText('Giriş yapan:')).toBeVisible()
 
+  // The home screen has no secondary action any more; the users toolbar's inactive role filters
+  // are secondary buttons inside a card, so their boundary is measured where a user meets them.
+  await goToUsers(page)
   expect(
     await controlContrast(page, 'button[data-slot="button"].bg-secondary', '[data-slot="card"]'),
     'secondary button border',
@@ -80,13 +83,17 @@ test('shouldKeepControlBoundariesAtThreeToOne', async ({ page }) => {
 })
 
 test('shouldKeepTheRoleListboxReadable', async ({ page }) => {
+  // The project emulates reduced motion; its 0.01 ms transition on every property makes a freshly
+  // highlighted row report its pre-highlight colour for one frame. This test measures colour, not
+  // motion — motion has its own test — so read the settled colours with normal transition timing.
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.goto('/')
   await page.getByLabel('E-posta').fill(HR_EMAIL)
   await page.getByLabel('Parola').fill(HR_PASSWORD)
   await page.getByRole('button', { name: 'Giriş yap' }).click()
   await expect(page.getByText('Giriş yapan:')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Kullanıcılar' }).click()
+  await goToUsers(page)
   await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
 
   await page.getByRole('combobox').click()

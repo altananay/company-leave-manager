@@ -1,5 +1,8 @@
+import { Home, Users } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
+import { AppShell, type NavItem } from '@/app/AppShell'
+import { PageHeader } from '@/app/PageHeader'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { PasswordChangePage } from '@/features/auth/PasswordChangePage'
 import { authApi, setUnauthorizedHandler, Unauthorized, type Me } from '@/features/auth/authApi'
@@ -7,11 +10,12 @@ import { roleKey } from '@/features/auth/roles'
 import { HealthStatus } from '@/features/health/HealthStatus'
 import { UsersPage } from '@/features/users/UsersPage'
 import { useI18n } from '@/i18n/I18nProvider'
+import { Avatar } from '@/ui/avatar'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/card'
 
-type View = 'loading' | 'login' | 'password' | 'home' | 'users'
+type View = 'loading' | 'login' | 'password' | 'home' | 'users' | 'forbidden'
 
 // Per-tab marker in sessionStorage (not memory) so the state survives a reload in this tab.
 // '1' = this tab had a session; 'expired' = a 401 ended it and the notice is still owed.
@@ -37,6 +41,7 @@ function App() {
   const [me, setMe] = useState<Me | null>(null)
   const [sessionExpired, setSessionExpired] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
+  const mainRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
@@ -82,6 +87,32 @@ function App() {
     }
   }, [])
 
+  // A view change removes the button that was clicked; move focus to the new screen so a keyboard
+  // user does not restart from the top of the document.
+  useEffect(() => {
+    mainRef.current?.focus()
+  }, [view])
+
+  // The content region's focus ring is for keyboard users only: a mouse user never sees a box
+  // around the whole page. One listener pair records the last input modality (AC-3).
+  useEffect(() => {
+    const root = document.documentElement
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Tab') {
+        root.dataset.input = 'keyboard'
+      }
+    }
+    const onPointerDown = () => {
+      delete root.dataset.input
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [])
+
   function handleLoggedIn(current: Me) {
     rememberSession(HAD_SESSION)
     setSessionExpired(false)
@@ -118,165 +149,150 @@ function App() {
     setView('home')
   }
 
-  const centered = view === 'login' || view === 'password' || view === 'loading'
-  const mainRef = useRef<HTMLElement>(null)
+  const languageSwitch = (
+    <div
+      role="group"
+      aria-label={t('languageLabel')}
+      className="flex items-center gap-1 rounded-panel border border-border bg-card p-1"
+    >
+      <Button
+        type="button"
+        size="icon"
+        variant={lang === 'tr' ? 'default' : 'ghost'}
+        aria-pressed={lang === 'tr'}
+        onClick={() => setLang('tr')}
+      >
+        TR
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant={lang === 'en' ? 'default' : 'ghost'}
+        aria-pressed={lang === 'en'}
+        onClick={() => setLang('en')}
+      >
+        EN
+      </Button>
+    </div>
+  )
 
-  // A view change removes the button that was clicked; move focus to the new screen so a keyboard
-  // user does not restart from the top of the document.
-  useEffect(() => {
-    mainRef.current?.focus()
-  }, [view])
+  if (view === 'loading') {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-background px-4">
+        <p className="text-small text-muted-foreground" role="status">
+          {t('loading')}
+        </p>
+      </div>
+    )
+  }
 
-  // The content region's focus ring is for keyboard users only: a mouse user never sees a box
-  // around the whole page. One listener pair records the last input modality (AC-3).
-  useEffect(() => {
-    const root = document.documentElement
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Tab') {
-        root.dataset.input = 'keyboard'
-      }
-    }
-    const onPointerDown = () => {
-      delete root.dataset.input
-    }
-    window.addEventListener('keydown', onKeyDown)
-    window.addEventListener('pointerdown', onPointerDown)
-    return () => {
-      window.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('pointerdown', onPointerDown)
-    }
-  }, [])
+  if (view === 'login') {
+    return (
+      <main ref={mainRef} tabIndex={-1} className="min-h-dvh outline-none">
+        <LoginPage
+          onLoggedIn={handleLoggedIn}
+          onAttempt={handleLoginAttempt}
+          sessionExpired={sessionExpired}
+          languageSwitch={languageSwitch}
+        />
+      </main>
+    )
+  }
+
+  if (view === 'password') {
+    return (
+      <main ref={mainRef} tabIndex={-1} className="min-h-dvh outline-none">
+        <PasswordChangePage
+          onChanged={handlePasswordChanged}
+          onLogout={handleLogout}
+          languageSwitch={languageSwitch}
+        />
+      </main>
+    )
+  }
+
+  const nav: NavItem[] = [
+    {
+      key: 'home',
+      label: t('home'),
+      icon: <Home />,
+      current: view === 'home',
+      onSelect: () => setView('home'),
+    },
+    {
+      key: 'users',
+      label: t('users'),
+      icon: <Users />,
+      current: view === 'users' || view === 'forbidden',
+      onSelect: () => setView('users'),
+    },
+  ]
+
+  // The 403 view is the users route's outcome, so "Kullanıcılar" stays the current crumb there too;
+  // a breadcrumb that marks "Ana ekran" would contradict the sidebar (AC-11).
+  const breadcrumb =
+    view === 'users' || view === 'forbidden' ? [t('home'), t('users')] : [t('home')]
 
   return (
-    <div className="relative flex min-h-dvh flex-col bg-background">
-      {/* A quiet accent behind the content; decoration only, so it never carries meaning. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-primary/5 blur-3xl"
-      />
-      <header className="relative border-b border-border bg-card/80 backdrop-blur-sm">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <span
-              aria-hidden="true"
-              className="grid size-9 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground shadow-sm"
-            >
-              İY
-            </span>
-            <h1 className="text-base font-semibold tracking-tight sm:text-lg">{t('appTitle')}</h1>
-          </div>
-          <div
-            role="group"
-            aria-label={t('languageLabel')}
-            className="flex items-center gap-1 rounded-lg border border-border bg-background p-1"
-          >
-            <Button
-              type="button"
-              size="icon"
-              variant={lang === 'tr' ? 'default' : 'ghost'}
-              aria-pressed={lang === 'tr'}
-              onClick={() => setLang('tr')}
-              className="text-xs"
-            >
-              TR
-            </Button>
-            <Button
-              type="button"
-              size="icon"
-              variant={lang === 'en' ? 'default' : 'ghost'}
-              aria-pressed={lang === 'en'}
-              onClick={() => setLang('en')}
-              className="text-xs"
-            >
-              EN
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <main
-        ref={mainRef}
-        tabIndex={-1}
-        className={
-          centered
-            ? 'relative mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-10 sm:px-6'
-            : 'relative mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6'
-        }
-      >
-        {view === 'loading' && (
-          <p className="text-center text-sm text-muted-foreground" role="status">
-            {t('loading')}
-          </p>
-        )}
-
-        {view === 'login' && (
-          <LoginPage
-            onLoggedIn={handleLoggedIn}
-            onAttempt={handleLoginAttempt}
-            sessionExpired={sessionExpired}
-          />
-        )}
-
-        {view === 'password' && (
-          <PasswordChangePage onChanged={handlePasswordChanged} onLogout={handleLogout} />
-        )}
-
-        {view === 'home' && me && (
-          <div className="flex flex-col gap-6">
+    <AppShell
+      appName={t('appTitle')}
+      nav={nav}
+      breadcrumb={breadcrumb}
+      user={{
+        displayName: me?.displayName ?? '',
+        email: me?.email ?? '',
+        roleLabel: me ? t(roleKey(me.role)) : '',
+      }}
+      labels={{
+        logout: t('logout'),
+        menu: t('menu'),
+        close: t('close'),
+        navigation: t('navigation'),
+        breadcrumb: t('breadcrumb'),
+      }}
+      onLogout={handleLogout}
+      languageSwitch={languageSwitch}
+      mainRef={mainRef}
+    >
+      {view === 'home' && me && (
+        <div className="flex flex-col gap-6">
+          <PageHeader title={t('home')} description={t('homeSubtitle')} />
+          <div className="grid gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader>
                 <div className="flex flex-wrap items-center gap-4">
-                  <span
-                    aria-hidden="true"
-                    className="grid size-12 shrink-0 place-items-center rounded-full bg-primary/10 text-base font-semibold text-primary"
-                  >
-                    {initials(me.displayName)}
-                  </span>
+                  <Avatar name={me.displayName} className="size-12 text-body" />
                   <div className="flex min-w-0 flex-col gap-1">
                     <CardTitle className="truncate">
                       {t('signedInAs')} {me.displayName}
                     </CardTitle>
                     <CardDescription className="truncate">{me.email}</CardDescription>
                   </div>
-                  <Badge variant="success" className="sm:ml-auto">
+                  <Badge className="ml-auto bg-accent font-semibold tracking-normal text-accent-foreground">
                     {t(roleKey(me.role))}
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" onClick={() => setView('users')}>
-                    {t('users')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={handleLogout}
-                    disabled={loggingOut}
-                  >
-                    {t('logout')}
-                  </Button>
-                </div>
-              </CardContent>
             </Card>
             <HealthStatus />
           </div>
-        )}
+        </div>
+      )}
 
-        {view === 'users' && <UsersPage onBack={() => setView('home')} />}
-      </main>
-    </div>
+      {view === 'users' && <UsersPage onForbidden={() => setView('forbidden')} />}
+
+      {view === 'forbidden' && (
+        <div className="flex flex-col gap-6">
+          <PageHeader title={t('forbiddenTitle')} description={t('forbiddenSubtitle')} />
+          <Card>
+            <CardContent className="py-10 text-center">
+              <p className="text-small text-muted-foreground">{t('forbiddenHint')}</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </AppShell>
   )
-}
-
-/** Up to two initials for the avatar circle; falls back to the first character of the address. */
-function initials(displayName: string): string {
-  return displayName
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toLocaleUpperCase('tr-TR') ?? '')
-    .join('')
 }
 
 export default App

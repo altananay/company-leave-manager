@@ -7,7 +7,7 @@ function Table({ className, ...props }: ComponentProps<'table'>) {
     <div data-slot="table-container" className="w-full overflow-x-auto">
       <table
         data-slot="table"
-        className={cn('w-full caption-bottom border-collapse text-sm', className)}
+        className={cn('w-full caption-bottom border-collapse text-body', className)}
         {...props}
       />
     </div>
@@ -43,7 +43,7 @@ function TableHead({ className, ...props }: ComponentProps<'th'>) {
     <th
       data-slot="table-head"
       className={cn(
-        'h-10 px-3 text-left align-middle text-xs font-semibold uppercase tracking-wide text-muted-foreground',
+        'h-10 px-3 text-left align-middle text-label font-semibold uppercase tracking-wide text-muted-foreground',
         className,
       )}
       {...props}

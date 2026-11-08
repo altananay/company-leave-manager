@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -74,6 +74,14 @@ function renderApp() {
   )
 }
 
+/**
+ * A navigation item of the signed-in shell, scoped to the sidebar landmark so a page action with
+ * the same label could never be picked up by mistake.
+ */
+async function navigationButton(name: string) {
+  return within(await screen.findByRole('complementary')).getByRole('button', { name })
+}
+
 function setBrowserLanguage(language: string) {
   Object.defineProperty(window.navigator, 'language', { value: language, configurable: true })
 }
@@ -144,7 +152,7 @@ describe('authentication', () => {
     const user = userEvent.setup()
     renderApp()
 
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
 
     expect(await screen.findByRole('heading', { name: 'Giriş' })).toBeInTheDocument()
     expect(screen.getByText('Oturum sona erdi. Lütfen yeniden giriş yapın.')).toBeInTheDocument()
@@ -199,7 +207,7 @@ describe('authentication', () => {
     const user = userEvent.setup()
     renderApp()
 
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
     expect(
       await screen.findByText('Oturum sona erdi. Lütfen yeniden giriş yapın.'),
     ).toBeInTheDocument()
@@ -255,9 +263,11 @@ describe('authentication', () => {
     const user = userEvent.setup()
     renderApp()
 
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
 
-    expect(await screen.findByText('Bu sayfaya erişiminiz yok')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Bu sayfaya erişiminiz yok' }),
+    ).toBeInTheDocument()
   })
 
   it('shouldLogOutWithoutANotice', async () => {
@@ -306,6 +316,18 @@ describe('users screen', () => {
     { ...EMPLOYEE, id: 'u-emp-2', email: 'emp2@acme.test', displayName: 'Second', active: true },
   ]
 
+  /** Opens the users screen with a fixed list; the caller waits for the table when it exists. */
+  async function openUsersWith(rows: unknown[]) {
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/users': () => json(200, rows),
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await navigationButton('Kullanıcılar'))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+    return user
+  }
+
   it('shouldNotOfferActionsOnASeededAccount', async () => {
     authenticated(HR, () => json(200, { status: 'UP' }), {
       '/api/users': () => json(200, users),
@@ -313,14 +335,128 @@ describe('users screen', () => {
 
     const user = userEvent.setup()
     renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
     await screen.findByRole('heading', { name: 'Kullanıcılar' })
 
     // The server refuses these rows (PROTECTED_ACCOUNT); the screen must not offer any action:
-    // two seeded rows (CEO + HR) show the note, the two employees keep their buttons.
+    // two seeded rows (CEO + HR) show the note, the two employees keep one menu each.
     expect(screen.getAllByText('Ortam değişkenleriyle yönetilir')).toHaveLength(2)
-    expect(screen.getAllByRole('button', { name: 'Pasife al' })).toHaveLength(2)
-    expect(screen.getAllByRole('button', { name: 'Parola sıfırla' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'İşlemler' })).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'Pasife al' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Parola sıfırla' })).toBeNull()
+
+    // The actions exist, behind the menu (AC-14).
+    await user.click(screen.getAllByRole('button', { name: 'İşlemler' })[0])
+    expect(await screen.findByRole('menuitem', { name: 'Parola sıfırla' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Pasife al' })).toBeInTheDocument()
+  })
+
+  it('shouldFilterTheListBySearch', async () => {
+    const user = await openUsersWith(users)
+    const search = screen.getByLabelText('İsim veya e-posta ara')
+    const table = await screen.findByRole('table')
+
+    // By name: only "Second" survives.
+    await user.type(search, 'Second')
+    expect(within(table).getByText('Second')).toBeInTheDocument()
+    expect(within(table).queryByText('HR Admin')).toBeNull()
+
+    // By e-mail too, and the row is the same one.
+    await user.clear(search)
+    await user.type(search, 'emp2@acme.test')
+    expect(within(screen.getByRole('table')).getByText('Second')).toBeInTheDocument()
+    expect(within(screen.getByRole('table')).getByText('emp2@acme.test')).toBeInTheDocument()
+    expect(within(screen.getByRole('table')).queryByText('HR Admin')).toBeNull()
+  })
+
+  it('shouldFilterTheListByRole', async () => {
+    const user = await openUsersWith(users)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'İK' }))
+    const hrTable = screen.getByRole('table')
+    expect(within(hrTable).getByText('HR Admin')).toBeInTheDocument()
+    expect(within(hrTable).queryByText('Second')).toBeNull()
+    expect(within(hrTable).queryByText('CEO')).toBeNull()
+
+    // The employee filter keeps both employees and drops the seeded accounts.
+    await user.click(screen.getByRole('button', { name: 'Çalışan' }))
+    const employeeTable = screen.getByRole('table')
+    expect(within(employeeTable).getAllByText('Çalışan')).toHaveLength(2)
+    expect(within(employeeTable).queryByText('HR Admin')).toBeNull()
+  })
+
+  it('shouldPaginateTheList', async () => {
+    const paged = Array.from({ length: 11 }, (_, index) => ({
+      id: `u-pager-${index}`,
+      email: `pager${index}@acme.test`,
+      displayName: `Pager ${index}`,
+      role: index === 0 ? 'HR' : 'EMPLOYEE',
+      mustChangePassword: false,
+      active: true,
+    }))
+    const user = await openUsersWith(paged)
+    await screen.findByRole('table')
+
+    // Ten rows on the first page, the eleventh only after "Sonraki".
+    expect(document.querySelectorAll('tbody tr')).toHaveLength(10)
+    expect(screen.queryByText('Pager 10')).toBeNull()
+    expect(screen.getByText(/1–10 \/ 11/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Sonraki' }))
+
+    expect(document.querySelectorAll('tbody tr')).toHaveLength(1)
+    expect(screen.getByText('Pager 10')).toBeInTheDocument()
+    expect(screen.getByText(/11–11 \/ 11/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sonraki' })).toBeDisabled()
+  })
+
+  it('shouldShowASkeletonWhileTheListLoads', async () => {
+    let resolveUsers!: (value: Response) => void
+    const pending = new Promise<Response>((resolve) => {
+      resolveUsers = resolve
+    })
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/users': () => pending,
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await navigationButton('Kullanıcılar'))
+
+    // The loading state is a skeleton, not a claim that the list is empty or a stale table.
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="users-skeleton"]')).toBeInTheDocument(),
+    )
+    // The skeleton is decorative (`aria-hidden`): the state is announced by its own status text.
+    expect(screen.getByRole('status')).toHaveTextContent('Yükleniyor…')
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByText(/Henüz kullanıcı yok/)).toBeNull()
+
+    resolveUsers(json(200, users))
+
+    expect(await screen.findByRole('table')).toBeInTheDocument()
+    expect(document.querySelector('[data-slot="users-skeleton"]')).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('shouldShowTheEmptyStateAfterAFilter', async () => {
+    const user = await openUsersWith(users)
+    await screen.findByRole('table')
+
+    await user.type(screen.getByLabelText('İsim veya e-posta ara'), 'no-such-user')
+
+    expect(screen.getByText('Bu filtreye uyan kullanıcı yok.')).toBeInTheDocument()
+    expect(screen.queryByText(/Henüz kullanıcı yok/)).toBeNull()
+
+    // A genuinely empty list is a different state and keeps the first-run message.
+    cleanup()
+    vi.unstubAllGlobals()
+    await openUsersWith([])
+    expect(
+      await screen.findByText('Henüz kullanıcı yok. Yukarıdaki formdan ilk kullanıcıyı oluşturun.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Bu filtreye uyan kullanıcı yok.')).toBeNull()
   })
 
   it('shouldShowTheServerCodeAsItsOwnMessage', async () => {
@@ -349,10 +485,11 @@ describe('users screen', () => {
 
     const user = userEvent.setup()
     renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
     await screen.findByRole('heading', { name: 'Kullanıcılar' })
 
-    await user.click(screen.getAllByRole('button', { name: 'Parola sıfırla' })[0])
+    await user.click(screen.getAllByRole('button', { name: 'İşlemler' })[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'Parola sıfırla' }))
 
     expect(
       await screen.findByText('Bu hesap ortam değişkenleriyle yönetilir; buradan değiştirilemez.'),
@@ -385,7 +522,7 @@ describe('users screen', () => {
 
     const user = userEvent.setup()
     renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
 
     const email = await screen.findByLabelText('E-posta')
     await user.type(email, 'taken@acme.test')
@@ -422,7 +559,7 @@ describe('users screen', () => {
 
     const user = userEvent.setup()
     renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
 
     const displayName = await screen.findByLabelText('Ad soyad')
     await user.type(screen.getByLabelText('E-posta'), 'someone@acme.test')
@@ -440,11 +577,12 @@ describe('users screen', () => {
 
     const user = userEvent.setup()
     renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
     await screen.findByRole('heading', { name: 'Kullanıcılar' })
 
-    const trigger = screen.getAllByRole('button', { name: 'Pasife al' })[0]
+    const trigger = screen.getAllByRole('button', { name: 'İşlemler' })[0]
     await user.click(trigger)
+    await user.click(await screen.findByRole('menuitem', { name: 'Pasife al' }))
     await screen.findByRole('dialog')
 
     await user.keyboard('{Escape}')
@@ -491,7 +629,7 @@ describe('users screen', () => {
 
     const user = userEvent.setup()
     renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
     await screen.findByRole('heading', { name: 'Kullanıcılar' })
 
     await user.type(screen.getByLabelText('E-posta'), 'new@acme.test')
@@ -535,10 +673,11 @@ describe('users screen', () => {
 
     const user = userEvent.setup()
     renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
     await screen.findByRole('heading', { name: 'Kullanıcılar' })
 
-    await user.click(screen.getAllByRole('button', { name: 'Parola sıfırla' })[0])
+    await user.click(screen.getAllByRole('button', { name: 'İşlemler' })[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'Parola sıfırla' }))
     await screen.findByText('Bu hesap ortam değişkenleriyle yönetilir; buradan değiştirilemez.')
 
     // A row failure is not a description of the create form's fields.
@@ -547,14 +686,41 @@ describe('users screen', () => {
 
   it('shouldMarkAnInactiveUser', async () => {
     authenticated(HR, () => json(200, { status: 'UP' }), {
-      '/api/users': () => json(200, [{ ...EMPLOYEE, active: false }]),
+      '/api/users': () =>
+        json(200, [
+          { ...EMPLOYEE, active: false },
+          {
+            ...EMPLOYEE,
+            id: 'u-active',
+            email: 'active@acme.test',
+            displayName: 'Active Person',
+            active: true,
+          },
+        ]),
     })
 
     const user = userEvent.setup()
     renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
 
-    expect(await screen.findByText('Pasif')).toBeInTheDocument()
+    // "Pasif" is also a stat label; the row badge is the state marker this test is about.
+    const table = await screen.findByRole('table')
+    expect(within(table).getByText('Pasif')).toBeInTheDocument()
+
+    // AC-15: the badge carries a dot as well as the word, so the state is never colour alone.
+    const [inactive, active] = Array.from(
+      table.querySelectorAll('tbody td[data-label="Aktif"] [data-slot="badge"]'),
+    )
+    expect(inactive).toHaveTextContent('Pasif')
+    expect(active).toHaveTextContent('Aktif')
+
+    const inactiveDot = inactive.querySelector('span[aria-hidden="true"]')
+    const activeDot = active.querySelector('span[aria-hidden="true"]')
+    if (inactiveDot === null || activeDot === null) {
+      throw new Error('a status badge is missing its dot')
+    }
+    expect(inactiveDot).toHaveClass('bg-muted-foreground')
+    expect(activeDot).toHaveClass('bg-success')
   })
 
   it('shouldAskForConfirmationBeforeDeactivating', async () => {
@@ -584,11 +750,12 @@ describe('users screen', () => {
 
     const user = userEvent.setup()
     renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
     await screen.findByRole('heading', { name: 'Kullanıcılar' })
 
-    const buttons = await screen.findAllByRole('button', { name: 'Pasife al' })
-    await user.click(buttons[1])
+    const triggers = await screen.findAllByRole('button', { name: 'İşlemler' })
+    await user.click(triggers[1])
+    await user.click(await screen.findByRole('menuitem', { name: 'Pasife al' }))
 
     // The first click only asks; nothing is sent yet.
     expect(deactivate).not.toHaveBeenCalled()
@@ -625,7 +792,7 @@ describe('users screen', () => {
 
     const user = userEvent.setup()
     renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
 
     await user.type(await screen.findByLabelText('E-posta'), 'taken@acme.test')
     await user.type(screen.getByLabelText('Ad soyad'), 'Taken Person')
@@ -885,7 +1052,7 @@ describe('language', () => {
     const user = userEvent.setup()
     renderApp()
 
-    await user.click(await screen.findByRole('button', { name: 'Users' }))
+    await user.click(await navigationButton('Users'))
 
     expect(await screen.findByRole('heading', { name: 'Users' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument()
@@ -900,22 +1067,26 @@ describe('language', () => {
     const user = userEvent.setup()
     renderApp()
 
-    await user.click(await screen.findByRole('button', { name: 'Users' }))
+    await user.click(await navigationButton('Users'))
 
-    expect(await screen.findByText('You do not have access to this page')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'You do not have access to this page' }),
+    ).toBeInTheDocument()
   })
 })
 
 describe('design system', () => {
   it('shouldRenderEveryScreenWithTheDesignSystem', async () => {
-    // Every screen is built from the shared primitives: a Card, the labelled Field, the Button and
-    // — where the screen reports a failure — the Alert. The map claims all four, so all four are
-    // asserted here instead of the card count alone.
+    // Every screen is built from the shared primitives: the labelled Field, the Button and — where
+    // the screen reports a failure — the Alert. Card is the shared container on every screen except
+    // sign-in, whose two-column layout is built on its brand panel instead (AC-13); that layout is
+    // asserted in its place, so no screen escapes the structural check.
     const screens: Array<{
       name: string
       render: () => Promise<void>
+      slot: 'card' | 'brand-panel'
       fields: string[]
-      buttons: string[]
+      buttons: Array<{ name: string; scope?: 'shell' }>
       alerts?: number
     }> = [
       {
@@ -925,8 +1096,9 @@ describe('design system', () => {
           renderApp()
           await screen.findByRole('button', { name: 'Giriş yap' })
         },
+        slot: 'brand-panel',
         fields: ['E-posta', 'Parola'],
-        buttons: ['Giriş yap'],
+        buttons: [{ name: 'Giriş yap' }],
       },
       {
         name: 'password',
@@ -935,8 +1107,9 @@ describe('design system', () => {
           renderApp()
           await screen.findByRole('heading', { name: 'Parola değiştirme' })
         },
+        slot: 'card',
         fields: ['Mevcut parola', 'Yeni parola', 'Yeni parola (tekrar)'],
-        buttons: ['Parolayı değiştir'],
+        buttons: [{ name: 'Parolayı değiştir' }],
       },
       {
         name: 'home',
@@ -945,8 +1118,13 @@ describe('design system', () => {
           renderApp()
           await screen.findByText(/Giriş yapan:/)
         },
+        slot: 'card',
         fields: [],
-        buttons: ['Kullanıcılar', 'Çıkış'],
+        // Both moved into the shell: "Kullanıcılar" is the sidebar item, "Çıkış" the account card.
+        buttons: [
+          { name: 'Kullanıcılar', scope: 'shell' },
+          { name: 'Çıkış', scope: 'shell' },
+        ],
       },
       {
         name: 'users',
@@ -956,11 +1134,12 @@ describe('design system', () => {
           })
           const user = userEvent.setup()
           renderApp()
-          await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+          await user.click(await navigationButton('Kullanıcılar'))
           await screen.findByRole('heading', { name: 'Kullanıcılar' })
         },
+        slot: 'card',
         fields: ['Ad soyad', 'E-posta'],
-        buttons: ['Oluştur'],
+        buttons: [{ name: 'Oluştur' }],
       },
       {
         name: 'users error',
@@ -970,11 +1149,12 @@ describe('design system', () => {
           })
           const user = userEvent.setup()
           renderApp()
-          await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+          await user.click(await navigationButton('Kullanıcılar'))
           await screen.findByRole('alert')
         },
+        slot: 'card',
         fields: ['Ad soyad', 'E-posta'],
-        buttons: ['Oluştur'],
+        buttons: [{ name: 'Oluştur' }],
         alerts: 1,
       },
       {
@@ -985,11 +1165,13 @@ describe('design system', () => {
           })
           const user = userEvent.setup()
           renderApp()
-          await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
-          await screen.findByText('Bu sayfaya erişiminiz yok')
+          await user.click(await navigationButton('Kullanıcılar'))
+          await screen.findByRole('heading', { name: 'Bu sayfaya erişiminiz yok' })
         },
+        slot: 'card',
         fields: [],
-        buttons: ['Geri'],
+        // The old content-level "Geri" button is gone; the sidebar's "Ana ekran" is the way back.
+        buttons: [{ name: 'Ana ekran', scope: 'shell' }],
       },
     ]
 
@@ -998,8 +1180,8 @@ describe('design system', () => {
       vi.unstubAllGlobals()
       await entry.render()
       expect(
-        document.querySelectorAll('[data-slot="card"]').length,
-        `${entry.name} uses the Card component`,
+        document.querySelectorAll(`[data-slot="${entry.slot}"]`).length,
+        `${entry.name} renders its ${entry.slot}`,
       ).toBeGreaterThan(0)
       for (const label of entry.fields) {
         expect(
@@ -1007,10 +1189,11 @@ describe('design system', () => {
           `${entry.name} labels its "${label}" field`,
         ).toBeInTheDocument()
       }
-      for (const name of entry.buttons) {
+      for (const button of entry.buttons) {
+        const scope = button.scope === 'shell' ? screen.getByRole('complementary') : document.body
         expect(
-          screen.getByRole('button', { name }),
-          `${entry.name} renders the "${name}" button`,
+          within(scope).getByRole('button', { name: button.name }),
+          `${entry.name} renders the "${button.name}" button`,
         ).toBeInTheDocument()
       }
       if (entry.alerts) {
@@ -1033,15 +1216,26 @@ describe('design system', () => {
     const user = userEvent.setup()
     renderApp()
     await screen.findByText(/Giriş yapan:/)
-    await user.click(screen.getByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
     await screen.findByRole('heading', { name: 'Kullanıcılar' })
 
     const buttons = Array.from(document.querySelectorAll('button'))
     expect(buttons.length).toBeGreaterThan(0)
-    // Every button-shaped element comes from the design system: Button itself, or the Select
-    // trigger (Radix renders it as a button). A hand-styled <button> would have no data-slot.
+    const sidebar = screen.getByRole('complementary')
+    const sidebarNav = within(sidebar).getByRole('navigation')
+    // Every button in the document comes from the design system — the shell's navigation and
+    // account trigger included — or is the Select trigger (Radix renders it as a button). A
+    // hand-styled button would have no data-slot. The shell's semantics are checked on top of that:
+    // sidebar items are real buttons inside the navigation landmark, and the account trigger
+    // announces the menu it opens.
     const allowed = new Set(['button', 'select-trigger'])
     for (const button of buttons) {
+      if (sidebarNav.contains(button)) {
+        expect(button, button.textContent ?? '').toHaveAttribute('type', 'button')
+      }
+      if (button.getAttribute('aria-haspopup') === 'menu') {
+        expect(button).toHaveAttribute('aria-expanded', 'false')
+      }
       expect(allowed.has(button.getAttribute('data-slot') ?? ''), button.textContent ?? '').toBe(
         true,
       )
@@ -1076,10 +1270,12 @@ describe('design system', () => {
 
     const user = userEvent.setup()
     renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
 
-    // While the request is in flight the screen says it is loading, not that there is no user.
-    expect(await screen.findByText('Yükleniyor…')).toBeInTheDocument()
+    // While the request is in flight the screen shows its skeleton, not a claim that there is no user.
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="users-skeleton"]')).toBeInTheDocument(),
+    )
     expect(screen.queryByText(/Henüz kullanıcı yok/)).toBeNull()
 
     resolveUsers(json(200, []))
@@ -1096,11 +1292,12 @@ describe('design system', () => {
 
     const user = userEvent.setup()
     renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
 
-    expect(
-      await screen.findByText('İşlem tamamlanamadı. Lütfen tekrar deneyin.'),
-    ).toBeInTheDocument()
+    // The failure is announced as an alert; the list card must not claim the list is empty.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'İşlem tamamlanamadı. Lütfen tekrar deneyin.',
+    )
     expect(screen.queryByText(/Henüz kullanıcı yok/)).toBeNull()
   })
 })
@@ -1157,7 +1354,7 @@ describe('accessibility', () => {
 
     const user = userEvent.setup()
     const { container } = renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
     await screen.findByRole('heading', { name: 'Kullanıcılar' })
 
     expect(await axe(container)).toHaveNoViolations()
@@ -1170,8 +1367,8 @@ describe('accessibility', () => {
 
     const user = userEvent.setup()
     const { container } = renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
-    await screen.findByText('Bu sayfaya erişiminiz yok')
+    await user.click(await navigationButton('Kullanıcılar'))
+    await screen.findByRole('heading', { name: 'Bu sayfaya erişiminiz yok' })
 
     expect(await axe(container)).toHaveNoViolations()
   })
@@ -1185,11 +1382,17 @@ describe('accessibility', () => {
     const email = await screen.findByLabelText('E-posta')
     const password = screen.getByLabelText('Parola')
     const submit = screen.getByRole('button', { name: 'Giriş yap' })
+    const turkish = screen.getByRole('button', { name: 'TR' })
+    const english = screen.getByRole('button', { name: 'EN' })
 
-    // A view change focuses the main region, so the keyboard starts at the content, not the header.
+    // Sign-in is its own layout (no shell around it), so the keyboard starts at the top of the
+    // document; from there the tab order follows the visual order all the way to submit.
     await waitFor(() => expect(screen.getByRole('main')).toHaveFocus())
 
-    // From there the tab order follows the visual order: e-mail, password, submit.
+    await user.tab()
+    expect(turkish).toHaveFocus()
+    await user.tab()
+    expect(english).toHaveFocus()
     await user.tab()
     expect(email).toHaveFocus()
     await user.tab()
@@ -1203,10 +1406,14 @@ describe('accessibility', () => {
 
     const user = userEvent.setup()
     renderApp()
-    await screen.findByLabelText('E-posta')
+    const email = await screen.findByLabelText('E-posta')
 
-    // The header controls sit before the content region: Shift+Tab walks back to them.
+    // The view change focuses the content region. Wait for that effect before moving the focus by
+    // hand, or it can steal focus back after `email.focus()` and the Shift+Tab starts at the top.
     await waitFor(() => expect(screen.getByRole('main')).toHaveFocus())
+
+    // The language switch sits before the form: Shift+Tab from the first field walks back to it.
+    email.focus()
     await user.tab({ shift: true })
     expect(screen.getByRole('button', { name: 'EN' })).toHaveFocus()
     await user.tab({ shift: true })
@@ -1224,14 +1431,14 @@ describe('accessibility', () => {
 
     const user = userEvent.setup()
     renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await user.click(await navigationButton('Kullanıcılar'))
     await screen.findByRole('heading', { name: 'Kullanıcılar' })
     await waitFor(() => expect(screen.getByRole('main')).toHaveFocus())
 
-    // The back button sits at the top of the content region, the form before the list in the
+    // The page's primary action opens the content region; the form comes before the list in the
     // visual order, so the keyboard walks them in that order.
     await user.tab()
-    expect(screen.getByRole('button', { name: 'Geri' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Yeni kullanıcı' })).toHaveFocus()
     await user.tab()
     expect(screen.getByLabelText('E-posta')).toHaveFocus()
     await user.tab()
@@ -1241,11 +1448,29 @@ describe('accessibility', () => {
     await user.tab()
     expect(screen.getByRole('button', { name: 'Oluştur' })).toHaveFocus()
 
-    // And the row actions after the form, without a mouse.
+    // The search and the role filter sit between the form and the rows; then the row actions,
+    // still without a mouse.
     await user.tab()
-    expect(screen.getByRole('button', { name: 'Parola sıfırla' })).toHaveFocus()
+    expect(screen.getByLabelText('İsim veya e-posta ara')).toHaveFocus()
     await user.tab()
-    expect(screen.getByRole('button', { name: 'Pasife al' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Tümü' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'İK' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Yönetici' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Çalışan' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'İşlemler' })).toHaveFocus()
+
+    // The menu opens from the keyboard; its items are reachable and Escape returns to the trigger.
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('menuitem', { name: 'Parola sıfırla' })).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('menuitem', { name: 'Pasife al' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(screen.getByRole('button', { name: 'İşlemler' })).toHaveFocus()
   })
 
   it('shouldReachThePasswordScreenControlsWithTheKeyboard', async () => {
@@ -1254,8 +1479,15 @@ describe('accessibility', () => {
     const user = userEvent.setup()
     renderApp()
     await screen.findByRole('heading', { name: 'Parola değiştirme' })
+
+    // The password screen has its own layout (no shell around it), so the keyboard starts at the
+    // top of the document and walks every control in visual order.
     await waitFor(() => expect(screen.getByRole('main')).toHaveFocus())
 
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'TR' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'EN' })).toHaveFocus()
     await user.tab()
     expect(screen.getByLabelText('Mevcut parola')).toHaveFocus()
     await user.tab()
@@ -1264,5 +1496,7 @@ describe('accessibility', () => {
     expect(screen.getByLabelText('Yeni parola (tekrar)')).toHaveFocus()
     await user.tab()
     expect(screen.getByRole('button', { name: 'Parolayı değiştir' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Çıkış' })).toHaveFocus()
   })
 })

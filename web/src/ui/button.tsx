@@ -9,14 +9,16 @@ import { cn } from '@/lib/utils'
  * a second, hand-styled button is a defect. `min-h-11` keeps the 44 px touch target (AC-8).
  */
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background [&_svg]:size-4 [&_svg]:shrink-0',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control text-body font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background [&_svg]:size-4 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm',
+        // Every primary action carries the brand gradient (AC-15). The gradient is a token class so
+        // no screen repeats it.
+        default: 'brand-action bg-primary text-primary-foreground hover:brightness-105 shadow-1',
         secondary:
           'border border-control bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-sm',
+        destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-1',
         outline:
           'border border-control bg-card text-foreground hover:bg-accent hover:text-accent-foreground',
         ghost: 'text-foreground hover:bg-accent hover:text-accent-foreground',
@@ -25,8 +27,8 @@ const buttonVariants = cva(
       size: {
         default: 'h-11 px-4 py-2',
         // Compact is narrower, never shorter: the 44 px touch target holds on every size (AC-8).
-        sm: 'h-11 rounded-md px-3 text-xs',
-        lg: 'h-12 rounded-lg px-6 text-base',
+        sm: 'h-11 rounded-control px-3 text-small',
+        lg: 'h-12 rounded-panel px-6 text-body',
         icon: 'size-11',
       },
     },

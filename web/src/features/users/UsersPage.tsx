@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { MoreHorizontal } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
+import { PageHeader } from '@/app/PageHeader'
 import { useI18n } from '@/i18n/I18nProvider'
-import { ApiError, authApi, type CreatedUser, type User } from '@/features/auth/authApi'
+import { ApiError, authApi, type CreatedUser, type Role, type User } from '@/features/auth/authApi'
 import { roleKey } from '@/features/auth/roles'
 import { Alert } from '@/ui/alert'
+import { Avatar } from '@/ui/avatar'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/card'
@@ -16,9 +19,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/ui/dropdown-menu'
 import { Field } from '@/ui/field'
+import { Input } from '@/ui/input'
 import { Label } from '@/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
+import { Skeleton } from '@/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table'
 
 type ErrorKey =
@@ -29,13 +40,10 @@ type ErrorKey =
   | 'selfAction'
   | 'genericError'
 
-/**
- * Under md the table becomes a stack of cards: each cell prints its column name with `before:`.
- * The label never wraps and never shrinks, so a long value (an address) wraps instead of pushing
- * "E-POSTA" onto two lines.
- */
-const CELL_LABEL =
-  'flex items-baseline justify-between gap-4 py-1 before:shrink-0 before:whitespace-nowrap before:text-xs before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none'
+/** How many rows one page holds. A thousand accounts are not a scroll, they are pages (AC-14). */
+const PAGE_SIZE = 10
+
+type RoleFilter = 'ALL' | Role
 
 function errorKeyFor(failure: unknown): ErrorKey {
   const code = failure instanceof ApiError ? failure.code : 'ERROR'
@@ -56,11 +64,27 @@ function errorKeyFor(failure: unknown): ErrorKey {
   }
 }
 
-function UsersPage({ onBack }: { onBack: () => void }) {
+/**
+ * Under md the table becomes a stack of cards: each cell prints its column name with `before:`.
+ * The label never wraps and never shrinks, so a long value (an address) wraps instead of pushing
+ * "E-POSTA" onto two lines.
+ */
+const CELL_LABEL =
+  'flex items-baseline justify-between gap-4 py-1 before:shrink-0 before:whitespace-nowrap before:text-label before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none'
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-card border border-border bg-card p-4 shadow-1">
+      <p className="text-label uppercase text-muted-foreground">{label}</p>
+      <p className="mt-1 text-display">{value}</p>
+    </div>
+  )
+}
+
+function UsersPage({ onForbidden }: { onForbidden: () => void }) {
   const { t } = useI18n()
   const [users, setUsers] = useState<User[]>([])
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
-  const [forbidden, setForbidden] = useState(false)
   const [error, setError] = useState<ErrorKey | null>(null)
   const [created, setCreated] = useState<CreatedUser | null>(null)
   const [email, setEmail] = useState('')
@@ -68,6 +92,9 @@ function UsersPage({ onBack }: { onBack: () => void }) {
   const [role, setRole] = useState('EMPLOYEE')
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState<User | null>(null)
+  const [query, setQuery] = useState('')
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>('ALL')
+  const [page, setPage] = useState(1)
   const emailRef = useRef<HTMLInputElement>(null)
   const displayNameRef = useRef<HTMLInputElement>(null)
   // The button that opened the dialog, so focus can return to it when the dialog closes.
@@ -76,6 +103,12 @@ function UsersPage({ onBack }: { onBack: () => void }) {
   const latestRequest = useRef(0)
   // The screen is unmounted when the user goes back: an answer that arrives later must be dropped.
   const mounted = useRef(true)
+  // The forbidden callback lives in a ref: `load` must not re-run because App re-rendered.
+  const forbiddenRef = useRef(onForbidden)
+
+  useEffect(() => {
+    forbiddenRef.current = onForbidden
+  }, [onForbidden])
 
   useEffect(() => {
     mounted.current = true
@@ -100,7 +133,7 @@ function UsersPage({ onBack }: { onBack: () => void }) {
       }
       setStatus('error')
       if (failure instanceof ApiError && failure.status === 403) {
-        setForbidden(true)
+        forbiddenRef.current()
       } else {
         setError(errorKeyFor(failure))
       }
@@ -161,51 +194,62 @@ function UsersPage({ onBack }: { onBack: () => void }) {
   const formError =
     error === 'emailExists' || error === 'validationFailed' || error === 'roleNotAssignable'
 
-  if (forbidden) {
-    return (
-      <Card className="mx-auto max-w-md">
-        <CardHeader>
-          <CardTitle>{t('forbiddenTitle')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Button type="button" variant="secondary" onClick={onBack}>
-            {t('back')}
-          </Button>
-        </CardContent>
-      </Card>
-    )
+  const active = users.filter((user) => user.active).length
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase('tr')
+    return users.filter((user) => {
+      const matchesRole = roleFilter === 'ALL' || user.role === roleFilter
+      const matchesQuery =
+        needle.length === 0 ||
+        user.displayName.toLocaleLowerCase('tr').includes(needle) ||
+        user.email.toLocaleLowerCase('tr').includes(needle)
+      return matchesRole && matchesQuery
+    })
+  }, [users, query, roleFilter])
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+  function filterByRole(next: RoleFilter) {
+    setRoleFilter(next)
+    setPage(1)
   }
 
   return (
     <div className="flex flex-col gap-6">
+      <PageHeader
+        title={t('usersTitle')}
+        description={t('usersSubtitle')}
+        actions={
+          <Button type="button" onClick={() => emailRef.current?.focus()}>
+            {t('newUser')}
+          </Button>
+        }
+      />
+
+      {created && (
+        <Alert variant="success">
+          <div className="flex flex-col gap-1">
+            <span className="font-medium">{t('temporaryPasswordOnce')}</span>
+            <code className="rounded-chip bg-card px-2 py-1 font-mono text-small">
+              {created.temporaryPassword}
+            </code>
+          </div>
+        </Alert>
+      )}
+      {error && !formError && (
+        <Alert variant="destructive" id="users-error">
+          <p className="font-medium">{t(error)}</p>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <CardTitle>{t('usersTitle')}</CardTitle>
-            <Button type="button" variant="secondary" size="sm" onClick={onBack}>
-              {t('back')}
-            </Button>
-          </div>
+          <CardTitle>{t('newUser')}</CardTitle>
         </CardHeader>
         <CardContent>
-          {created && (
-            <Alert variant="success">
-              <div className="flex flex-col gap-1">
-                <span className="font-medium">{t('temporaryPasswordOnce')}</span>
-                <code className="rounded bg-card px-2 py-1 font-mono text-sm">
-                  {created.temporaryPassword}
-                </code>
-              </div>
-            </Alert>
-          )}
-          {error && (
-            <Alert variant="destructive" id="users-error">
-              <p className="font-medium">{t(error)}</p>
-            </Alert>
-          )}
-
           <form className="flex flex-col gap-4" onSubmit={create}>
-            <h3 className="text-sm font-semibold">{t('newUser')}</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field
                 label={t('email')}
@@ -227,100 +271,207 @@ function UsersPage({ onBack }: { onBack: () => void }) {
                 required
               />
             </div>
-            <div className="flex flex-col gap-1.5 sm:max-w-xs">
-              <Label htmlFor="new-user-role">{t('role')}</Label>
-              <Select value={role} onValueChange={setRole}>
-                <SelectTrigger id="new-user-role" aria-label={t('role')}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="EMPLOYEE">{t('roleEmployee')}</SelectItem>
-                  <SelectItem value="MANAGER">{t('roleManager')}</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid gap-4 sm:grid-cols-[12rem_auto] sm:items-end">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="role-trigger">{t('role')}</Label>
+                <Select value={role} onValueChange={setRole}>
+                  <SelectTrigger id="role-trigger">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="EMPLOYEE">{t('roleEmployee')}</SelectItem>
+                    <SelectItem value="MANAGER">{t('roleManager')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="submit" disabled={busy} className="sm:justify-self-start">
+                {t('create')}
+              </Button>
             </div>
-            <Button type="submit" disabled={busy} className="self-start">
-              {t('create')}
-            </Button>
+            {formError && (
+              <Alert variant="destructive" id="users-error">
+                <p className="font-medium">{t(error)}</p>
+              </Alert>
+            )}
           </form>
         </CardContent>
       </Card>
 
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Stat label={t('statTotal')} value={users.length} />
+        <Stat label={t('statActive')} value={active} />
+        <Stat label={t('statInactive')} value={users.length - active} />
+      </div>
+
       <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label htmlFor="user-search" className="sr-only">
+                {t('searchUsers')}
+              </Label>
+              <Input
+                id="user-search"
+                type="search"
+                value={query}
+                placeholder={t('searchUsers')}
+                onChange={(event) => {
+                  setQuery(event.target.value)
+                  setPage(1)
+                }}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2" role="group" aria-label={t('role')}>
+              {(['ALL', 'HR', 'MANAGER', 'EMPLOYEE'] as RoleFilter[]).map((value) => (
+                <Button
+                  key={value}
+                  type="button"
+                  size="sm"
+                  variant={roleFilter === value ? 'default' : 'secondary'}
+                  aria-pressed={roleFilter === value}
+                  onClick={() => filterByRole(value)}
+                  className="min-w-11"
+                >
+                  {value === 'ALL' ? t('allRoles') : t(roleKey(value))}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </CardHeader>
         <CardContent>
           {status === 'loading' ? (
-            <p className="py-6 text-center text-sm text-muted-foreground" role="status">
-              {t('loading')}
-            </p>
-          ) : status === 'error' ? null : users.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground" role="status">
-              {t('noUsers')}
-            </p>
+            <div className="flex flex-col gap-3 py-2" data-slot="users-skeleton">
+              {/* The skeleton is aria-hidden, so the loading state needs its own announcement. */}
+              <p role="status" className="sr-only">
+                {t('loading')}
+              </p>
+              {Array.from({ length: 4 }, (_, index) => (
+                <Skeleton key={index} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : status === 'error' ? null : filtered.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <p className="text-small font-medium">
+                {users.length === 0 ? t('noUsers') : t('noResults')}
+              </p>
+            </div>
           ) : (
             <Table className="md:table-fixed">
               <TableHeader className="hidden md:table-header-group">
                 <TableRow>
                   <TableHead>{t('displayName')}</TableHead>
-                  <TableHead>{t('email')}</TableHead>
                   <TableHead className="md:w-24">{t('role')}</TableHead>
                   <TableHead className="md:w-24">{t('active')}</TableHead>
-                  <TableHead className="md:w-52">
+                  <TableHead className="md:w-56">
                     <span className="sr-only">{t('actions')}</span>
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((user) => (
+                {visible.map((user) => (
                   <TableRow key={user.id} className="block py-4 md:table-row md:py-0">
                     <TableCell data-label={t('displayName')} className={CELL_LABEL}>
-                      <span className="font-medium md:truncate">{user.displayName}</span>
-                    </TableCell>
-                    <TableCell data-label={t('email')} className={CELL_LABEL}>
-                      <span className="block text-sm text-muted-foreground [overflow-wrap:anywhere] md:max-w-[16rem] md:truncate">
-                        {user.email}
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        <Avatar name={user.displayName} className="md:size-8" />
+                        <span className="flex min-w-0 flex-col">
+                          <span className="font-medium [overflow-wrap:anywhere] md:truncate">
+                            {user.displayName}
+                          </span>
+                          <span className="text-small text-muted-foreground [overflow-wrap:anywhere] md:truncate">
+                            {user.email}
+                          </span>
+                        </span>
                       </span>
                     </TableCell>
                     <TableCell data-label={t('role')} className={CELL_LABEL}>
                       <Badge variant="default">{t(roleKey(user.role))}</Badge>
                     </TableCell>
                     <TableCell data-label={t('active')} className={CELL_LABEL}>
-                      <Badge variant={user.active ? 'success' : 'muted'}>
+                      <Badge variant={user.active ? 'success' : 'muted'} className="gap-1.5">
+                        {/* AC-15: the status is a dot and a word, never colour alone. */}
+                        <span
+                          aria-hidden="true"
+                          className={`size-1.5 rounded-pill ${
+                            user.active ? 'bg-success' : 'bg-muted-foreground'
+                          }`}
+                        />
                         {user.active ? t('active') : t('inactive')}
                       </Badge>
                     </TableCell>
                     <TableCell className="flex flex-wrap items-center gap-2 pt-2 md:table-cell md:justify-end md:pt-0">
-                      {isProtected(user) ? (
-                        <span className="text-xs text-muted-foreground">
+                      {user.role === 'HR' || user.role === 'CEO' ? (
+                        <span className="text-small text-muted-foreground">
                           {t('protectedAccount')}
                         </span>
                       ) : (
-                        <>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => resetPassword(user)}
-                          >
-                            {t('resetPassword')}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            onClick={(event) => {
-                              deactivateTrigger.current = event.currentTarget
-                              setConfirming(user)
-                            }}
-                          >
-                            {t('deactivate')}
-                          </Button>
-                        </>
+                        // Row actions live behind one menu (AC-14), so the table stays quiet and the
+                        // protected rows above cannot be mistaken for actionable ones.
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={t('actions')}
+                              onClick={(event) => {
+                                // The dialog must return focus here, not to the menu item that is
+                                // gone by the time it closes (AC-3).
+                                deactivateTrigger.current = event.currentTarget
+                              }}
+                            >
+                              <MoreHorizontal aria-hidden="true" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            <DropdownMenuItem onSelect={() => resetPassword(user)}>
+                              {t('resetPassword')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onSelect={() => setConfirming(user)}
+                            >
+                              {t('deactivate')}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       )}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+          )}
+
+          {status === 'ready' && filtered.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+              <p className="text-small text-muted-foreground">
+                {(currentPage - 1) * PAGE_SIZE + 1}–
+                {Math.min(currentPage * PAGE_SIZE, filtered.length)} / {filtered.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                >
+                  {t('previousPage')}
+                </Button>
+                <span className="text-small text-muted-foreground">
+                  {currentPage} / {pageCount}
+                </span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setPage(currentPage + 1)}
+                  disabled={currentPage === pageCount}
+                >
+                  {t('nextPage')}
+                </Button>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -357,11 +508,6 @@ function UsersPage({ onBack }: { onBack: () => void }) {
       </Dialog>
     </div>
   )
-}
-
-/** Seeded accounts are managed by the environment, not by this screen (spec 0002, AC-6). */
-function isProtected(user: User): boolean {
-  return user.role === 'HR' || user.role === 'CEO'
 }
 
 export { UsersPage }

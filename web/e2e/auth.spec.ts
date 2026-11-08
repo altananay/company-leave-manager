@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { goToHome, goToUsers, logOut, navigation, openUsers } from './navigation'
+
 const HR_EMAIL = 'hr@e2e.test'
 const HR_PASSWORD = 'hr-e2e-password-123'
 
@@ -35,21 +37,23 @@ test('shouldNotScrollHorizontallyAtAnyWidth', async ({ page }) => {
       })
     })
 
-    await page.getByRole('button', { name: 'Kullanıcılar' }).click()
+    // The sidebar below 1024 px is a sheet: the helper opens whichever one is on screen.
+    await goToUsers(page)
     await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
     // Wait for the list itself: the heading renders before the request answers.
     await expect(page.getByRole('table')).toBeVisible()
     expect(await horizontalOverflow(page), `users at ${width}px`).toBe(0)
 
-    // The dialog is the tightest layout on a phone: full width minus the page gutter.
-    await page.getByRole('button', { name: 'Pasife al' }).first().click()
+    // The dialog is the tightest layout on a phone: full width minus the page gutter. Row actions
+    // live behind the row menu (AC-14).
+    await page.getByRole('button', { name: 'İşlemler' }).first().click()
+    await page.getByRole('menuitem', { name: 'Pasife al' }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
     expect(await horizontalOverflow(page), `dialog at ${width}px`).toBe(0)
     await page.keyboard.press('Escape')
 
-    await page.getByRole('button', { name: 'Geri' }).click()
-    await page.getByRole('button', { name: 'Çıkış' }).click()
-    await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+    await goToHome(page)
+    await logOut(page)
   }
 })
 
@@ -96,14 +100,16 @@ test('shouldFitThePasswordAndForbiddenScreensAtEveryWidth', async ({ page }) => 
     await employeePage.getByRole('button', { name: 'Parolayı değiştir' }).click()
     await expect(employeePage.getByText('Giriş yapan:')).toBeVisible()
 
-    await employeePage.getByRole('button', { name: 'Kullanıcılar' }).click()
-    await expect(employeePage.getByText('Bu sayfaya erişiminiz yok')).toBeVisible()
+    // The employee reaches the users route, but the API answers 403: the helper must not wait for
+    // the list heading, because the forbidden screen is a valid outcome of the same navigation.
+    await openUsers(employeePage)
+    await expect(
+      employeePage.getByRole('heading', { name: 'Bu sayfaya erişiminiz yok' }),
+    ).toBeVisible()
     expect(await horizontalOverflow(employeePage), `forbidden at ${width}px`).toBe(0)
     await expectTouchTargets(employeePage, `forbidden at ${width}px`)
 
-    await employeePage.getByRole('button', { name: 'Geri' }).click()
-    await employeePage.getByRole('button', { name: 'Çıkış' }).click()
-    await expect(employeePage.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+    await logOut(employeePage)
   }
 
   await employee.close()
@@ -134,10 +140,17 @@ test('shouldKeepTouchTargetsAtLeast44Pixels', async ({ page }) => {
     })
   })
 
-  await page.getByRole('button', { name: 'Kullanıcılar' }).click()
+  await goToUsers(page)
   await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
   await expect(page.getByRole('table')).toBeVisible()
+  // The search field, the role-filter buttons and the pagination buttons are controls too.
   await expectTouchTargets(page, 'users')
+
+  // The row menu's items are controls too (AC-8, AC-14): open it and measure the two actions.
+  await page.getByRole('button', { name: 'İşlemler' }).first().click()
+  await expect(page.getByRole('menuitem', { name: 'Pasife al' })).toBeVisible()
+  await expectTouchTargets(page, 'row action menu', '[role="menuitem"]:visible')
+  await page.keyboard.press('Escape')
 
   // The role listbox is a control too: open it and measure its options.
   await page.getByRole('combobox').click()
@@ -145,9 +158,17 @@ test('shouldKeepTouchTargetsAtLeast44Pixels', async ({ page }) => {
   await expectTouchTargets(page, 'role listbox', '[role="option"]:visible')
   await page.keyboard.press('Escape')
 
-  await page.getByRole('button', { name: 'Pasife al' }).first().click()
+  await page.getByRole('button', { name: 'İşlemler' }).first().click()
+  await page.getByRole('menuitem', { name: 'Pasife al' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
   await expectTouchTargets(page, 'dialog')
+  await page.keyboard.press('Escape')
+
+  // The account menu only exists from 1024 px up; measure its items there too.
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.locator('header button[aria-haspopup="menu"]').click()
+  await expect(page.getByRole('menuitem', { name: 'Çıkış' })).toBeVisible()
+  await expectTouchTargets(page, 'account menu', '[role="menuitem"]:visible')
 })
 
 test('shouldNotScrollInsideTheTableWithALongAddress', async ({ page }) => {
@@ -173,7 +194,7 @@ test('shouldNotScrollInsideTheTableWithALongAddress', async ({ page }) => {
   // the second width exercises the truncation rule, so both are measured.
   for (const width of [360, 768]) {
     await page.setViewportSize({ width, height: 900 })
-    await page.getByRole('button', { name: 'Kullanıcılar' }).click()
+    await goToUsers(page)
     await expect(page.getByRole('table')).toBeVisible()
     await expect(page.getByText(longEmail)).toBeVisible()
 
@@ -183,12 +204,17 @@ test('shouldNotScrollInsideTheTableWithALongAddress', async ({ page }) => {
       const cell = Array.from(document.querySelectorAll('[data-slot="table-cell"]')).find((node) =>
         node.textContent?.includes(email),
       )
-      const span = cell?.querySelector('span') as HTMLElement | null
+      // The innermost span holding the address is the one that clips from md up; finding it by
+      // its text rather than by a utility class keeps the check about behaviour, not styling.
+      const span = Array.from(cell?.querySelectorAll('span') ?? []).find(
+        (node) => node.textContent === email,
+      )
+      const text = span as HTMLElement | null
       return {
         containerWidth: container.getBoundingClientRect().width,
         tableWidth: table?.getBoundingClientRect().width ?? -1,
         overflow: container.scrollWidth - container.clientWidth,
-        clipped: span ? span.scrollWidth > span.clientWidth : false,
+        clipped: text ? text.scrollWidth > text.clientWidth : false,
       }
     }, longEmail)
 
@@ -204,7 +230,7 @@ test('shouldNotScrollInsideTheTableWithALongAddress', async ({ page }) => {
       // From md the address is clipped, not wrapped: the proof that the truncation rule is active.
       expect(layout.clipped, 'the address is truncated at md').toBe(true)
     }
-    await page.getByRole('button', { name: 'Geri' }).click()
+    await goToHome(page)
   }
 })
 
@@ -228,21 +254,33 @@ test('shouldShowTheContentFocusRingOnlyForTheKeyboard', async ({ page }) => {
   await expect(page.getByRole('main')).toBeFocused()
   expect(await mainOutline(), 'first paint').toBe('none')
 
-  // A keyboard user gets the ring: submit the form from the keyboard.
+  // A mouse sign-in lands on the shell: the content region holds focus again, with no ring.
+  await page.getByLabel('E-posta').fill(HR_EMAIL)
+  await page.getByLabel('Parola').fill(HR_PASSWORD)
+  await page.getByRole('button', { name: 'Giriş yap' }).click()
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+  await expect(page.getByRole('main')).toBeFocused()
+  expect(await mainOutline(), 'after a mouse sign-in').toBe('none')
+
+  // A keyboard user gets the ring: sign out, then submit the form from the keyboard.
+  await logOut(page)
   await page.getByLabel('E-posta').fill(HR_EMAIL)
   await page.getByLabel('Parola').fill(HR_PASSWORD)
   await page.getByLabel('Parola').press('Tab')
   await page.keyboard.press('Enter')
   await expect(page.getByText('Giriş yapan:')).toBeVisible()
   await expect(page.getByRole('main')).toBeFocused()
-  expect(await mainOutline(), 'after a keyboard submit').toBe('ring')
+  expect(await mainOutline(), 'after a keyboard sign-in').toBe('ring')
 })
 
-/** Every control a thumb has to hit: buttons, fields, the combobox and listbox options (AC-8). */
+/**
+ * Every control a thumb has to hit: buttons, fields, the combobox, listbox options and menu items
+ * (AC-8).
+ */
 async function expectTouchTargets(
   page: import('@playwright/test').Page,
   label: string,
-  selector = 'button:visible, input:visible, [role="combobox"]:visible',
+  selector = 'button:visible, input:visible, [role="combobox"]:visible, [role="menuitem"]:visible',
 ) {
   const controls = page.locator(selector)
   const count = await controls.count()
@@ -255,10 +293,21 @@ async function expectTouchTargets(
   }
 }
 
+/**
+ * The horizontal overflow a user can actually reach (AC-4). On shell screens the root is
+ * `overflow-hidden`, so `document.documentElement` is structurally clean and the content region
+ * (`<main id="content">`, which scrolls on both axes) is the box that can overflow. Anonymous
+ * screens have no `#content` and scroll on the document. Measure both and report the larger one, so
+ * a regression on either layout fails.
+ */
 async function horizontalOverflow(page: import('@playwright/test').Page) {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  )
+  return page.evaluate(() => {
+    const documentOverflow =
+      document.documentElement.scrollWidth - document.documentElement.clientWidth
+    const content = document.querySelector<HTMLElement>('main#content')
+    const contentOverflow = content ? content.scrollWidth - content.clientWidth : 0
+    return Math.max(documentOverflow, contentOverflow)
+  })
 }
 
 test('shouldLoginDenyAndLogout', async ({ page }) => {
@@ -275,11 +324,11 @@ test('shouldLoginDenyAndLogout', async ({ page }) => {
   await expect(page.getByRole('status')).toHaveText('Sistem çalışıyor')
 
   // HR creates an employee and receives a one-time password.
-  await page.getByRole('button', { name: 'Kullanıcılar' }).click()
+  await goToUsers(page)
   await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
 
   const employeeEmail = `e2e-${Date.now()}@acme.test`
-  await page.getByLabel('E-posta').fill(employeeEmail)
+  await page.getByLabel('E-posta', { exact: true }).fill(employeeEmail)
   await page.getByLabel('Ad soyad').fill('E2E Employee')
   await page.getByRole('button', { name: 'Oluştur' }).click()
 
@@ -287,9 +336,8 @@ test('shouldLoginDenyAndLogout', async ({ page }) => {
   expect(temporaryPassword.length).toBeGreaterThan(0)
 
   // Sign out, sign in as the employee: the temporary password must be changed first.
-  await page.getByRole('button', { name: 'Geri' }).click()
-  await page.getByRole('button', { name: 'Çıkış' }).click()
-  await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+  await goToHome(page)
+  await logOut(page)
 
   await page.getByLabel('E-posta').fill(employeeEmail)
   await page.getByLabel('Parola').fill(temporaryPassword)
@@ -304,11 +352,11 @@ test('shouldLoginDenyAndLogout', async ({ page }) => {
   await expect(page.getByText('Giriş yapan:')).toBeVisible()
 
   // The employee cannot open the users screen.
-  await page.getByRole('button', { name: 'Kullanıcılar' }).click()
-  await expect(page.getByText('Bu sayfaya erişiminiz yok')).toBeVisible()
+  await openUsers(page)
+  await expect(page.getByRole('heading', { name: 'Bu sayfaya erişiminiz yok' })).toBeVisible()
 
   // Sign out, then the shell shows the login screen again and the API refuses the session.
-  await page.getByRole('button', { name: 'Geri' }).click()
+  await goToHome(page)
   // Wait for the logout round trip itself: the screen changes when it answers, and asserting the
   // status keeps a rejected logout from looking like a successful one (run #64 failed here).
   const logoutResponse = page.waitForResponse(
@@ -327,4 +375,157 @@ test('shouldLoginDenyAndLogout', async ({ page }) => {
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
   await expect(page.getByText('Giriş yapan:')).toHaveCount(0)
+})
+
+test('shouldMarkTheActiveNavigationItem', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('E-posta').fill(HR_EMAIL)
+  await page.getByLabel('Parola').fill(HR_PASSWORD)
+  await page.getByRole('button', { name: 'Giriş yap' }).click()
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+
+  const home = navigation(page).getByRole('button', { name: 'Ana ekran' })
+  const users = navigation(page).getByRole('button', { name: 'Kullanıcılar' })
+
+  await expect(home).toHaveAttribute('aria-current', 'page')
+  await expect(users).not.toHaveAttribute('aria-current', 'page')
+
+  await goToUsers(page)
+
+  await expect(users).toHaveAttribute('aria-current', 'page')
+  await expect(home).not.toHaveAttribute('aria-current', 'page')
+})
+
+test('shouldOpenTheNavigationAsASheetOnAPhone', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 900 })
+  await page.goto('/')
+  await page.getByLabel('E-posta').fill(HR_EMAIL)
+  await page.getByLabel('Parola').fill(HR_PASSWORD)
+  await page.getByRole('button', { name: 'Giriş yap' }).click()
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+
+  // Below 1024 px the sidebar is out of the layout; the same navigation lives in the sheet.
+  await expect(page.locator('aside')).toBeHidden()
+  const menu = page.getByRole('button', { name: 'Menü' })
+  await expect(menu).toBeVisible()
+
+  await menu.click()
+  const sheet = page.getByRole('dialog')
+  await expect(sheet).toBeVisible()
+  await expect(sheet.getByRole('navigation', { name: 'Ana gezinme' })).toBeVisible()
+  await expect(sheet.getByRole('button', { name: 'Kapat' })).toBeVisible()
+
+  await sheet.getByRole('button', { name: 'Kullanıcılar' }).click()
+  await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  // Escape closes the sheet and returns the page to its previous layout.
+  await menu.click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+
+  // Focus is trapped while the sheet is open: every Tab lands inside the dialog.
+  for (let step = 0; step < 8; step += 1) {
+    await page.keyboard.press('Tab')
+    const trapped = await page.evaluate(() => {
+      const sheet = document.querySelector('[role="dialog"]')
+      return Boolean(sheet && document.activeElement && sheet.contains(document.activeElement))
+    })
+    expect(trapped, `tab ${step + 1} stays inside the navigation sheet`).toBe(true)
+  }
+
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(menu).toBeVisible()
+  // The keyboard user goes back to the trigger, not to the top of the document.
+  expect(await menu.evaluate((element) => element === document.activeElement)).toBe(true)
+})
+
+test('shouldShowTheBrandPanelOnlyOnWideScreens', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+  await expect(page.locator('[data-slot="brand-panel"]')).toBeVisible()
+
+  // The boundary itself: 1023 is still the single-column layout, 1024 is the two-column one.
+  await page.setViewportSize({ width: 1023, height: 900 })
+  await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+  await expect(page.locator('[data-slot="brand-panel"]')).toBeHidden()
+
+  await page.setViewportSize({ width: 1024, height: 900 })
+  await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+  await expect(page.locator('[data-slot="brand-panel"]')).toBeVisible()
+
+  await page.setViewportSize({ width: 768, height: 900 })
+  await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+  await expect(page.locator('[data-slot="brand-panel"]')).toBeHidden()
+})
+
+test('shouldFilterAndPaginateTheUsers', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('E-posta').fill(HR_EMAIL)
+  await page.getByLabel('Parola').fill(HR_PASSWORD)
+  await page.getByRole('button', { name: 'Giriş yap' }).click()
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+
+  // Eleven accounts sort after the seeded ones ("Pager …" starts with P) and carry one marker in
+  // their e-mail, so the search can isolate exactly this page's data from the other tests' users.
+  const stamp = Date.now()
+  const emailPrefix = `pager-${stamp}`
+  const accounts = Array.from({ length: 11 }, (_, index) => {
+    const suffix = String(index).padStart(2, '0')
+    return {
+      email: `${emailPrefix}-${suffix}@acme.test`,
+      displayName: `Pager ${stamp} ${suffix}`,
+    }
+  })
+  const failed = await page.evaluate(async (accountsToCreate) => {
+    const token = (await (await fetch('/api/auth/csrf')).json()).token
+    const failures: string[] = []
+    for (const account of accountsToCreate) {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+        body: JSON.stringify({ ...account, role: 'EMPLOYEE' }),
+      })
+      if (!response.ok) {
+        failures.push(`${account.email}: ${response.status}`)
+      }
+    }
+    return failures
+  }, accounts)
+  expect(failed, 'all eleven accounts were created').toEqual([])
+
+  await goToUsers(page)
+  await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
+  await expect(page.getByRole('table')).toBeVisible()
+
+  const rows = page.locator('tbody tr')
+  const search = page.getByLabel('İsim veya e-posta ara')
+
+  // Ten rows per page, even though the environment has more accounts than that.
+  await expect(rows).toHaveCount(10)
+
+  await search.fill(emailPrefix)
+  await expect(rows).toHaveCount(10)
+  await expect(page.getByText('1–10 / 11')).toBeVisible()
+  await page.getByRole('button', { name: 'Sonraki' }).click()
+  await expect(rows).toHaveCount(1)
+  await expect(page.getByText(accounts[10].displayName, { exact: true })).toBeVisible()
+
+  // The search box filters the page down to the one matching account.
+  await search.fill(accounts[3].email)
+  await expect(rows).toHaveCount(1)
+  await expect(page.getByText(accounts[3].displayName, { exact: true })).toBeVisible()
+
+  // The role filter keeps every created employee: the marker still matches all eleven.
+  await search.fill(emailPrefix)
+  await page.getByRole('button', { name: 'Çalışan', exact: true }).click()
+  await expect(rows).toHaveCount(10)
+  await expect(page.getByText('1–10 / 11')).toBeVisible()
+
+  // The seeded HR account is the one the HR filter shows.
+  await search.fill('')
+  await page.getByRole('button', { name: 'İK', exact: true }).click()
+  await expect(page.getByText(HR_EMAIL)).toBeVisible()
+  await expect(page.getByText(accounts[0].displayName, { exact: true })).toHaveCount(0)
 })

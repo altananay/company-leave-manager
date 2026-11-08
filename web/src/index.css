@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
 /* ---------------------------------------------------------------------------
-   Design tokens Ã¢â‚¬â€ the single source of every visual value (spec 0003, AC-5).
+   Design tokens — the single source of every visual value (spec 0003, AC-5).
    No component may hard-code a colour; `scripts/tokens` fails the build if one does.
    The dark block below is the seam for a later slice: nothing sets `.dark` yet,
    so it is inert today and costs one file to enable.
@@ -100,9 +100,77 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 10px);
+
+  /* Semantic radius steps (AC-12): the utility names the job, not a Tailwind size, so a primitive
+     can only pick a step from this scale. */
+  --radius-chip: calc(var(--radius) - 4px);
+  --radius-control: calc(var(--radius) - 2px);
+  --radius-panel: var(--radius);
+  --radius-card: calc(var(--radius) + 4px);
+  --radius-pill: 9999px;
+
+  /* Type scale (AC-12): one family of sizes, each with its own line-height and tracking. Screens
+     pick a step; they never write a one-off text-[…] size. */
+  --text-display: 2rem;
+  --text-display--line-height: 1.1;
+  --text-display--letter-spacing: -0.03em;
+  --text-display--font-weight: 680;
+  --text-h1: 1.5rem;
+  --text-h1--line-height: 1.2;
+  --text-h1--letter-spacing: -0.02em;
+  --text-h1--font-weight: 650;
+  --text-h2: 1.0625rem;
+  --text-h2--line-height: 1.35;
+  --text-h2--letter-spacing: -0.01em;
+  --text-h2--font-weight: 650;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.55;
+  --text-small: 0.8125rem;
+  --text-small--line-height: 1.5;
+  --text-label: 0.6875rem;
+  --text-label--line-height: 1.2;
+  --text-label--letter-spacing: 0.07em;
+  --text-label--font-weight: 650;
+
+  /* Elevation (AC-15): three steps only, all from the foreground hue so a theme change moves them. */
+  --shadow-1: 0 1px 2px oklch(0.21 0.02 258 / 0.05);
+  --shadow-2: 0 4px 12px oklch(0.21 0.02 258 / 0.08);
+  --shadow-3: 0 12px 32px oklch(0.21 0.02 258 / 0.14);
+
+  /* Surfaces with a little life (AC-15): the login panel and the primary action. */
+  --brand-panel: linear-gradient(
+    158deg,
+    oklch(0.42 0.16 264) 0%,
+    oklch(0.3 0.1 268) 58%,
+    oklch(0.23 0.05 262) 100%
+  );
+  --brand-action: linear-gradient(180deg, oklch(0.55 0.19 262), oklch(0.47 0.19 265));
+
+  /* Motion (AC-15): short and calm, 150–200 ms; `prefers-reduced-motion` zeroes it in the base
+     layer. */
+  --duration-fast: 150ms;
+  --duration-base: 180ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
   --font-sans:
     system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+
+  /* Every `transition-*` utility takes its timing from the motion tokens (AC-12). */
+  --default-transition-duration: var(--duration-base);
+  --default-transition-timing-function: var(--ease-out);
+}
+
+@layer components {
+  /* The login panel: one gradient, no component-level colour literal (AC-5, AC-15). */
+  .brand-panel {
+    background-image: var(--brand-panel);
+  }
+
+  /* The primary action carries the brand gradient, the secondary ones stay flat (AC-15). */
+  .brand-action {
+    background-image: var(--brand-action);
+  }
 }
 
 @layer base {
@@ -153,5 +221,17 @@
   h3 {
     font-weight: 650;
     letter-spacing: -0.01em;
+  }
+
+  /* AC-15: a user who asks for less motion gets none of it — not a shorter one. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
