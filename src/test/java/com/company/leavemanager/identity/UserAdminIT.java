@@ -36,6 +36,25 @@ class UserAdminIT extends IdentityTestSupport {
     }
 
     @Test
+    void shouldReturnTheResetPasswordOnlyOnce() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String email = unique("reset-once");
+        HttpResponse<String> created = session.post("/api/users", body(email, "Reset Once", "EMPLOYEE"));
+        String id = extract(created.body(), "id");
+
+        HttpResponse<String> reset = session.post("/api/users/" + id + "/reset-password", "{}");
+        assertThat(reset.statusCode()).isEqualTo(200);
+        String resetPassword = extract(reset.body(), "temporaryPassword");
+        assertThat(resetPassword).hasSize(16);
+
+        // The reset password is shown once; no later read carries it.
+        HttpResponse<String> list = session.get("/api/users");
+        assertThat(list.statusCode()).isEqualTo(200);
+        assertThat(list.body()).doesNotContain("temporaryPassword");
+        assertThat(list.body()).doesNotContain(resetPassword);
+    }
+
+    @Test
     void shouldNotLetAManagerAdministerUsers() throws Exception {
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
         String email = unique("mgr-auth");

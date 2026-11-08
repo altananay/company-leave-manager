@@ -31,7 +31,9 @@ class AuditIT extends IdentityTestSupport {
         String id = extract(created.body(), "id");
         String temporaryPassword = extract(created.body(), "temporaryPassword");
 
-        assertThat(session.post("/api/users/" + id + "/reset-password", "{}").statusCode()).isEqualTo(200);
+        HttpResponse<String> reset = session.post("/api/users/" + id + "/reset-password", "{}");
+        assertThat(reset.statusCode()).isEqualTo(200);
+        String resetTemporaryPassword = extract(reset.body(), "temporaryPassword");
         assertThat(session.post("/api/users/" + id + "/deactivate", "{}").statusCode()).isEqualTo(204);
 
         // A failed login and the lockout that follows it, on a second (active) account.
@@ -67,12 +69,14 @@ class AuditIT extends IdentityTestSupport {
         assertThat(failedLogin.getDetails()).contains("***@acme.test");
         assertThat(failedLogin.getDetails()).doesNotContain(lockedEmail);
 
-        // No password, no BCrypt hash, anywhere in the trail — for both created accounts.
+        // No password, no BCrypt hash, anywhere in the trail — for every temporary password the
+        // API handed out (two creations and one reset).
         assertThat(events).allSatisfy(event -> {
             String details = event.getDetails();
             if (details != null) {
                 assertThat(details).doesNotContain(temporaryPassword);
                 assertThat(details).doesNotContain(lockedTemporaryPassword);
+                assertThat(details).doesNotContain(resetTemporaryPassword);
                 assertThat(details).doesNotContain("$2a$").doesNotContain("$2b$").doesNotContain("$2y$");
                 assertThat(details).doesNotContain(HR_PASSWORD);
             }

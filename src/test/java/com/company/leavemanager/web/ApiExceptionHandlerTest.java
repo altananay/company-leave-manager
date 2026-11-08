@@ -1,5 +1,6 @@
 package com.company.leavemanager.web;
 
+import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -67,9 +68,30 @@ class ApiExceptionHandlerTest {
             assertThat(message).doesNotContain("someone@acme.test");
             assertThat(message).contains("java.lang.IllegalStateException");
         });
-        // The stack trace is still available, at DEBUG only.
+        // The ERROR line carries no throwable: the detail is not printed by default.
         assertThat(logs.list)
-                .filteredOn(event -> event.getLevel().toString().equals("DEBUG"))
-                .allSatisfy(event -> assertThat(event.getThrowableProxy()).isNotNull());
+                .filteredOn(event -> "ERROR".equals(event.getLevel().toString()))
+                .isNotEmpty()
+                .allSatisfy(event -> assertThat(event.getThrowableProxy()).isNull());
+    }
+
+    @Test
+    void shouldKeepTheStackTracesAtDebugLevel() {
+        // A developer with the request id can turn the detail on; that is where the throwable lives.
+        logger.setLevel(Level.DEBUG);
+        try {
+            handler.unexpected(new IllegalStateException("boom"));
+
+            assertThat(logs.list)
+                    .filteredOn(event -> "DEBUG".equals(event.getLevel().toString()))
+                    .isNotEmpty()
+                    .allSatisfy(event -> {
+                        assertThat(event.getThrowableProxy()).isNotNull();
+                        assertThat(event.getThrowableProxy().getClassName())
+                                .isEqualTo("java.lang.IllegalStateException");
+                    });
+        } finally {
+            logger.setLevel(null);
+        }
     }
 }
