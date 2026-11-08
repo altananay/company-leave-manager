@@ -114,6 +114,8 @@ describe('authentication', () => {
     await user.click(screen.getByRole('button', { name: 'Giriş yap' }))
 
     expect(await screen.findByText('E-posta veya parola hatalı.')).toBeInTheDocument()
+    // The message is announced: it sits in an Alert, not in a plain paragraph (AC-3).
+    expect(screen.getByRole('alert')).toHaveTextContent('E-posta veya parola hatalı.')
     expect(screen.queryByText('Oturum sona erdi. Lütfen yeniden giriş yapın.')).toBeNull()
   })
 
@@ -630,6 +632,9 @@ describe('users screen', () => {
     await user.click(screen.getByRole('button', { name: 'Oluştur' }))
 
     expect(await screen.findByText('Bu e-posta ile bir kullanıcı zaten var.')).toBeInTheDocument()
+    // Announced as an alert, and the field it belongs to is marked invalid (AC-3).
+    expect(screen.getByRole('alert')).toHaveTextContent('Bu e-posta ile bir kullanıcı zaten var.')
+    expect(screen.getByLabelText('E-posta')).toHaveAttribute('aria-invalid', 'true')
   })
 })
 
@@ -648,6 +653,8 @@ describe('password change', () => {
     await user.click(screen.getByRole('button', { name: 'Parolayı değiştir' }))
 
     expect(await screen.findByText('Mevcut parola hatalı.')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Mevcut parola hatalı.')
+    expect(screen.getByLabelText('Mevcut parola')).toHaveAttribute('aria-invalid', 'true')
   })
 
   it('shouldMapTheWeakPasswordCode', async () => {
@@ -901,8 +908,16 @@ describe('language', () => {
 
 describe('design system', () => {
   it('shouldRenderEveryScreenWithTheDesignSystem', async () => {
-    // Every screen is built from the shared primitives: each one renders at least one Card.
-    const screens: Array<{ name: string; render: () => Promise<void> }> = [
+    // Every screen is built from the shared primitives: a Card, the labelled Field, the Button and
+    // — where the screen reports a failure — the Alert. The map claims all four, so all four are
+    // asserted here instead of the card count alone.
+    const screens: Array<{
+      name: string
+      render: () => Promise<void>
+      fields: string[]
+      buttons: string[]
+      alerts?: number
+    }> = [
       {
         name: 'login',
         render: async () => {
@@ -910,6 +925,8 @@ describe('design system', () => {
           renderApp()
           await screen.findByRole('button', { name: 'Giriş yap' })
         },
+        fields: ['E-posta', 'Parola'],
+        buttons: ['Giriş yap'],
       },
       {
         name: 'password',
@@ -918,6 +935,8 @@ describe('design system', () => {
           renderApp()
           await screen.findByRole('heading', { name: 'Parola değiştirme' })
         },
+        fields: ['Mevcut parola', 'Yeni parola', 'Yeni parola (tekrar)'],
+        buttons: ['Parolayı değiştir'],
       },
       {
         name: 'home',
@@ -926,6 +945,8 @@ describe('design system', () => {
           renderApp()
           await screen.findByText(/Giriş yapan:/)
         },
+        fields: [],
+        buttons: ['Kullanıcılar', 'Çıkış'],
       },
       {
         name: 'users',
@@ -938,6 +959,23 @@ describe('design system', () => {
           await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
           await screen.findByRole('heading', { name: 'Kullanıcılar' })
         },
+        fields: ['Ad soyad', 'E-posta'],
+        buttons: ['Oluştur'],
+      },
+      {
+        name: 'users error',
+        render: async () => {
+          authenticated(HR, () => json(200, { status: 'UP' }), {
+            '/api/users': () => json(500, { status: 500, code: 'INTERNAL_ERROR' }),
+          })
+          const user = userEvent.setup()
+          renderApp()
+          await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+          await screen.findByRole('alert')
+        },
+        fields: ['Ad soyad', 'E-posta'],
+        buttons: ['Oluştur'],
+        alerts: 1,
       },
       {
         name: 'forbidden',
@@ -950,6 +988,8 @@ describe('design system', () => {
           await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
           await screen.findByText('Bu sayfaya erişiminiz yok')
         },
+        fields: [],
+        buttons: ['Geri'],
       },
     ]
 
@@ -961,6 +1001,23 @@ describe('design system', () => {
         document.querySelectorAll('[data-slot="card"]').length,
         `${entry.name} uses the Card component`,
       ).toBeGreaterThan(0)
+      for (const label of entry.fields) {
+        expect(
+          screen.getByLabelText(label),
+          `${entry.name} labels its "${label}" field`,
+        ).toBeInTheDocument()
+      }
+      for (const name of entry.buttons) {
+        expect(
+          screen.getByRole('button', { name }),
+          `${entry.name} renders the "${name}" button`,
+        ).toBeInTheDocument()
+      }
+      if (entry.alerts) {
+        expect(screen.getAllByRole('alert'), `${entry.name} announces its failure`).toHaveLength(
+          entry.alerts,
+        )
+      }
     }
   })
 
@@ -1154,5 +1211,58 @@ describe('accessibility', () => {
     expect(screen.getByRole('button', { name: 'EN' })).toHaveFocus()
     await user.tab({ shift: true })
     expect(screen.getByRole('button', { name: 'TR' })).toHaveFocus()
+  })
+
+  it('shouldReachTheUsersScreenControlsWithTheKeyboard', async () => {
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/users': () =>
+        json(200, [
+          { ...HR, active: true },
+          { ...EMPLOYEE, active: true },
+        ]),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+    await waitFor(() => expect(screen.getByRole('main')).toHaveFocus())
+
+    // The back button sits at the top of the content region, the form before the list in the
+    // visual order, so the keyboard walks them in that order.
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Geri' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByLabelText('E-posta')).toHaveFocus()
+    await user.tab()
+    expect(screen.getByLabelText('Ad soyad')).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('combobox', { name: 'Rol' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Oluştur' })).toHaveFocus()
+
+    // And the row actions after the form, without a mouse.
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Parola sıfırla' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Pasife al' })).toHaveFocus()
+  })
+
+  it('shouldReachThePasswordScreenControlsWithTheKeyboard', async () => {
+    authenticated({ ...EMPLOYEE, mustChangePassword: true })
+
+    const user = userEvent.setup()
+    renderApp()
+    await screen.findByRole('heading', { name: 'Parola değiştirme' })
+    await waitFor(() => expect(screen.getByRole('main')).toHaveFocus())
+
+    await user.tab()
+    expect(screen.getByLabelText('Mevcut parola')).toHaveFocus()
+    await user.tab()
+    expect(screen.getByLabelText('Yeni parola', { exact: true })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByLabelText('Yeni parola (tekrar)')).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Parolayı değiştir' })).toHaveFocus()
   })
 })

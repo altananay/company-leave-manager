@@ -249,14 +249,14 @@ function UsersPage({ onBack }: { onBack: () => void }) {
               {t('noUsers')}
             </p>
           ) : (
-            <Table>
+            <Table className="md:table-fixed">
               <TableHeader className="hidden md:table-header-group">
                 <TableRow>
                   <TableHead>{t('displayName')}</TableHead>
                   <TableHead>{t('email')}</TableHead>
-                  <TableHead>{t('role')}</TableHead>
-                  <TableHead>{t('active')}</TableHead>
-                  <TableHead>
+                  <TableHead className="md:w-24">{t('role')}</TableHead>
+                  <TableHead className="md:w-24">{t('active')}</TableHead>
+                  <TableHead className="md:w-52">
                     <span className="sr-only">{t('actions')}</span>
                   </TableHead>
                 </TableRow>

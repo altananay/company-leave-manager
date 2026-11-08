@@ -169,17 +169,23 @@ test('shouldNotScrollInsideTheTableWithALongAddress', async ({ page }) => {
     })
   }, longEmail)
 
-  await page.getByRole('button', { name: 'Kullanıcılar' }).click()
-  await expect(page.getByRole('table')).toBeVisible()
-  await expect(page.getByText(longEmail)).toBeVisible()
+  // Both layouts: the stacked cards under md, and the table with `md:truncate` from md up. Only
+  // the second width exercises the truncation rule, so both are measured.
+  for (const width of [360, 768]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.getByRole('button', { name: 'Kullanıcılar' }).click()
+    await expect(page.getByRole('table')).toBeVisible()
+    await expect(page.getByText(longEmail)).toBeVisible()
 
-  const innerOverflow = await page.evaluate(() => {
-    const container = document.querySelector('[data-slot="table-container"]')
-    return container ? container.scrollWidth - container.clientWidth : -1
-  })
+    const innerOverflow = await page.evaluate(() => {
+      const container = document.querySelector('[data-slot="table-container"]')
+      return container ? container.scrollWidth - container.clientWidth : -1
+    })
 
-  expect(innerOverflow, 'table container').toBe(0)
-  expect(await horizontalOverflow(page), 'document at 360px').toBe(0)
+    expect(innerOverflow, `table container at ${width}px`).toBe(0)
+    expect(await horizontalOverflow(page), `document at ${width}px`).toBe(0)
+    await page.getByRole('button', { name: 'Geri' }).click()
+  }
 })
 
 /** Every control a thumb has to hit: buttons, fields, the combobox and listbox options (AC-8). */
