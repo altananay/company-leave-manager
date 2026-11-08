@@ -74,6 +74,19 @@ Upgrades keep `scripts/check` green; a major upgrade that changes behavior is it
 - Enums are stored as text, not ordinals.
 - No personal data in application logs — only `userId` (UUID), `requestId` and technical fields.
 
+## Frontend
+
+- **Tailwind CSS v4 + shadcn/ui** (ADR 0003). Components live in `web/src/ui/`; a screen composes
+  them instead of writing styles of its own.
+- **Colours, radii and fonts come from tokens** in `web/src/index.css`. A colour literal anywhere
+  else fails `scripts/tokens`; a line that genuinely needs one opts out with `tokens-allow`.
+- One component per job: `Button`, `Input`, `Field`, `Alert`, `Card`, `Badge`, `Table`, `Select`,
+  `Dialog`. A second, hand-styled version of any of them is a defect.
+- Icons come from `lucide-react`, only the ones used; the font is the system stack (no webfont).
+- Accessibility is part of the definition of done: every screen is keyboard reachable, every field
+  is labelled, errors use `role="alert"`, and `jest-axe` runs on every screen in the component tests.
+- Layout is mobile-first: 360 px is the smallest width to keep working, 1024 px and up is the target.
+
 ## Known traps
 
 Starts empty. A line is added when triage marks a finding real and the reviewer says a build-time
@@ -87,6 +100,7 @@ it in the fix round. Builders read this section before the first plan step.
   entities, arrived with spec 0002).
 - **oxlint + Prettier** — frontend lint and formatting, in `check` (oxlint because it supports
   TypeScript 7; `typescript-eslint` does not yet).
+- **`scripts/tokens`** — no colour literal outside `web/src/index.css` (ADR 0003).
 - Compiler — Java 25 types and null-checks as configured; no Java format gate.
 - **Formatting is not tool-enforced on the Java side:** IntelliJ IDEA's default formatter is the
   project style, pinned by `.editorconfig` (LF, UTF-8, 4-space Java / 2-space web). No

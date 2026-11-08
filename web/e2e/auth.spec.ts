@@ -3,6 +3,54 @@ import { expect, test } from '@playwright/test'
 const HR_EMAIL = 'hr@e2e.test'
 const HR_PASSWORD = 'hr-e2e-password-123'
 
+const WIDTHS = [360, 768, 1440]
+
+test('shouldNotScrollHorizontallyAtAnyWidth', async ({ page }) => {
+  for (const width of WIDTHS) {
+    await page.setViewportSize({ width, height: 900 })
+
+    // Login screen
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+    expect(await horizontalOverflow(page), `login at ${width}px`).toBe(0)
+
+    // Signed-in shell and the users list
+    await page.getByLabel('E-posta').fill(HR_EMAIL)
+    await page.getByLabel('Parola').fill(HR_PASSWORD)
+    await page.getByRole('button', { name: 'Giriş yap' }).click()
+    await expect(page.getByText('Giriş yapan:')).toBeVisible()
+    expect(await horizontalOverflow(page), `home at ${width}px`).toBe(0)
+
+    await page.getByRole('button', { name: 'Kullanıcılar' }).click()
+    await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
+    expect(await horizontalOverflow(page), `users at ${width}px`).toBe(0)
+
+    await page.getByRole('button', { name: 'Geri' }).click()
+    await page.getByRole('button', { name: 'Çıkış' }).click()
+    await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+  }
+})
+
+test('shouldKeepTouchTargetsAtLeast44Pixels', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 })
+  await page.goto('/')
+
+  const targets = page.locator('button:visible')
+  const count = await targets.count()
+  expect(count).toBeGreaterThan(0)
+
+  for (let index = 0; index < count; index += 1) {
+    const box = await targets.nth(index).boundingBox()
+    expect(box?.height ?? 0, `button ${index} height`).toBeGreaterThanOrEqual(44)
+  }
+})
+
+async function horizontalOverflow(page: import('@playwright/test').Page) {
+  return page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  )
+}
+
 test('shouldLoginDenyAndLogout', async ({ page }) => {
   // Anonymous: the shell shows the login screen.
   await page.goto('/')

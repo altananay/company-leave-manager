@@ -35,7 +35,9 @@ function CardDescription({ className, ...props }: ComponentProps<'p'>) {
 }
 
 function CardContent({ className, ...props }: ComponentProps<'div'>) {
-  return <div data-slot="card-content" className={cn('flex flex-col gap-4', className)} {...props} />
+  return (
+    <div data-slot="card-content" className={cn('flex flex-col gap-4', className)} {...props} />
+  )
 }
 
 function CardFooter({ className, ...props }: ComponentProps<'div'>) {

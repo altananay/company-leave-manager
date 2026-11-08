@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# scripts/tokens — every visual colour comes from the design tokens (spec 0003, AC-5).
+#
+# Scans the SPA source for colour literals. The token file (web/src/index.css) is the only place a
+# colour may be written; a literal anywhere else is a component that will not follow a theme change.
+# A line that genuinely needs a literal can opt out with the word `tokens-allow` on that line.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+PATTERN='#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|oklch\('
+
+if matches=$(grep -REn --include='*.tsx' --include='*.ts' "$PATTERN" web/src | grep -v 'tokens-allow' || true); then
+  if [ -n "$matches" ]; then
+    echo "TOKENS FOUND — a colour literal outside web/src/index.css:" >&2
+    echo "$matches" >&2
+    echo "Use a token (bg-primary, text-muted-foreground, …) or move the value into index.css." >&2
+    exit 1
+  fi
+fi
+
+echo "TOKENS CLEAN — every colour in web/src comes from the token file"

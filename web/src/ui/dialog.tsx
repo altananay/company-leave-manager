@@ -28,7 +28,7 @@ function DialogContent({
         {children}
         <DialogPrimitive.Close
           aria-label="Kapat"
-          className="absolute right-4 top-4 rounded-sm opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          className="absolute right-2 top-2 grid size-11 place-items-center rounded-md opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
           <X className="size-4" />
         </DialogPrimitive.Close>

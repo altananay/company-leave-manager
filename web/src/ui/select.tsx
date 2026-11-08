@@ -7,7 +7,11 @@ import { cn } from '@/lib/utils'
 const Select = SelectPrimitive.Root
 const SelectValue = SelectPrimitive.Value
 
-function SelectTrigger({ className, children, ...props }: ComponentProps<typeof SelectPrimitive.Trigger>) {
+function SelectTrigger({
+  className,
+  children,
+  ...props
+}: ComponentProps<typeof SelectPrimitive.Trigger>) {
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
@@ -27,7 +31,11 @@ function SelectTrigger({ className, children, ...props }: ComponentProps<typeof 
   )
 }
 
-function SelectContent({ className, children, ...props }: ComponentProps<typeof SelectPrimitive.Content>) {
+function SelectContent({
+  className,
+  children,
+  ...props
+}: ComponentProps<typeof SelectPrimitive.Content>) {
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
@@ -45,7 +53,11 @@ function SelectContent({ className, children, ...props }: ComponentProps<typeof 
   )
 }
 
-function SelectItem({ className, children, ...props }: ComponentProps<typeof SelectPrimitive.Item>) {
+function SelectItem({
+  className,
+  children,
+  ...props
+}: ComponentProps<typeof SelectPrimitive.Item>) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"

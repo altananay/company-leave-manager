@@ -15,7 +15,11 @@ function Field({
   id,
   inputRef,
   ...props
-}: ComponentProps<'input'> & { label: ReactNode; error?: ReactNode; inputRef?: Ref<HTMLInputElement> }) {
+}: ComponentProps<'input'> & {
+  label: ReactNode
+  error?: ReactNode
+  inputRef?: Ref<HTMLInputElement>
+}) {
   const generated = useId()
   const inputId = id ?? generated
   const errorId = `${inputId}-error`

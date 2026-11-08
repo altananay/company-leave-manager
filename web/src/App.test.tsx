@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { axe } from 'jest-axe'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { I18nProvider, detectInitialLang } from './i18n/I18nProvider'
@@ -740,5 +741,207 @@ describe('language', () => {
     await user.click(await screen.findByRole('button', { name: 'Users' }))
 
     expect(await screen.findByText('You do not have access to this page')).toBeInTheDocument()
+  })
+})
+
+describe('design system', () => {
+  it('shouldRenderEveryScreenWithTheDesignSystem', async () => {
+    // Every screen is built from the shared primitives: each one renders at least one Card.
+    const screens: Array<{ name: string; render: () => Promise<void> }> = [
+      {
+        name: 'login',
+        render: async () => {
+          anonymous()
+          renderApp()
+          await screen.findByRole('button', { name: 'Giriş yap' })
+        },
+      },
+      {
+        name: 'password',
+        render: async () => {
+          authenticated({ ...EMPLOYEE, mustChangePassword: true })
+          renderApp()
+          await screen.findByRole('heading', { name: 'Parola değiştirme' })
+        },
+      },
+      {
+        name: 'home',
+        render: async () => {
+          authenticated(HR)
+          renderApp()
+          await screen.findByText(/Giriş yapan:/)
+        },
+      },
+      {
+        name: 'users',
+        render: async () => {
+          authenticated(HR, () => json(200, { status: 'UP' }), {
+            '/api/users': () => json(200, [{ ...HR, active: true }]),
+          })
+          const user = userEvent.setup()
+          renderApp()
+          await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+          await screen.findByRole('heading', { name: 'Kullanıcılar' })
+        },
+      },
+      {
+        name: 'forbidden',
+        render: async () => {
+          authenticated(EMPLOYEE, () => json(200, { status: 'UP' }), {
+            '/api/users': () => json(403, { status: 403, code: 'NOT_AUTHORIZED' }),
+          })
+          const user = userEvent.setup()
+          renderApp()
+          await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+          await screen.findByText('Bu sayfaya erişiminiz yok')
+        },
+      },
+    ]
+
+    for (const entry of screens) {
+      cleanup()
+      vi.unstubAllGlobals()
+      await entry.render()
+      expect(
+        document.querySelectorAll('[data-slot="card"]').length,
+        `${entry.name} uses the Card component`,
+      ).toBeGreaterThan(0)
+    }
+  })
+
+  it('shouldUseOneButtonComponentEverywhere', async () => {
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/users': () =>
+        json(200, [
+          { ...HR, active: true },
+          { ...EMPLOYEE, active: true },
+        ]),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+    await screen.findByText(/Giriş yapan:/)
+    await user.click(screen.getByRole('button', { name: 'Kullanıcılar' }))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+
+    const buttons = Array.from(document.querySelectorAll('button'))
+    expect(buttons.length).toBeGreaterThan(0)
+    // Every button-shaped element comes from the design system: Button itself, or the Select
+    // trigger (Radix renders it as a button). A hand-styled <button> would have no data-slot.
+    const allowed = new Set(['button', 'select-trigger'])
+    for (const button of buttons) {
+      expect(allowed.has(button.getAttribute('data-slot') ?? ''), button.textContent ?? '').toBe(
+        true,
+      )
+    }
+  })
+
+  it('shouldShowTheEmptyStateOnTheUsersScreen', async () => {
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/users': () => json(200, []),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+
+    expect(
+      await screen.findByText('Henüz kullanıcı yok. Yukarıdaki formdan ilk kullanıcıyı oluşturun.'),
+    ).toBeInTheDocument()
+  })
+})
+
+describe('accessibility', () => {
+  it('shouldHaveNoAccessibilityViolationsOnTheLoginScreen', async () => {
+    anonymous()
+
+    const { container } = renderApp()
+    await screen.findByRole('button', { name: 'Giriş yap' })
+
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('shouldHaveNoAccessibilityViolationsOnTheLoginError', async () => {
+    anonymous({ '/api/auth/login': () => json(401, { status: 401, code: 'NOT_AUTHENTICATED' }) })
+
+    const user = userEvent.setup()
+    const { container } = renderApp()
+    await user.type(await screen.findByLabelText('E-posta'), HR.email)
+    await user.type(screen.getByLabelText('Parola'), 'wrong-password')
+    await user.click(screen.getByRole('button', { name: 'Giriş yap' }))
+    await screen.findByText('E-posta veya parola hatalı.')
+
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('shouldHaveNoAccessibilityViolationsOnThePasswordScreen', async () => {
+    authenticated({ ...EMPLOYEE, mustChangePassword: true })
+
+    const { container } = renderApp()
+    await screen.findByRole('heading', { name: 'Parola değiştirme' })
+
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('shouldHaveNoAccessibilityViolationsOnTheHomeScreen', async () => {
+    authenticated(HR)
+
+    const { container } = renderApp()
+    await screen.findByText(/Giriş yapan:/)
+
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('shouldHaveNoAccessibilityViolationsOnTheUsersScreen', async () => {
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/users': () =>
+        json(200, [
+          { ...HR, active: true },
+          { ...EMPLOYEE, active: true },
+        ]),
+    })
+
+    const user = userEvent.setup()
+    const { container } = renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('shouldHaveNoAccessibilityViolationsOnTheForbiddenScreen', async () => {
+    authenticated(EMPLOYEE, () => json(200, { status: 'UP' }), {
+      '/api/users': () => json(403, { status: 403, code: 'NOT_AUTHORIZED' }),
+    })
+
+    const user = userEvent.setup()
+    const { container } = renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await screen.findByText('Bu sayfaya erişiminiz yok')
+
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('shouldReachEveryControlWithTheKeyboard', async () => {
+    anonymous()
+
+    const user = userEvent.setup()
+    renderApp()
+
+    const email = await screen.findByLabelText('E-posta')
+    const password = screen.getByLabelText('Parola')
+    const submit = screen.getByRole('button', { name: 'Giriş yap' })
+
+    // Tab order follows the visual order: language, e-mail, password, submit.
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'TR' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'EN' })).toHaveFocus()
+    await user.tab()
+    expect(email).toHaveFocus()
+    await user.tab()
+    expect(password).toHaveFocus()
+    await user.tab()
+    expect(submit).toHaveFocus()
   })
 })

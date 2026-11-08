@@ -22,7 +22,8 @@ const buttonVariants = cva(
       },
       size: {
         default: 'h-11 px-4 py-2',
-        sm: 'h-9 rounded-sm px-3',
+        // Compact is narrower, never shorter: the 44 px touch target holds on every size (AC-8).
+        sm: 'h-11 rounded-md px-3 text-xs',
         lg: 'h-12 rounded-lg px-6 text-base',
         icon: 'size-11',
       },

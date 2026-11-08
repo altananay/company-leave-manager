@@ -145,21 +145,21 @@ function App() {
           >
             <Button
               type="button"
-              size="sm"
+              size="icon"
               variant={lang === 'tr' ? 'default' : 'ghost'}
               aria-pressed={lang === 'tr'}
               onClick={() => setLang('tr')}
-              className="h-8 px-3"
+              className="text-xs"
             >
               TR
             </Button>
             <Button
               type="button"
-              size="sm"
+              size="icon"
               variant={lang === 'en' ? 'default' : 'ghost'}
               aria-pressed={lang === 'en'}
               onClick={() => setLang('en')}
-              className="h-8 px-3"
+              className="text-xs"
             >
               EN
             </Button>
