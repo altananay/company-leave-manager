@@ -42,7 +42,7 @@ function SelectContent({
         data-slot="select-content"
         position="popper"
         className={cn(
-          'z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-card text-card-foreground shadow-md',
+          'z-50 min-w-[8rem] overflow-hidden rounded-md border border-control bg-card text-card-foreground shadow-md',
           className,
         )}
         {...props}
@@ -62,8 +62,14 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        'relative flex min-h-11 w-full cursor-default select-none items-center gap-2 rounded-sm py-2 pl-8 pr-2 text-base outline-none md:text-sm',
-        'focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+        'relative flex min-h-11 w-full cursor-default select-none items-center gap-2 rounded-sm py-2 pl-8 pr-2 text-base md:text-sm',
+        // Radix keeps focus on the trigger and highlights the active row with data-highlighted, so
+        // the indicator hangs off that attribute: an outline in the ring colour (AC-3).
+        'data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground',
+        // Explicit outline: Tailwind's ring utilities depend on custom properties that Chromium
+        // does not initialise here, and the indicator must be visible, not merely styled.
+        'data-[highlighted]:[outline:2px_solid_var(--ring)] data-[highlighted]:[outline-offset:-2px]',
+        'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
         className,
       )}
       {...props}

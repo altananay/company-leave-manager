@@ -15,10 +15,11 @@ if [ ! -d web/src ]; then
   exit 1
 fi
 
-# Hex, functional notations, the named colours that are easy to reach for by accident (the leading
-# `-` lets Tailwind's own palette through), and arbitrary values that spell a colour by name
-# (`text-[coral]`); a length like `text-[13px]` has a digit and does not match.
-PATTERN='#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|oklab\(|oklch\(|lab\(|lch\(|color\(|(^|[^[:alnum:]_])(white|black|red|green|blue|gray|grey|amber|orange|yellow|lime|emerald|teal|cyan|sky|indigo|violet|purple|fuchsia|pink|rose|slate|zinc|neutral|stone)\b|(bg|text|border|ring|fill|stroke|from|via|to|outline|decoration|caret|accent|divide|placeholder)-\[[a-zA-Z-]+\]'
+# Hex, every CSS functional notation, and colour names — including the ones a developer reaches for
+# inside a Tailwind arbitrary value (`text-[coral]`). Layout keywords such as `border-[thin]` are not
+# in the list, so the gate does not block legitimate code.
+COLOUR_NAMES='white|black|red|green|blue|gray|grey|amber|orange|yellow|lime|emerald|teal|cyan|sky|indigo|violet|purple|fuchsia|pink|rose|slate|zinc|neutral|stone|coral|salmon|tomato|khaki|navy|olive|maroon|silver|aqua|gold|beige|ivory|lavender|orchid|plum|tan|wheat|azure|mint'
+PATTERN="#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|hwb\(|oklab\(|oklch\(|lab\(|lch\(|color\(|(^|[^[:alnum:]_])(${COLOUR_NAMES})\b"
 
 # grep exits 1 when nothing matches: that is the good case. Anything else is a real failure.
 status=0

@@ -86,9 +86,10 @@ Upgrades keep `scripts/check` green; a major upgrade that changes behavior is it
   `Dialog`. A second, hand-styled version of any of them is a defect.
 - Icons come from `lucide-react`, only the ones used; the font is the system stack (no webfont).
 - Accessibility is part of the definition of done: every screen is keyboard reachable, every field
-  is labelled, errors use `role="alert"`, and `jest-axe` runs on every screen in the component tests.
-  Contrast is measured in the real browser (`web/e2e/accessibility.spec.ts`), because jsdom has no
-  stylesheet and axe's colour rules are off there.
+  is labelled, errors use `role="alert"`, and `jest-axe` runs on every screen in the component tests
+  for the structural rules. **Contrast is measured in the real browser**: text contrast by the axe
+  scan in `web/e2e/accessibility.spec.ts`, control boundaries (WCAG 1.4.11) by the computed-colour
+  check in `web/e2e/contrast.spec.ts` — jsdom has no stylesheet, and axe has no rule for the latter.
 - Layout is mobile-first: 360 px is the smallest width to keep working, 1024 px and up is the target.
 
 ## Known traps

@@ -5,7 +5,8 @@ const HR_PASSWORD = 'hr-e2e-password-123'
 
 /**
  * Control boundaries are measured, not trusted (spec 0003, AC-3): axe-core has no rule for WCAG
- * 1.4.11, so the border of a button or a field is compared with the surface behind it here.
+ * 1.4.11, so the border of a button, a field or a listbox is compared with the surface behind it.
+ * A border that is invisible (zero width or `none`) is a failure even when its colour would pass.
  */
 async function controlContrast(page: Page, control: string, surface: string) {
   return page.evaluate(
@@ -39,7 +40,14 @@ async function controlContrast(page: Page, control: string, surface: string) {
       if (!controlEl || !surfaceEl) {
         return -1
       }
-      const border = rgb(getComputedStyle(controlEl).borderTopColor)
+
+      const style = getComputedStyle(controlEl)
+      // No visible boundary means no contrast to measure.
+      if (Number.parseFloat(style.borderTopWidth) === 0 || style.borderTopStyle === 'none') {
+        return 0
+      }
+
+      const border = rgb(style.borderTopColor)
       const background = rgb(getComputedStyle(surfaceEl).backgroundColor)
       if (!border || !background) {
         return -1
@@ -55,7 +63,6 @@ test('shouldKeepControlBoundariesAtThreeToOne', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
 
-  // Field boundary against the card it sits on.
   expect(
     await controlContrast(page, 'input', '[data-slot="card"]'),
     'input border',
@@ -66,9 +73,88 @@ test('shouldKeepControlBoundariesAtThreeToOne', async ({ page }) => {
   await page.getByRole('button', { name: 'Giriş yap' }).click()
   await expect(page.getByText('Giriş yapan:')).toBeVisible()
 
-  // Secondary button boundary against the card.
   expect(
     await controlContrast(page, 'button[data-slot="button"].bg-secondary', '[data-slot="card"]'),
     'secondary button border',
   ).toBeGreaterThanOrEqual(3)
+})
+
+test('shouldKeepTheRoleListboxReadable', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('E-posta').fill(HR_EMAIL)
+  await page.getByLabel('Parola').fill(HR_PASSWORD)
+  await page.getByRole('button', { name: 'Giriş yap' }).click()
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Kullanıcılar' }).click()
+  await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
+
+  await page.getByRole('combobox').click()
+  const listbox = page.getByRole('listbox')
+  await expect(listbox).toBeVisible()
+
+  // The popup boundary against the page behind it.
+  expect(
+    await controlContrast(page, '[role="listbox"]', '[data-slot="card"]'),
+    'listbox border',
+  ).toBeGreaterThanOrEqual(3)
+
+  // Radix keeps focus on the trigger and marks the active row with data-highlighted; the indicator
+  // has to be visible and reach 3:1 against the row background. Read it in one pass, so the element
+  // and its computed style cannot disagree.
+  await page.keyboard.press('ArrowDown')
+
+  const indicator = await page.evaluate(() => {
+    const option = document.querySelector<HTMLElement>('[role="option"][data-highlighted]')
+    if (!option) {
+      return null
+    }
+    const style = getComputedStyle(option)
+    return {
+      width: Number.parseFloat(style.outlineWidth),
+      style: style.outlineStyle,
+      color: style.outlineColor,
+      background: style.backgroundColor,
+    }
+  })
+
+  expect(indicator, 'a highlighted row exists').not.toBeNull()
+  expect(indicator?.style, 'highlighted row has an outline').not.toBe('none')
+  expect(indicator?.width ?? 0, 'highlighted row outline width').toBeGreaterThan(0)
+
+  const ratio = await page.evaluate(
+    ({ color, background }) => {
+      const canvas = document.createElement('canvas')
+      canvas.width = 1
+      canvas.height = 1
+      const context = canvas.getContext('2d')
+      const rgb = (value: string) => {
+        if (!context) {
+          return null
+        }
+        context.clearRect(0, 0, 1, 1)
+        context.fillStyle = value
+        context.fillRect(0, 0, 1, 1)
+        const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data
+        return a === 0 ? null : [r, g, b]
+      }
+      const luminance = ([r, g, b]: number[]) => {
+        const channel = (c: number) => {
+          const v = c / 255
+          return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+        }
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+      }
+      const outline = rgb(color)
+      const surface = rgb(background)
+      if (!outline || !surface) {
+        return -1
+      }
+      const [lighter, darker] = [luminance(outline), luminance(surface)].sort((a, b) => b - a)
+      return (lighter + 0.05) / (darker + 0.05)
+    },
+    { color: indicator?.color ?? '', background: indicator?.background ?? '' },
+  )
+
+  expect(ratio, 'highlighted row indicator contrast').toBeGreaterThanOrEqual(3)
 })

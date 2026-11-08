@@ -35,7 +35,10 @@ Icons come from `lucide-react` (only the used ones) and the font is the system s
   column headers are only announced on wide screens; and the native `<select>` is now a Radix listbox,
   which is better for screen readers and keyboard but is more markup to maintain.
 - **Guardrails:** `scripts/tokens` keeps colours in one file; `jest-axe` runs on every screen in the
-  component tests for the structural rules, and the Playwright scan covers contrast and the dialog.
+  component tests for the structural rules, the axe scan in `web/e2e/accessibility.spec.ts` covers
+  text contrast, and `web/e2e/contrast.spec.ts` measures control boundaries — axe has no rule for
+  WCAG 1.4.11, so the border of a field, a button or the role listbox is compared with its surface
+  by computed colour.
 
 ## Alternatives considered
 

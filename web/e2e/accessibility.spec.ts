@@ -56,6 +56,8 @@ test('shouldHaveNoAccessibilityViolationsOnEveryScreen', async ({ page }) => {
   // Users, then the confirmation dialog on top of it
   await page.getByRole('button', { name: 'Kullanıcılar' }).click()
   await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
+  // The heading renders before the request answers: scan the list, not the loading state.
+  await expect(page.getByRole('table')).toBeVisible()
   await expectNoViolations(page, 'users')
 
   const deactivate = page.getByRole('button', { name: 'Pasife al' }).first()

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -497,10 +497,14 @@ describe('users screen', () => {
     await user.click(screen.getByRole('button', { name: 'Oluştur' }))
     await screen.findByText('New Person')
 
-    // Now the stale first answer arrives with the old (empty) list.
+    // Now the stale first answer arrives with the old (empty) list. Flush it before asserting, so
+    // the test fails if the guard is removed.
     resolveFirst(json(200, []))
+    await act(async () => {
+      await Promise.resolve()
+    })
 
-    await waitFor(() => expect(screen.getByText('New Person')).toBeInTheDocument())
+    expect(screen.getByText('New Person')).toBeInTheDocument()
   })
 
   it('shouldNotDescribeTheFormFieldsWithARowError', async () => {

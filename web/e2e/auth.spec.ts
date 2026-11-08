@@ -53,7 +53,7 @@ test('shouldNotScrollHorizontallyAtAnyWidth', async ({ page }) => {
   }
 })
 
-test('shouldNotScrollHorizontallyOnThePasswordAndForbiddenScreens', async ({ page }) => {
+test('shouldFitThePasswordAndForbiddenScreensAtEveryWidth', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 900 })
   await page.goto('/')
   await page.getByLabel('E-posta').fill(HR_EMAIL)
@@ -61,40 +61,50 @@ test('shouldNotScrollHorizontallyOnThePasswordAndForbiddenScreens', async ({ pag
   await page.getByRole('button', { name: 'Giriş yap' }).click()
   await expect(page.getByText('Giriş yapan:')).toBeVisible()
 
-  const created = await page.evaluate(async () => {
-    const token = (await (await fetch('/api/auth/csrf')).json()).token
-    const response = await fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
-      body: JSON.stringify({
-        email: `narrow-${Date.now()}@acme.test`,
-        displayName: 'Narrow Person',
-        role: 'EMPLOYEE',
-      }),
-    })
-    return response.json()
-  })
-
   const employee = await page.context().browser()!.newContext()
   const employeePage = await employee.newPage()
-  await employeePage.setViewportSize({ width: 360, height: 900 })
-  await employeePage.goto('/')
-  await employeePage.getByLabel('E-posta').fill(created.user.email)
-  await employeePage.getByLabel('Parola').fill(created.temporaryPassword)
-  await employeePage.getByRole('button', { name: 'Giriş yap' }).click()
 
-  await expect(employeePage.getByRole('heading', { name: 'Parola değiştirme' })).toBeVisible()
-  expect(await horizontalOverflow(employeePage), 'password change at 360px').toBe(0)
+  for (const width of WIDTHS) {
+    // A fresh newcomer per width: the password screen only exists until the password is changed.
+    const created = await page.evaluate(async () => {
+      const token = (await (await fetch('/api/auth/csrf')).json()).token
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+        body: JSON.stringify({
+          email: `narrow-${Date.now()}@acme.test`,
+          displayName: 'Narrow Person',
+          role: 'EMPLOYEE',
+        }),
+      })
+      return response.json()
+    })
 
-  await employeePage.getByLabel('Mevcut parola').fill(created.temporaryPassword)
-  await employeePage.getByLabel('Yeni parola', { exact: true }).fill('brand-new-pass-123')
-  await employeePage.getByLabel('Yeni parola (tekrar)').fill('brand-new-pass-123')
-  await employeePage.getByRole('button', { name: 'Parolayı değiştir' }).click()
-  await expect(employeePage.getByText('Giriş yapan:')).toBeVisible()
+    await employeePage.setViewportSize({ width, height: 900 })
+    await employeePage.goto('/')
+    await employeePage.getByLabel('E-posta').fill(created.user.email)
+    await employeePage.getByLabel('Parola').fill(created.temporaryPassword)
+    await employeePage.getByRole('button', { name: 'Giriş yap' }).click()
 
-  await employeePage.getByRole('button', { name: 'Kullanıcılar' }).click()
-  await expect(employeePage.getByText('Bu sayfaya erişiminiz yok')).toBeVisible()
-  expect(await horizontalOverflow(employeePage), 'forbidden at 360px').toBe(0)
+    await expect(employeePage.getByRole('heading', { name: 'Parola değiştirme' })).toBeVisible()
+    expect(await horizontalOverflow(employeePage), `password change at ${width}px`).toBe(0)
+    await expectTouchTargets(employeePage, `password change at ${width}px`)
+
+    await employeePage.getByLabel('Mevcut parola').fill(created.temporaryPassword)
+    await employeePage.getByLabel('Yeni parola', { exact: true }).fill('brand-new-pass-123')
+    await employeePage.getByLabel('Yeni parola (tekrar)').fill('brand-new-pass-123')
+    await employeePage.getByRole('button', { name: 'Parolayı değiştir' }).click()
+    await expect(employeePage.getByText('Giriş yapan:')).toBeVisible()
+
+    await employeePage.getByRole('button', { name: 'Kullanıcılar' }).click()
+    await expect(employeePage.getByText('Bu sayfaya erişiminiz yok')).toBeVisible()
+    expect(await horizontalOverflow(employeePage), `forbidden at ${width}px`).toBe(0)
+    await expectTouchTargets(employeePage, `forbidden at ${width}px`)
+
+    await employeePage.getByRole('button', { name: 'Geri' }).click()
+    await employeePage.getByRole('button', { name: 'Çıkış' }).click()
+    await expect(employeePage.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+  }
 
   await employee.close()
 })

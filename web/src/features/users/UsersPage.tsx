@@ -66,19 +66,28 @@ function UsersPage({ onBack }: { onBack: () => void }) {
   const deactivateTrigger = useRef<HTMLElement | null>(null)
   // The newest list request: an older answer must not overwrite it.
   const latestRequest = useRef(0)
+  // The screen is unmounted when the user goes back: an answer that arrives later must be dropped.
+  const mounted = useRef(true)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   const load = useCallback(async () => {
     // A slow first request must not overwrite a newer list (e.g. right after a create).
     const request = ++latestRequest.current
     try {
       const list = await authApi.users()
-      if (request !== latestRequest.current) {
+      if (!mounted.current || request !== latestRequest.current) {
         return
       }
       setUsers(list)
       setStatus('ready')
     } catch (failure) {
-      if (request !== latestRequest.current) {
+      if (!mounted.current || request !== latestRequest.current) {
         return
       }
       setStatus('error')
@@ -265,7 +274,7 @@ function UsersPage({ onBack }: { onBack: () => void }) {
                       data-label={t('email')}
                       className="flex items-baseline justify-between gap-4 py-1 before:text-xs before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none"
                     >
-                      <span className="text-sm text-muted-foreground [overflow-wrap:anywhere] md:truncate">
+                      <span className="block text-sm text-muted-foreground [overflow-wrap:anywhere] md:max-w-[16rem] md:truncate">
                         {user.email}
                       </span>
                     </TableCell>
