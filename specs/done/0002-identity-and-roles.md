@@ -1,6 +1,6 @@
 # Spec 0002 — Identity and roles
 
-- Status: In progress
+- Status: Shipped (2026-11-08)
 - Mode: lite
 - Plan: `specs/plans/0002-plan.md`
 - Self-critique: done
@@ -85,16 +85,16 @@ aktarma (0003), e-posta ile parola sıfırlama, MFA.
 
 ## Acceptance criteria
 
-- [ ] AC-1 — Doğru e-posta/parola ile giriş 200 döner ve `HttpOnly` oturum çerezi kurar; yanlış parola 401 ve genel hata döner (hangi alanın yanlış olduğu söylenmez); çıkıştan sonra aynı çerezle korumalı uç 401 döner.
-- [ ] AC-2 — Oturum yapılandırması 30 dakika boşta / 8 saat mutlaktır; süresi dolmuş (sunucuda sonlandırılmış) oturumla korumalı uç 401 döner.
-- [ ] AC-3 — Beş hatalı denemeden sonra hesap 15 dakika kilitlenir; kilitliyken doğru parola 423 ve kilit mesajı döner; kilit denetim kaydına yazılır.
-- [ ] AC-4 — İK, çalışan veya yönetici rolüyle kullanıcı oluşturur ve geçici parola bir kez döner; kullanıcı ilk girişte parola değiştirmeden korumalı uçlara erişemez (403); parola değiştirme mevcut parolayı ister ve başarılıysa erişim açılır.
-- [ ] AC-5 — Pasife alınan kullanıcı giriş yapamaz (401) ve açık oturumu 401 döner; İK kendini pasife alamaz ve kendi parolasını bu ekrandan sıfırlayamaz (403).
-- [ ] AC-6 — İK, İK veya CEO rolü atayamaz (403); seed ile gelen İK ve CEO hesapları giriş yapar; CEO hiçbir **iş** yazma ucuna erişemez (403) — kendi parolasını değiştirmesi self-servis olduğu için serbesttir. Seed ile gelen İK/CEO hesapları yönetim ekranından **pasife alınamaz ve parolaları sıfırlanamaz** (403 `PROTECTED_ACCOUNT`); bu hesaplar yalnız ortam değişkenleriyle yönetilir.
-- [ ] AC-7 — Oturumsuz korumalı uç 401, yetersiz rol 403, `/api/health` oturumsuz 200 döner; listede olmayan yeni bir uç varsayılan olarak kapalıdır.
-- [ ] AC-8 — Başarılı/başarısız giriş, çıkış, kullanıcı oluşturma, pasife alma ve parola sıfırlama için denetim kaydı oluşur; başarısız girişte e-posta maskelidir; hiçbir kayıtta parola (düz metin veya hash) yoktur.
-- [ ] AC-9 — Giriş, parola değiştirme, kullanıcılar ve 403 ekranlarının tüm görünür metinleri TR/EN katalogdan gelir; dil denetimi bu ekranlarda da çalışır.
-- [ ] AC-10 — Tarayıcı yolculuğu: kullanıcı giriş yapar, yetkisi olmayan kullanıcılar ekranına erişemez (403), çıkış yapar ve korumalı sayfa onu girişe yönlendirir.
+- [x] AC-1 — Doğru e-posta/parola ile giriş 200 döner ve `HttpOnly` oturum çerezi kurar; yanlış parola 401 ve genel hata döner (hangi alanın yanlış olduğu söylenmez); çıkıştan sonra aynı çerezle korumalı uç 401 döner.
+- [x] AC-2 — Oturum yapılandırması 30 dakika boşta / 8 saat mutlaktır; süresi dolmuş (sunucuda sonlandırılmış) oturumla korumalı uç 401 döner.
+- [x] AC-3 — Beş hatalı denemeden sonra hesap 15 dakika kilitlenir; kilitliyken doğru parola 423 ve kilit mesajı döner; kilit denetim kaydına yazılır.
+- [x] AC-4 — İK, çalışan veya yönetici rolüyle kullanıcı oluşturur ve geçici parola bir kez döner; kullanıcı ilk girişte parola değiştirmeden korumalı uçlara erişemez (403); parola değiştirme mevcut parolayı ister ve başarılıysa erişim açılır.
+- [x] AC-5 — Pasife alınan kullanıcı giriş yapamaz (401) ve açık oturumu 401 döner; İK kendini pasife alamaz ve kendi parolasını bu ekrandan sıfırlayamaz (403).
+- [x] AC-6 — İK, İK veya CEO rolü atayamaz (403); seed ile gelen İK ve CEO hesapları giriş yapar; CEO hiçbir **iş** yazma ucuna erişemez (403) — kendi parolasını değiştirmesi self-servis olduğu için serbesttir. Seed ile gelen İK/CEO hesapları yönetim ekranından **pasife alınamaz ve parolaları sıfırlanamaz** (403 `PROTECTED_ACCOUNT`); bu hesaplar yalnız ortam değişkenleriyle yönetilir.
+- [x] AC-7 — Oturumsuz korumalı uç 401, yetersiz rol 403, `/api/health` oturumsuz 200 döner; listede olmayan yeni bir uç varsayılan olarak kapalıdır.
+- [x] AC-8 — Başarılı/başarısız giriş, çıkış, kullanıcı oluşturma, pasife alma ve parola sıfırlama için denetim kaydı oluşur; başarısız girişte e-posta maskelidir; hiçbir kayıtta parola (düz metin veya hash) yoktur.
+- [x] AC-9 — Giriş, parola değiştirme, kullanıcılar ve 403 ekranlarının tüm görünür metinleri TR/EN katalogdan gelir; dil denetimi bu ekranlarda da çalışır.
+- [x] AC-10 — Tarayıcı yolculuğu: kullanıcı giriş yapar, yetkisi olmayan kullanıcılar ekranına erişemez (403), çıkış yapar ve korumalı sayfa onu girişe yönlendirir.
 
 ## Definition of Done
 
