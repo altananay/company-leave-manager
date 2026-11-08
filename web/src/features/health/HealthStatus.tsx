@@ -1,4 +1,5 @@
 import { CircleAlert, CircleCheck, Loader2 } from 'lucide-react'
+import { useRef } from 'react'
 
 import { useI18n } from '@/i18n/I18nProvider'
 import { Button } from '@/ui/button'
@@ -8,6 +9,13 @@ import { useHealth } from './useHealth'
 export function HealthStatus() {
   const { state, retry } = useHealth()
   const { t } = useI18n()
+  const statusRef = useRef<HTMLParagraphElement>(null)
+
+  /** The retry button disappears while the check runs; keep the keyboard where the result lands. */
+  function retryAndKeepFocus() {
+    retry()
+    requestAnimationFrame(() => statusRef.current?.focus())
+  }
 
   return (
     <Card>
@@ -20,11 +28,23 @@ export function HealthStatus() {
           {state === 'down' && (
             <CircleAlert aria-hidden="true" className="size-4 text-destructive" />
           )}
-          <p className="m-0 text-sm font-medium" role="status" aria-live="polite">
+          <p
+            ref={statusRef}
+            tabIndex={-1}
+            className="m-0 rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            role="status"
+            aria-live="polite"
+          >
             {state === 'loading' ? t('checking') : t(state)}
           </p>
           {state === 'down' && (
-            <Button type="button" variant="secondary" size="sm" onClick={retry} className="ml-auto">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={retryAndKeepFocus}
+              className="ml-auto"
+            >
               {t('retry')}
             </Button>
           )}

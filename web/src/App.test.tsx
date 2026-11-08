@@ -230,6 +230,21 @@ describe('authentication', () => {
     expect(login).toHaveBeenCalledTimes(1)
   })
 
+  it('shouldShowTheLockedMessageWhenTheAccountIsLocked', async () => {
+    anonymous({ '/api/auth/login': () => json(423, { status: 423, code: 'ACCOUNT_LOCKED' }) })
+
+    const user = userEvent.setup()
+    renderApp()
+
+    await user.type(await screen.findByLabelText('E-posta'), HR.email)
+    await user.type(screen.getByLabelText('Parola'), 'wrong-password')
+    await user.click(screen.getByRole('button', { name: 'Giriş yap' }))
+
+    expect(
+      await screen.findByText('Hesap geçici olarak kilitli. Lütfen sonra tekrar deneyin.'),
+    ).toBeInTheDocument()
+  })
+
   it('shouldShowForbiddenForNonHrUsers', async () => {
     authenticated(EMPLOYEE, () => json(200, { status: 'UP' }), {
       '/api/users': () => json(403, { status: 403, code: 'NOT_AUTHORIZED' }),
@@ -416,6 +431,126 @@ describe('users screen', () => {
     expect(displayName).toHaveFocus()
   })
 
+  it('shouldReturnFocusToTheRowAfterTheDialogCloses', async () => {
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/users': () => json(200, users),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+
+    const trigger = screen.getAllByRole('button', { name: 'Pasife al' })[0]
+    await user.click(trigger)
+    await screen.findByRole('dialog')
+
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(trigger).toHaveFocus()
+  })
+
+  it('shouldNotLoseACreatedUserWhenTheFirstListAnswerIsSlow', async () => {
+    // The first list request is slow; a create + reload finishes first. The stale answer must not
+    // overwrite the newer list (the created row would vanish).
+    let resolveFirst!: (value: Response) => void
+    const firstList = new Promise<Response>((resolve) => {
+      resolveFirst = resolve
+    })
+    let listCalls = 0
+    const created = { ...EMPLOYEE, id: 'u-new', email: 'new@acme.test', displayName: 'New Person' }
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(json(200, HR))
+        }
+        if (url.includes('/api/health')) {
+          return Promise.resolve(json(200, { status: 'UP' }))
+        }
+        if (url.includes('/api/users') && init?.method === 'POST') {
+          return Promise.resolve(
+            json(201, { user: created, temporaryPassword: 'temp-pass-123456' }),
+          )
+        }
+        if (url.includes('/api/users')) {
+          listCalls += 1
+          return listCalls === 1 ? firstList : Promise.resolve(json(200, [created]))
+        }
+        return Promise.resolve(json(404, null))
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+
+    await user.type(screen.getByLabelText('E-posta'), 'new@acme.test')
+    await user.type(screen.getByLabelText('Ad soyad'), 'New Person')
+    await user.click(screen.getByRole('button', { name: 'Oluştur' }))
+    await screen.findByText('New Person')
+
+    // Now the stale first answer arrives with the old (empty) list.
+    resolveFirst(json(200, []))
+
+    await waitFor(() => expect(screen.getByText('New Person')).toBeInTheDocument())
+  })
+
+  it('shouldNotDescribeTheFormFieldsWithARowError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(json(200, HR))
+        }
+        if (url.includes('/api/health')) {
+          return Promise.resolve(json(200, { status: 'UP' }))
+        }
+        if (url.includes('/reset-password')) {
+          return Promise.resolve(json(403, { status: 403, code: 'PROTECTED_ACCOUNT' }))
+        }
+        if (url.includes('/api/users')) {
+          return Promise.resolve(json(200, users))
+        }
+        return Promise.resolve(json(404, null))
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+
+    await user.click(screen.getAllByRole('button', { name: 'Parola sıfırla' })[0])
+    await screen.findByText('Bu hesap ortam değişkenleriyle yönetilir; buradan değiştirilemez.')
+
+    // A row failure is not a description of the create form's fields.
+    expect(screen.getByLabelText('E-posta')).not.toHaveAttribute('aria-describedby')
+  })
+
+  it('shouldMarkAnInactiveUser', async () => {
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/users': () => json(200, [{ ...EMPLOYEE, active: false }]),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+
+    expect(await screen.findByText('Pasif')).toBeInTheDocument()
+  })
+
   it('shouldAskForConfirmationBeforeDeactivating', async () => {
     const deactivate = vi.fn(() => json(204, null))
     vi.stubGlobal(
@@ -509,6 +644,22 @@ describe('password change', () => {
     await user.click(screen.getByRole('button', { name: 'Parolayı değiştir' }))
 
     expect(await screen.findByText('Mevcut parola hatalı.')).toBeInTheDocument()
+  })
+
+  it('shouldMapTheWeakPasswordCode', async () => {
+    authenticated({ ...EMPLOYEE, mustChangePassword: true }, () => json(200, { status: 'UP' }), {
+      '/api/auth/password': () => json(400, { status: 400, code: 'WEAK_PASSWORD' }),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+
+    await user.type(await screen.findByLabelText('Mevcut parola'), 'current-password-123')
+    await user.type(screen.getByLabelText('Yeni parola', { exact: true }), 'brand-new-pass-123')
+    await user.type(screen.getByLabelText('Yeni parola (tekrar)'), 'brand-new-pass-123')
+    await user.click(screen.getByRole('button', { name: 'Parolayı değiştir' }))
+
+    expect(await screen.findByText('Parola en az 12 karakter olmalı.')).toBeInTheDocument()
   })
 
   it('shouldFocusTheFieldToCorrect', async () => {

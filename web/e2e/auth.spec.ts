@@ -37,6 +37,8 @@ test('shouldNotScrollHorizontallyAtAnyWidth', async ({ page }) => {
 
     await page.getByRole('button', { name: 'Kullanıcılar' }).click()
     await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
+    // Wait for the list itself: the heading renders before the request answers.
+    await expect(page.getByRole('table')).toBeVisible()
     expect(await horizontalOverflow(page), `users at ${width}px`).toBe(0)
 
     // The dialog is the tightest layout on a phone: full width minus the page gutter.
@@ -124,16 +126,59 @@ test('shouldKeepTouchTargetsAtLeast44Pixels', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Kullanıcılar' }).click()
   await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
+  await expect(page.getByRole('table')).toBeVisible()
   await expectTouchTargets(page, 'users')
+
+  // The role listbox is a control too: open it and measure its options.
+  await page.getByRole('combobox').click()
+  await expect(page.getByRole('option').first()).toBeVisible()
+  await expectTouchTargets(page, 'role listbox', '[role="option"]:visible')
+  await page.keyboard.press('Escape')
 
   await page.getByRole('button', { name: 'Pasife al' }).first().click()
   await expect(page.getByRole('dialog')).toBeVisible()
   await expectTouchTargets(page, 'dialog')
 })
 
-/** Every control a thumb has to hit: buttons, fields and the role combobox (AC-8). */
-async function expectTouchTargets(page: import('@playwright/test').Page, label: string) {
-  const controls = page.locator('button:visible, input:visible, [role="combobox"]:visible')
+test('shouldNotScrollInsideTheTableWithALongAddress', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 900 })
+  await page.goto('/')
+  await page.getByLabel('E-posta').fill(HR_EMAIL)
+  await page.getByLabel('Parola').fill(HR_PASSWORD)
+  await page.getByRole('button', { name: 'Giriş yap' }).click()
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+
+  // One unbreakable local part, the worst case for a narrow table cell.
+  const longEmail = `${'a'.repeat(48)}@acme.test`
+  await page.evaluate(async (email) => {
+    const token = (await (await fetch('/api/auth/csrf')).json()).token
+    await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+      body: JSON.stringify({ email, displayName: 'Long Address', role: 'EMPLOYEE' }),
+    })
+  }, longEmail)
+
+  await page.getByRole('button', { name: 'Kullanıcılar' }).click()
+  await expect(page.getByRole('table')).toBeVisible()
+  await expect(page.getByText(longEmail)).toBeVisible()
+
+  const innerOverflow = await page.evaluate(() => {
+    const container = document.querySelector('[data-slot="table-container"]')
+    return container ? container.scrollWidth - container.clientWidth : -1
+  })
+
+  expect(innerOverflow, 'table container').toBe(0)
+  expect(await horizontalOverflow(page), 'document at 360px').toBe(0)
+})
+
+/** Every control a thumb has to hit: buttons, fields, the combobox and listbox options (AC-8). */
+async function expectTouchTargets(
+  page: import('@playwright/test').Page,
+  label: string,
+  selector = 'button:visible, input:visible, [role="combobox"]:visible',
+) {
+  const controls = page.locator(selector)
   const count = await controls.count()
   expect(count, `${label} has controls`).toBeGreaterThan(0)
 

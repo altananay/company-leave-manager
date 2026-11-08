@@ -5,8 +5,8 @@
 # colour may be written; a literal anywhere else is a component that will not follow a theme change.
 # A line that genuinely needs a literal can opt out with the word `tokens-allow` on that line.
 #
-# Scope: web/src/**/*.{ts,tsx}. Assets (favicon.svg) and web/index.html are outside the scan by
-# design — an SVG cannot read a CSS variable, and the page shell is not a component.
+# Scope: web/src/**/*.{ts,tsx}. Assets (favicon.svg, manifest) and web/index.html are outside the
+# scan by design — an SVG cannot read a CSS variable, and the page shell is not a component.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -15,18 +15,21 @@ if [ ! -d web/src ]; then
   exit 1
 fi
 
-# Hex, functional notations, and the named colours that are easy to reach for by accident.
-# The boundary allows a leading `-` so Tailwind's own palette (`bg-white`, `text-red-500`) is caught.
-PATTERN='#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|oklab\(|oklch\(|lab\(|lch\(|color\(|(^|[^[:alnum:]_])(white|black|red|green|blue|gray|grey|amber|orange|yellow|lime|emerald|teal|cyan|sky|indigo|violet|purple|fuchsia|pink|rose|slate|zinc|neutral|stone)\b'
+# Hex, functional notations, the named colours that are easy to reach for by accident (the leading
+# `-` lets Tailwind's own palette through), and arbitrary values that spell a colour by name
+# (`text-[coral]`); a length like `text-[13px]` has a digit and does not match.
+PATTERN='#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|oklab\(|oklch\(|lab\(|lch\(|color\(|(^|[^[:alnum:]_])(white|black|red|green|blue|gray|grey|amber|orange|yellow|lime|emerald|teal|cyan|sky|indigo|violet|purple|fuchsia|pink|rose|slate|zinc|neutral|stone)\b|(bg|text|border|ring|fill|stroke|from|via|to|outline|decoration|caret|accent|divide|placeholder)-\[[a-zA-Z-]+\]'
 
 # grep exits 1 when nothing matches: that is the good case. Anything else is a real failure.
 status=0
-matches=$(grep -REn --include='*.tsx' --include='*.ts' -e "$PATTERN" web/src | grep -v 'tokens-allow') || status=$?
+raw=$(grep -REn --include='*.tsx' --include='*.ts' -e "$PATTERN" web/src) || status=$?
 
 if [ "$status" -gt 1 ]; then
   echo "TOKENS ERROR — grep failed (exit $status)" >&2
   exit "$status"
 fi
+
+matches=$(printf '%s\n' "${raw:-}" | grep -v 'tokens-allow' || true)
 
 if [ -n "${matches:-}" ]; then
   echo "TOKENS FOUND — a colour literal outside web/src/index.css:" >&2

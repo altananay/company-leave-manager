@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
 /* ---------------------------------------------------------------------------
-   Design tokens — the single source of every visual value (spec 0003, AC-5).
+   Design tokens Ã¢â‚¬â€ the single source of every visual value (spec 0003, AC-5).
    No component may hard-code a colour; `scripts/tokens` fails the build if one does.
    The dark block below is the seam for a later slice: nothing sets `.dark` yet,
    so it is inert today and costs one file to enable.
@@ -34,6 +34,9 @@
 
   --border: oklch(0.86 0.01 255);
   --input: oklch(0.62 0.02 255);
+  /* The boundary of an interactive control must reach 3:1 against the surface (WCAG 1.4.11).
+     `--border` is a table rule, not a control boundary; these two are the ones that need it. */
+  --control: oklch(0.62 0.02 255);
   --ring: oklch(0.51 0.19 262);
 
   --radius: 0.625rem;
@@ -70,6 +73,7 @@
 
   --border: oklch(0.32 0.02 258);
   --input: oklch(0.62 0.02 258);
+  --control: oklch(0.62 0.02 258);
   --ring: oklch(0.68 0.16 262);
 }
 
@@ -92,6 +96,7 @@
   --color-success-foreground: var(--success-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
+  --color-control: var(--control);
   --color-ring: var(--ring);
 
   --radius-sm: calc(var(--radius) - 4px);

@@ -62,12 +62,25 @@ function UsersPage({ onBack }: { onBack: () => void }) {
   const [confirming, setConfirming] = useState<User | null>(null)
   const emailRef = useRef<HTMLInputElement>(null)
   const displayNameRef = useRef<HTMLInputElement>(null)
+  // The button that opened the dialog, so focus can return to it when the dialog closes.
+  const deactivateTrigger = useRef<HTMLElement | null>(null)
+  // The newest list request: an older answer must not overwrite it.
+  const latestRequest = useRef(0)
 
   const load = useCallback(async () => {
+    // A slow first request must not overwrite a newer list (e.g. right after a create).
+    const request = ++latestRequest.current
     try {
-      setUsers(await authApi.users())
+      const list = await authApi.users()
+      if (request !== latestRequest.current) {
+        return
+      }
+      setUsers(list)
       setStatus('ready')
     } catch (failure) {
+      if (request !== latestRequest.current) {
+        return
+      }
       setStatus('error')
       if (failure instanceof ApiError && failure.status === 403) {
         setForbidden(true)
@@ -78,30 +91,10 @@ function UsersPage({ onBack }: { onBack: () => void }) {
   }, [])
 
   useEffect(() => {
-    let cancelled = false
-    authApi
-      .users()
-      .then((list) => {
-        if (!cancelled) {
-          setUsers(list)
-          setStatus('ready')
-        }
-      })
-      .catch((failure) => {
-        if (cancelled) {
-          return
-        }
-        setStatus('error')
-        if (failure instanceof ApiError && failure.status === 403) {
-          setForbidden(true)
-        } else {
-          setError(errorKeyFor(failure))
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    // `load` awaits the request before it touches state, so nothing is set synchronously here.
+    // eslint-disable-next-line react/set-state-in-effect
+    void load()
+  }, [load])
 
   async function create(event: FormEvent) {
     event.preventDefault()
@@ -146,6 +139,10 @@ function UsersPage({ onBack }: { onBack: () => void }) {
       setError(errorKeyFor(failure))
     }
   }
+
+  /** True when the error belongs to the create form, not to a row action. */
+  const formError =
+    error === 'emailExists' || error === 'validationFailed' || error === 'roleNotAssignable'
 
   if (forbidden) {
     return (
@@ -199,7 +196,7 @@ function UsersPage({ onBack }: { onBack: () => void }) {
                 type="email"
                 value={email}
                 invalid={error === 'emailExists' || error === 'validationFailed'}
-                describedBy={error ? 'users-error' : undefined}
+                describedBy={formError ? 'users-error' : undefined}
                 onChange={(event) => setEmail(event.target.value)}
                 required
               />
@@ -208,7 +205,7 @@ function UsersPage({ onBack }: { onBack: () => void }) {
                 inputRef={displayNameRef}
                 value={displayName}
                 invalid={error === 'validationFailed'}
-                describedBy={error ? 'users-error' : undefined}
+                describedBy={formError ? 'users-error' : undefined}
                 onChange={(event) => setDisplayName(event.target.value)}
                 required
               />
@@ -268,7 +265,7 @@ function UsersPage({ onBack }: { onBack: () => void }) {
                       data-label={t('email')}
                       className="flex items-baseline justify-between gap-4 py-1 before:text-xs before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none"
                     >
-                      <span className="text-sm text-muted-foreground md:truncate">
+                      <span className="text-sm text-muted-foreground [overflow-wrap:anywhere] md:truncate">
                         {user.email}
                       </span>
                     </TableCell>
@@ -305,7 +302,10 @@ function UsersPage({ onBack }: { onBack: () => void }) {
                             type="button"
                             variant="destructive"
                             size="sm"
-                            onClick={() => setConfirming(user)}
+                            onClick={(event) => {
+                              deactivateTrigger.current = event.currentTarget
+                              setConfirming(user)
+                            }}
                           >
                             {t('deactivate')}
                           </Button>
@@ -321,7 +321,15 @@ function UsersPage({ onBack }: { onBack: () => void }) {
       </Card>
 
       <Dialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
-        <DialogContent closeLabel={t('close')}>
+        <DialogContent
+          closeLabel={t('close')}
+          // Radix would drop focus on <body> because this dialog has no DialogTrigger; send it
+          // back to the row button that opened it (AC-3).
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            deactivateTrigger.current?.focus()
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{t('deactivate')}</DialogTitle>
             <DialogDescription>{t('confirmDeactivate')}</DialogDescription>
