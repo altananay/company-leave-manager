@@ -177,13 +177,33 @@ test('shouldNotScrollInsideTheTableWithALongAddress', async ({ page }) => {
     await expect(page.getByRole('table')).toBeVisible()
     await expect(page.getByText(longEmail)).toBeVisible()
 
-    const innerOverflow = await page.evaluate(() => {
-      const container = document.querySelector('[data-slot="table-container"]')
-      return container ? container.scrollWidth - container.clientWidth : -1
-    })
+    const layout = await page.evaluate((email) => {
+      const container = document.querySelector('[data-slot="table-container"]') as HTMLElement
+      const table = container?.querySelector('table') as HTMLElement | null
+      const cell = Array.from(document.querySelectorAll('[data-slot="table-cell"]')).find((node) =>
+        node.textContent?.includes(email),
+      )
+      const span = cell?.querySelector('span') as HTMLElement | null
+      return {
+        containerWidth: container.getBoundingClientRect().width,
+        tableWidth: table?.getBoundingClientRect().width ?? -1,
+        overflow: container.scrollWidth - container.clientWidth,
+        clipped: span ? span.scrollWidth > span.clientWidth : false,
+      }
+    }, longEmail)
 
-    expect(innerOverflow, `table container at ${width}px`).toBe(0)
+    // The table must fit the box that holds it — that is the real rule. `scrollWidth` rounds to
+    // whole pixels, so it can read one more than `clientWidth` while nothing is clipped; the
+    // fractional width comparison above is what catches a table that actually grew.
+    expect(layout.tableWidth, `table fits its container at ${width}px`).toBeLessThanOrEqual(
+      layout.containerWidth + 0.5,
+    )
+    expect(layout.overflow, `table container at ${width}px`).toBeLessThanOrEqual(1)
     expect(await horizontalOverflow(page), `document at ${width}px`).toBe(0)
+    if (width >= 768) {
+      // From md the address is clipped, not wrapped: the proof that the truncation rule is active.
+      expect(layout.clipped, 'the address is truncated at md').toBe(true)
+    }
     await page.getByRole('button', { name: 'Geri' }).click()
   }
 })
@@ -259,11 +279,19 @@ test('shouldLoginDenyAndLogout', async ({ page }) => {
 
   // Sign out, then the shell shows the login screen again and the API refuses the session.
   await page.getByRole('button', { name: 'Geri' }).click()
+  // Wait for the logout round trip itself: the screen changes when it answers, and asserting the
+  // status keeps a rejected logout from looking like a successful one (run #64 failed here).
+  const logoutResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/auth/logout') && response.request().method() === 'POST',
+  )
   await page.getByRole('button', { name: 'Çıkış' }).click()
+  const logout = await logoutResponse
+  expect(logout.status(), 'logout answers 204').toBe(204)
   await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
 
   const me = await page.request.get('/api/auth/me')
-  expect(me.status()).toBe(401)
+  expect(me.status(), `logout answered ${logout.status()}`).toBe(401)
 
   // Reloading the app after the logout lands on the login screen, not on the shell (AC-10).
   await page.reload()
