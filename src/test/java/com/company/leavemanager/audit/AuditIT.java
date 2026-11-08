@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.net.http.HttpResponse;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -22,6 +23,7 @@ class AuditIT extends IdentityTestSupport {
     void shouldRecordEveryIdentityEventWithoutPasswords() throws Exception {
         Instant start = Instant.now();
         assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String hrId = extract(session.get("/api/auth/me").body(), "id");
         String email = "audit-" + System.nanoTime() + "@acme.test";
 
         HttpResponse<String> created = session.post("/api/users",
@@ -83,6 +85,47 @@ class AuditIT extends IdentityTestSupport {
             }
         });
 
+        // The identities are pinned, not just present (BR-13). Each event type has its own shape:
+        // self-service events (login, logout, lockout) act on the account itself; admin events name
+        // the HR account as actor and the managed account as target.
+        UUID actor = UUID.fromString(hrId);
+        UUID target = UUID.fromString(id);
+
+        assertThat(events)
+                .filteredOn(event -> "USER_DEACTIVATED".equals(event.getEventType())
+                        || "PASSWORD_RESET".equals(event.getEventType()))
+                .isNotEmpty()
+                .allSatisfy(event -> {
+                    assertThat(event.getActorUserId()).as("actor of %s", event.getEventType()).isEqualTo(actor);
+                    assertThat(event.getTargetUserId()).as("target of %s", event.getEventType()).isEqualTo(target);
+                });
+
+        // Two accounts are created in this test (the target and the lockout victim): the target's
+        // own creation must be there, with HR as the actor.
+        assertThat(events)
+                .filteredOn(event -> "USER_CREATED".equals(event.getEventType()))
+                .anySatisfy(event -> {
+                    assertThat(event.getActorUserId()).isEqualTo(actor);
+                    assertThat(event.getTargetUserId()).isEqualTo(target);
+                });
+
+        assertThat(events)
+                .filteredOn(event -> "LOGIN_SUCCEEDED".equals(event.getEventType())
+                        || "LOGOUT".equals(event.getEventType()))
+                .isNotEmpty()
+                .allSatisfy(event -> {
+                    // Self-service: the account is both the actor and the target.
+                    assertThat(event.getActorUserId()).as("actor of %s", event.getEventType()).isEqualTo(actor);
+                    assertThat(event.getTargetUserId()).as("target of %s", event.getEventType()).isEqualTo(actor);
+                });
+
+        assertThat(events)
+                .filteredOn(event -> "ACCOUNT_LOCKED".equals(event.getEventType()))
+                .isNotEmpty()
+                .allSatisfy(event -> assertThat(event.getTargetUserId())
+                        .as("target of ACCOUNT_LOCKED")
+                        .isNotEqualTo(actor));
+
         AuditEvent createdEvent = events.stream()
                 .filter(event -> "USER_CREATED".equals(event.getEventType()))
                 .findFirst()
@@ -93,6 +136,6 @@ class AuditIT extends IdentityTestSupport {
                 .filter(event -> "LOGIN_SUCCEEDED".equals(event.getEventType()))
                 .findFirst()
                 .orElseThrow();
-        assertThat(loginEvent.getActorUserId()).isNotNull();
+        assertThat(loginEvent.getActorUserId()).isEqualTo(actor);
     }
 }

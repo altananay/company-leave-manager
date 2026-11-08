@@ -65,10 +65,17 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(problemWithId(problem, requestId));
     }
 
-    /** Logs a 5xx with its correlation id and returns that id (docs/conventions.md, Error handling). */
+    /**
+     * Logs a 5xx with its correlation id and returns that id. The message is not logged: a database
+     * error can quote the row it refused, and that row may hold personal data. The stack trace is
+     * available at DEBUG for whoever has the request id (docs/conventions.md, Data rules).
+     */
     private static String serverError(ProblemDetail problem, Exception failure) {
         String requestId = UUID.randomUUID().toString();
-        log.error("Server error [{}] {}", requestId, problem.getStatus(), failure);
+        log.error("Server error [{}] {} {}", requestId, problem.getStatus(), failure.getClass().getName());
+        if (log.isDebugEnabled()) {
+            log.debug("Server error [{}] detail", requestId, failure);
+        }
         return requestId;
     }
 

@@ -1,10 +1,13 @@
 package com.company.leavemanager.identity;
 
 import com.company.leavemanager.identity.internal.SessionInvalidator;
+import com.company.leavemanager.identity.internal.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -13,6 +16,9 @@ class AuthIT extends IdentityTestSupport {
 
     @Autowired
     SessionInvalidator sessionInvalidator;
+
+    @Autowired
+    UserRepository users;
 
     @Test
     void shouldLoginThenLogout() throws Exception {
@@ -117,5 +123,12 @@ class AuthIT extends IdentityTestSupport {
 
         assertThat(locked.statusCode()).isEqualTo(423);
         assertThat(locked.body()).contains("ACCOUNT_LOCKED");
+
+        // The 15 minutes come from the running configuration, not from the test (AC-3).
+        Instant lockedUntil = users.findByEmailIgnoreCase(email).orElseThrow().getLockedUntil();
+        assertThat(lockedUntil)
+                .as("lockout duration from application.yml")
+                .isAfter(Instant.now().plus(Duration.ofMinutes(14)))
+                .isBefore(Instant.now().plus(Duration.ofMinutes(16)));
     }
 }
