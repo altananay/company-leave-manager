@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -837,8 +837,49 @@ describe('design system', () => {
   })
 
   it('shouldShowTheEmptyStateOnTheUsersScreen', async () => {
+    // The empty state must appear after a successful empty answer, not while the list is loading.
+    let resolveUsers!: (value: Response) => void
+    const pending = new Promise<Response>((resolve) => {
+      resolveUsers = resolve
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(json(200, HR))
+        }
+        if (url.includes('/api/health')) {
+          return Promise.resolve(json(200, { status: 'UP' }))
+        }
+        if (url.includes('/api/users')) {
+          return pending
+        }
+        return Promise.resolve(json(404, null))
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
+
+    // While the request is in flight the screen says it is loading, not that there is no user.
+    expect(await screen.findByText('Yükleniyor…')).toBeInTheDocument()
+    expect(screen.queryByText(/Henüz kullanıcı yok/)).toBeNull()
+
+    resolveUsers(json(200, []))
+
+    expect(
+      await screen.findByText('Henüz kullanıcı yok. Yukarıdaki formdan ilk kullanıcıyı oluşturun.'),
+    ).toBeInTheDocument()
+  })
+
+  it('shouldNotShowTheEmptyStateWhenTheListFails', async () => {
     authenticated(HR, () => json(200, { status: 'UP' }), {
-      '/api/users': () => json(200, []),
+      '/api/users': () => json(500, { status: 500, code: 'INTERNAL_ERROR' }),
     })
 
     const user = userEvent.setup()
@@ -846,8 +887,9 @@ describe('design system', () => {
     await user.click(await screen.findByRole('button', { name: 'Kullanıcılar' }))
 
     expect(
-      await screen.findByText('Henüz kullanıcı yok. Yukarıdaki formdan ilk kullanıcıyı oluşturun.'),
+      await screen.findByText('İşlem tamamlanamadı. Lütfen tekrar deneyin.'),
     ).toBeInTheDocument()
+    expect(screen.queryByText(/Henüz kullanıcı yok/)).toBeNull()
   })
 })
 
@@ -932,16 +974,30 @@ describe('accessibility', () => {
     const password = screen.getByLabelText('Parola')
     const submit = screen.getByRole('button', { name: 'Giriş yap' })
 
-    // Tab order follows the visual order: language, e-mail, password, submit.
-    await user.tab()
-    expect(screen.getByRole('button', { name: 'TR' })).toHaveFocus()
-    await user.tab()
-    expect(screen.getByRole('button', { name: 'EN' })).toHaveFocus()
+    // A view change focuses the main region, so the keyboard starts at the content, not the header.
+    await waitFor(() => expect(screen.getByRole('main')).toHaveFocus())
+
+    // From there the tab order follows the visual order: e-mail, password, submit.
     await user.tab()
     expect(email).toHaveFocus()
     await user.tab()
     expect(password).toHaveFocus()
     await user.tab()
     expect(submit).toHaveFocus()
+  })
+
+  it('shouldKeepTheLanguageSwitchReachable', async () => {
+    anonymous()
+
+    const user = userEvent.setup()
+    renderApp()
+    await screen.findByLabelText('E-posta')
+
+    // The header controls sit before the content region: Shift+Tab walks back to them.
+    await waitFor(() => expect(screen.getByRole('main')).toHaveFocus())
+    await user.tab({ shift: true })
+    expect(screen.getByRole('button', { name: 'EN' })).toHaveFocus()
+    await user.tab({ shift: true })
+    expect(screen.getByRole('button', { name: 'TR' })).toHaveFocus()
   })
 })

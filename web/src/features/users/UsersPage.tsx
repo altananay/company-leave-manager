@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { useI18n } from '@/i18n/I18nProvider'
-import type { MessageKey } from '@/i18n/messages'
 import { ApiError, authApi, type CreatedUser, type User } from '@/features/auth/authApi'
+import { roleKey } from '@/features/auth/roles'
 import { Alert } from '@/ui/alert'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
@@ -19,6 +19,7 @@ import {
 import { Field } from '@/ui/field'
 import { Label } from '@/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table'
 
 type ErrorKey =
   | 'emailExists'
@@ -47,13 +48,10 @@ function errorKeyFor(failure: unknown): ErrorKey {
   }
 }
 
-/** One responsive row: stacked card on a phone, table-like grid from `md` up (AC-4, AC-6). */
-const rowClass =
-  'flex flex-col gap-2 py-4 md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(0,1.6fr)_minmax(0,0.8fr)_minmax(0,0.6fr)_auto] md:items-center md:gap-4 md:py-3'
-
 function UsersPage({ onBack }: { onBack: () => void }) {
   const { t } = useI18n()
   const [users, setUsers] = useState<User[]>([])
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [forbidden, setForbidden] = useState(false)
   const [error, setError] = useState<ErrorKey | null>(null)
   const [created, setCreated] = useState<CreatedUser | null>(null)
@@ -68,7 +66,9 @@ function UsersPage({ onBack }: { onBack: () => void }) {
   const load = useCallback(async () => {
     try {
       setUsers(await authApi.users())
+      setStatus('ready')
     } catch (failure) {
+      setStatus('error')
       if (failure instanceof ApiError && failure.status === 403) {
         setForbidden(true)
       } else {
@@ -84,12 +84,14 @@ function UsersPage({ onBack }: { onBack: () => void }) {
       .then((list) => {
         if (!cancelled) {
           setUsers(list)
+          setStatus('ready')
         }
       })
       .catch((failure) => {
         if (cancelled) {
           return
         }
+        setStatus('error')
         if (failure instanceof ApiError && failure.status === 403) {
           setForbidden(true)
         } else {
@@ -183,12 +185,12 @@ function UsersPage({ onBack }: { onBack: () => void }) {
             </Alert>
           )}
           {error && (
-            <Alert variant="destructive">
+            <Alert variant="destructive" id="users-error">
               <p className="font-medium">{t(error)}</p>
             </Alert>
           )}
 
-          <form className="flex flex-col gap-4" onSubmit={create} noValidate>
+          <form className="flex flex-col gap-4" onSubmit={create}>
             <h3 className="text-sm font-semibold">{t('newUser')}</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field
@@ -196,6 +198,8 @@ function UsersPage({ onBack }: { onBack: () => void }) {
                 inputRef={emailRef}
                 type="email"
                 value={email}
+                invalid={error === 'emailExists' || error === 'validationFailed'}
+                describedBy={error ? 'users-error' : undefined}
                 onChange={(event) => setEmail(event.target.value)}
                 required
               />
@@ -203,6 +207,8 @@ function UsersPage({ onBack }: { onBack: () => void }) {
                 label={t('displayName')}
                 inputRef={displayNameRef}
                 value={displayName}
+                invalid={error === 'validationFailed'}
+                describedBy={error ? 'users-error' : undefined}
                 onChange={(event) => setDisplayName(event.target.value)}
                 required
               />
@@ -228,73 +234,94 @@ function UsersPage({ onBack }: { onBack: () => void }) {
 
       <Card>
         <CardContent>
-          <div className={`${rowClass} hidden md:grid`} aria-hidden="true">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t('displayName')}
-            </span>
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t('email')}
-            </span>
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t('role')}
-            </span>
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t('active')}
-            </span>
-            <span />
-          </div>
-
-          {users.length === 0 ? (
+          {status === 'loading' ? (
+            <p className="py-6 text-center text-sm text-muted-foreground" role="status">
+              {t('loading')}
+            </p>
+          ) : status === 'error' ? null : users.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground" role="status">
               {t('noUsers')}
             </p>
           ) : (
-            <ul className="divide-y divide-border">
-              {users.map((user) => (
-                <li key={user.id} className={rowClass}>
-                  <span className="font-medium md:truncate">{user.displayName}</span>
-                  <span className="text-sm text-muted-foreground md:truncate">{user.email}</span>
-                  <span>
-                    <Badge variant="default">{t(roleKey(user.role))}</Badge>
-                  </span>
-                  <span>
-                    <Badge variant={user.active ? 'success' : 'muted'}>
-                      {user.active ? t('active') : t('inactive')}
-                    </Badge>
-                  </span>
-                  <span className="flex flex-wrap items-center gap-2 md:justify-end">
-                    {isProtected(user) ? (
-                      <span className="text-xs text-muted-foreground">{t('protectedAccount')}</span>
-                    ) : (
-                      <>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => resetPassword(user)}
-                        >
-                          {t('resetPassword')}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => setConfirming(user)}
-                        >
-                          {t('deactivate')}
-                        </Button>
-                      </>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <Table>
+              <TableHeader className="hidden md:table-header-group">
+                <TableRow>
+                  <TableHead>{t('displayName')}</TableHead>
+                  <TableHead>{t('email')}</TableHead>
+                  <TableHead>{t('role')}</TableHead>
+                  <TableHead>{t('active')}</TableHead>
+                  <TableHead>
+                    <span className="sr-only">{t('actions')}</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {users.map((user) => (
+                  <TableRow key={user.id} className="block py-4 md:table-row md:py-0">
+                    <TableCell
+                      data-label={t('displayName')}
+                      className="flex items-baseline justify-between gap-4 py-1 before:text-xs before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none"
+                    >
+                      <span className="font-medium md:truncate">{user.displayName}</span>
+                    </TableCell>
+                    <TableCell
+                      data-label={t('email')}
+                      className="flex items-baseline justify-between gap-4 py-1 before:text-xs before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none"
+                    >
+                      <span className="text-sm text-muted-foreground md:truncate">
+                        {user.email}
+                      </span>
+                    </TableCell>
+                    <TableCell
+                      data-label={t('role')}
+                      className="flex items-baseline justify-between gap-4 py-1 before:text-xs before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none"
+                    >
+                      <Badge variant="default">{t(roleKey(user.role))}</Badge>
+                    </TableCell>
+                    <TableCell
+                      data-label={t('active')}
+                      className="flex items-baseline justify-between gap-4 py-1 before:text-xs before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none"
+                    >
+                      <Badge variant={user.active ? 'success' : 'muted'}>
+                        {user.active ? t('active') : t('inactive')}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="flex flex-wrap items-center gap-2 pt-2 md:table-cell md:justify-end md:pt-0">
+                      {isProtected(user) ? (
+                        <span className="text-xs text-muted-foreground">
+                          {t('protectedAccount')}
+                        </span>
+                      ) : (
+                        <>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => resetPassword(user)}
+                          >
+                            {t('resetPassword')}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => setConfirming(user)}
+                          >
+                            {t('deactivate')}
+                          </Button>
+                        </>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
 
       <Dialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
-        <DialogContent>
+        <DialogContent closeLabel={t('close')}>
           <DialogHeader>
             <DialogTitle>{t('deactivate')}</DialogTitle>
             <DialogDescription>{t('confirmDeactivate')}</DialogDescription>
@@ -322,19 +349,6 @@ function UsersPage({ onBack }: { onBack: () => void }) {
 /** Seeded accounts are managed by the environment, not by this screen (spec 0002, AC-6). */
 function isProtected(user: User): boolean {
   return user.role === 'HR' || user.role === 'CEO'
-}
-
-function roleKey(role: string): MessageKey {
-  switch (role) {
-    case 'HR':
-      return 'roleHr'
-    case 'CEO':
-      return 'roleCeo'
-    case 'MANAGER':
-      return 'roleManager'
-    default:
-      return 'roleEmployee'
-  }
 }
 
 export { UsersPage }

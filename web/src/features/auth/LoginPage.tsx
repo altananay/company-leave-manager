@@ -57,12 +57,14 @@ export function LoginPage({
       </CardHeader>
       <CardContent>
         {sessionExpired && <Alert variant="info">{t('sessionExpired')}</Alert>}
-        <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
+        <form className="flex flex-col gap-4" onSubmit={submit}>
           <Field
             label={t('email')}
             type="email"
             autoComplete="username"
             value={email}
+            invalid={error === 'loginFailed'}
+            describedBy={error ? 'login-error' : undefined}
             onChange={(e) => setEmail(e.target.value)}
             required
           />
@@ -72,11 +74,13 @@ export function LoginPage({
             type="password"
             autoComplete="current-password"
             value={password}
+            invalid={error === 'loginFailed'}
+            describedBy={error ? 'login-error' : undefined}
             onChange={(e) => setPassword(e.target.value)}
             required
           />
           {error && (
-            <Alert variant="destructive">
+            <Alert variant="destructive" id="login-error">
               <p className="font-medium">{t(error)}</p>
             </Alert>
           )}

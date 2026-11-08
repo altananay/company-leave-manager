@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { LoginPage } from '@/features/auth/LoginPage'
 import { PasswordChangePage } from '@/features/auth/PasswordChangePage'
 import { authApi, setUnauthorizedHandler, Unauthorized, type Me } from '@/features/auth/authApi'
+import { roleKey } from '@/features/auth/roles'
 import { HealthStatus } from '@/features/health/HealthStatus'
 import { UsersPage } from '@/features/users/UsersPage'
 import { useI18n } from '@/i18n/I18nProvider'
-import type { MessageKey } from '@/i18n/messages'
 import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/card'
@@ -119,6 +119,13 @@ function App() {
   }
 
   const centered = view === 'login' || view === 'password' || view === 'loading'
+  const mainRef = useRef<HTMLElement>(null)
+
+  // A view change removes the button that was clicked; move focus to the new screen so a keyboard
+  // user does not restart from the top of the document.
+  useEffect(() => {
+    mainRef.current?.focus()
+  }, [view])
 
   return (
     <div className="relative flex min-h-dvh flex-col bg-background">
@@ -168,10 +175,12 @@ function App() {
       </header>
 
       <main
+        ref={mainRef}
+        tabIndex={-1}
         className={
           centered
-            ? 'relative mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-10 sm:px-6'
-            : 'relative mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6'
+            ? 'relative mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-10 outline-none sm:px-6'
+            : 'relative mx-auto w-full max-w-5xl flex-1 px-4 py-8 outline-none sm:px-6'
         }
       >
         {view === 'loading' && (
@@ -248,19 +257,6 @@ function initials(displayName: string): string {
     .slice(0, 2)
     .map((part) => part[0]?.toLocaleUpperCase('tr-TR') ?? '')
     .join('')
-}
-
-function roleKey(role: string): MessageKey {
-  switch (role) {
-    case 'HR':
-      return 'roleHr'
-    case 'CEO':
-      return 'roleCeo'
-    case 'MANAGER':
-      return 'roleManager'
-    default:
-      return 'roleEmployee'
-  }
 }
 
 export default App

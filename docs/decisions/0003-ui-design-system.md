@@ -26,10 +26,16 @@ Icons come from `lucide-react` (only the used ones) and the font is the system s
   be rewritten per dialog and select; the components live in the repository, so there is no library
   version to be locked into and no theme to fight; the token file is the only thing a rebrand touches.
 - **Costs:** the components are ours to maintain — a library upgrade is a copy, not an `npm update`;
-  Tailwind class strings are verbose in JSX; the bundle grew from 73 KB to ~118 KB gzip for Radix and
-  the icon set, which is acceptable for an internal application on the corporate network.
+  Tailwind class strings are verbose in JSX; the bundle grew from 73 KB to ~119 KB gzip for Radix and
+  the icon set, which is acceptable for an internal application on the corporate network. Three
+  costs showed up while building it and are recorded here rather than discovered later:
+  `jest-axe` runs in jsdom, where colour rules are disabled and no stylesheet is loaded, so contrast
+  is measured in a Playwright scan (`e2e/accessibility.spec.ts`) and **not** by the component tests;
+  the users list keeps real `<table>` semantics but becomes a stacked card layout under `md`, so its
+  column headers are only announced on wide screens; and the native `<select>` is now a Radix listbox,
+  which is better for screen readers and keyboard but is more markup to maintain.
 - **Guardrails:** `scripts/tokens` keeps colours in one file; `jest-axe` runs on every screen in the
-  component tests, so an inaccessible component fails CI rather than review.
+  component tests for the structural rules, and the Playwright scan covers contrast and the dialog.
 
 ## Alternatives considered
 

@@ -32,11 +32,15 @@
   --success: oklch(0.52 0.12 155);
   --success-foreground: oklch(0.99 0.005 250);
 
-  --border: oklch(0.918 0.008 255);
-  --input: oklch(0.9 0.01 255);
+  --border: oklch(0.86 0.01 255);
+  --input: oklch(0.62 0.02 255);
   --ring: oklch(0.51 0.19 262);
 
   --radius: 0.625rem;
+
+  /* Light-only for now: without this the browser paints dark scrollbars and autofill for a user
+     whose OS prefers dark, inside a light app. */
+  color-scheme: light;
 }
 
 .dark {
@@ -65,7 +69,7 @@
   --success-foreground: oklch(0.19 0.02 258);
 
   --border: oklch(0.32 0.02 258);
-  --input: oklch(0.36 0.02 258);
+  --input: oklch(0.62 0.02 258);
   --ring: oklch(0.68 0.16 262);
 }
 

@@ -40,14 +40,4 @@ function CardContent({ className, ...props }: ComponentProps<'div'>) {
   )
 }
 
-function CardFooter({ className, ...props }: ComponentProps<'div'>) {
-  return (
-    <div
-      data-slot="card-footer"
-      className={cn('flex flex-wrap items-center gap-2', className)}
-      {...props}
-    />
-  )
-}
-
-export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
+export { Card, CardContent, CardDescription, CardHeader, CardTitle }

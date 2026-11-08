@@ -79,12 +79,16 @@ Upgrades keep `scripts/check` green; a major upgrade that changes behavior is it
 - **Tailwind CSS v4 + shadcn/ui** (ADR 0003). Components live in `web/src/ui/`; a screen composes
   them instead of writing styles of its own.
 - **Colours, radii and fonts come from tokens** in `web/src/index.css`. A colour literal anywhere
-  else fails `scripts/tokens`; a line that genuinely needs one opts out with `tokens-allow`.
+  else in `web/src` fails `scripts/tokens`; a line that genuinely needs one opts out with
+  `tokens-allow`. Assets (`web/public/*.svg`) and `web/index.html` are outside that scan — an SVG
+  cannot read a CSS variable.
 - One component per job: `Button`, `Input`, `Field`, `Alert`, `Card`, `Badge`, `Table`, `Select`,
   `Dialog`. A second, hand-styled version of any of them is a defect.
 - Icons come from `lucide-react`, only the ones used; the font is the system stack (no webfont).
 - Accessibility is part of the definition of done: every screen is keyboard reachable, every field
   is labelled, errors use `role="alert"`, and `jest-axe` runs on every screen in the component tests.
+  Contrast is measured in the real browser (`web/e2e/accessibility.spec.ts`), because jsdom has no
+  stylesheet and axe's colour rules are off there.
 - Layout is mobile-first: 360 px is the smallest width to keep working, 1024 px and up is the target.
 
 ## Known traps

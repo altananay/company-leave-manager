@@ -5,12 +5,17 @@ import { Input } from '@/ui/input'
 import { Label } from '@/ui/label'
 
 /**
- * A labelled form field: the label, the input, and the error message wired together with
- * `aria-describedby` / `aria-invalid` so a screen reader announces the failure (AC-3).
+ * A labelled form field. Two ways to mark a failure:
+ * - `error` renders the message under the field and wires `aria-describedby` to it;
+ * - `invalid` only marks the field, for screens that show one shared message elsewhere (an Alert)
+ *   and must not repeat the text twice.
+ * Both set `aria-invalid`, so a screen reader announces the field as invalid (AC-3).
  */
 function Field({
   label,
   error,
+  invalid,
+  describedBy,
   className,
   id,
   inputRef,
@@ -18,11 +23,15 @@ function Field({
 }: ComponentProps<'input'> & {
   label: ReactNode
   error?: ReactNode
+  invalid?: boolean
+  describedBy?: string
   inputRef?: Ref<HTMLInputElement>
 }) {
   const generated = useId()
   const inputId = id ?? generated
   const errorId = `${inputId}-error`
+  const isInvalid = Boolean(error) || Boolean(invalid)
+  const described = error ? errorId : describedBy
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -30,8 +39,8 @@ function Field({
       <Input
         id={inputId}
         ref={inputRef}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
+        aria-invalid={isInvalid || undefined}
+        aria-describedby={described}
         className={cn(className)}
         {...props}
       />

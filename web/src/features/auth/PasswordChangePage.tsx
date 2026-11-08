@@ -77,13 +77,15 @@ export function PasswordChangePage({
         <CardDescription>{t('passwordSubtitle')}</CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
+        <form className="flex flex-col gap-4" onSubmit={submit}>
           <Field
             label={t('currentPassword')}
             inputRef={currentRef}
             type="password"
             autoComplete="current-password"
             value={current}
+            invalid={error === 'invalidPassword'}
+            describedBy={error ? 'password-error' : undefined}
             onChange={(event) => setCurrent(event.target.value)}
             required
           />
@@ -93,6 +95,8 @@ export function PasswordChangePage({
             type="password"
             autoComplete="new-password"
             value={next}
+            invalid={error === 'passwordTooShort'}
+            describedBy={error ? 'password-error' : undefined}
             onChange={(event) => setNext(event.target.value)}
             required
           />
@@ -102,11 +106,13 @@ export function PasswordChangePage({
             type="password"
             autoComplete="new-password"
             value={confirm}
+            invalid={error === 'passwordMismatch'}
+            describedBy={error ? 'password-error' : undefined}
             onChange={(event) => setConfirm(event.target.value)}
             required
           />
           {error && (
-            <Alert variant="destructive">
+            <Alert variant="destructive" id="password-error">
               <p className="font-medium">{t(error)}</p>
             </Alert>
           )}

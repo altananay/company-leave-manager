@@ -3,16 +3,17 @@ import { X } from 'lucide-react'
 import type { ComponentProps } from 'react'
 
 import { cn } from '@/lib/utils'
+import { Button } from '@/ui/button'
 
 const Dialog = DialogPrimitive.Root
-const DialogTrigger = DialogPrimitive.Trigger
 const DialogClose = DialogPrimitive.Close
 
 function DialogContent({
   className,
   children,
+  closeLabel,
   ...props
-}: ComponentProps<typeof DialogPrimitive.Content>) {
+}: ComponentProps<typeof DialogPrimitive.Content> & { closeLabel: string }) {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-[1px]" />
@@ -26,11 +27,16 @@ function DialogContent({
         {...props}
       >
         {children}
-        <DialogPrimitive.Close
-          aria-label="Kapat"
-          className="absolute right-2 top-2 grid size-11 place-items-center rounded-md opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-        >
-          <X className="size-4" />
+        <DialogPrimitive.Close asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={closeLabel}
+            className="absolute right-2 top-2 text-muted-foreground"
+          >
+            <X aria-hidden="true" />
+          </Button>
         </DialogPrimitive.Close>
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
@@ -79,5 +85,4 @@ export {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 }
