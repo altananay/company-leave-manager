@@ -1,7 +1,7 @@
 # Spec 0004 — İzin talebi akışı
 
 - Status: In progress
-- Phase: **A shipped (2026-11-09)** · B: B1 + B2 planı onay bekliyor (2026-11-09)
+- Phase: **A shipped (2026-11-09)** · B1 + B2 onaylandı (2026-11-09) · B1 yapımda
 - Mode: lite
 - Plan: `specs/plans/0004-plan.md`
 - Business rules: `docs/domain.md` (BR-1…BR-11) — bu spec onları **yeniden tanımlamaz**, uygular.
