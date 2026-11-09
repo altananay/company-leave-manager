@@ -1,7 +1,7 @@
 # Spec 0004 — İzin talebi akışı
 
 - Status: In progress
-- Phase: **A shipped (2026-11-09)** · B1 + B2 onaylandı (2026-11-09) · B1 yapımda
+- Phase: **A shipped (2026-11-09)** · **B1 shipped (2026-11-09)** · B2 bekliyor
 - Mode: lite
 - Plan: `specs/plans/0004-plan.md`
 - Business rules: `docs/domain.md` (BR-1…BR-11) — bu spec onları **yeniden tanımlamaz**, uygular.
@@ -212,7 +212,7 @@ kullanır.
 
 ## Acceptance criteria
 
-- [ ] AC-1 — Çalışan `ANNUAL` veya `EXCUSE` türünde talep açar; süre iş günü olarak hesaplanır (hafta sonu ve resmî tatil düşülür) ve yarım gün seçimi tek günlük talepte 0,5 gün sayılır. **(Faz A: tür + iş günü; yarım gün B1'de tamamlanır)**
+- [x] AC-1 — Çalışan `ANNUAL` veya `EXCUSE` türünde talep açar; süre iş günü olarak hesaplanır (hafta sonu ve resmî tatil düşülür) ve yarım gün seçimi tek günlük talepte 0,5 gün sayılır. **(Faz A: tür + iş günü; yarım gün B1'de tamamlandı)**
 - [x] AC-2 — Talep kuralları uygulanır: geçmiş başlangıç, çakışan aktif talep ve bakiyeyi aşan yıllık talep reddedilir; kontrol hem talep hem onay anında çalışır.
 - [x] AC-3 — Bakiye kıdeme göre hak + devir + İK düzeltmeleri − onaylı − bekleyen olarak hesaplanır; yalnız yıllık izin bakiyeden düşer, mazeret düşmez.
 - [x] AC-4 — Onayı yalnızca çalışanın doğrudan yöneticisi verir; İK, CEO ve çalışanın kendisi onaylayamaz (403); yöneticisi olmayan çalışan talep açamaz.
@@ -223,8 +223,8 @@ kullanır.
 - [x] AC-9 — İç içe rota (`/leave/requests`) doğrudan açıldığında 200 döner ve doğru ekranı gösterir (B-4 kapanır).
 - [x] AC-10 — Arayüz 0003'in kabuğunu ve bileşenlerini kullanır; 360/768/1440 px'te yatay kaydırma yok, tüm dokunma hedefleri ≥44 px, axe taraması sıfır ihlal, klavyeyle tam kullanım.
 - [x] AC-11 — Mevcut davranış korunur: giriş, kullanıcı yönetimi, parola akışı ve 0003'ün testleri değişmeden geçer; yeni uçlar oturum + CSRF olmadan 401/403 döner.
-- [ ] AC-12 — (B1) Yarım gün: tek günlük `ANNUAL`/`EXCUSE` talebinde `AM`/`PM` seçimi 0,5 iş günü sayılır ve `business_days` ondalık saklanır; özet, bakiye ve İK düzeltmesi 0,5 duyarlılığında çalışır; birden çok güne, özel türe veya iş günü olmayan güne yarım gün reddedilir.
-- [ ] AC-13 — (B1) Çalışan "İzinli günlerim" görünümünde yalnız kendi onaylı izin günlerini (tarih, tür, yarım gün) görür; bekleyen/iptal ve başkasının günleri görünmez; boş, yükleniyor ve hata durumları gösterilir.
+- [x] AC-12 — (B1) Yarım gün: tek günlük `ANNUAL`/`EXCUSE` talebinde `AM`/`PM` seçimi 0,5 iş günü sayılır ve `business_days` ondalık saklanır; özet, bakiye ve İK düzeltmesi 0,5 duyarlılığında çalışır; birden çok güne, özel türe veya iş günü olmayan güne yarım gün reddedilir.
+- [x] AC-13 — (B1) Çalışan "İzinli günlerim" görünümünde yalnız kendi onaylı izin günlerini (tarih, tür, yarım gün) görür; bekleyen/iptal ve başkasının günleri görünmez; boş, yükleniyor ve hata durumları gösterilir.
 - [ ] AC-14 — (B2) Altı özel tür kendi süresi, koşulu ve penceresiyle açılır: evlilik/vefat/eş doğumu en çok 5 iş günü; karne/doğum günü/okulun ilk günü tam 1 iş günü; karne ve okulun ilk günü takvim yılında 1 gün; doğum günü en son doğum gününden 180 gün içinde 1 gün; hiçbiri bakiyeden düşmez; kota onay anında yeniden kontrol edilir.
 - [ ] AC-15 — (B2) Özel tür verisi minimal ve yetkilidir: doğum tarihi ile okul çağı bayrağı yalnız İK kullanıcı uçlarında yönetilir, değişikliği denetlenir ve izin/bakiye/`/me` yanıtlarında görünmez; yakınlık derecesi yalnız vefat talebinde saklanır ve yalnız çalışan, doğrudan yöneticisi ve İK görür; çocuk/akraba kimliği toplanmaz ve KVKK notu `docs/security.md`'de yer alır.
 - [ ] AC-16 — (B1+B2) Faz A ve 0003 davranışı korunur: tam gün taleplerin süresi ve bakiyesi değişmez, mevcut testler zayıflatılmadan geçer (gün birimi değiştiği için yalnız sayı tipi beklentileri güncellenir); yeni uçlar oturum + CSRF ister, kapsam dışına 404 döner; 360/768/1440 px'te yatay kaydırma yok, dokunma hedefleri ≥44 px, axe sıfır ihlal.
