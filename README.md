@@ -10,6 +10,45 @@ Java 25 + Spring Boot 4.1.2 API, PostgreSQL 18 ve React 19 + Vite 8 SPA (tek ori
 - **Docker** (compose)
 - **Playwright Chromium** — e2e için bir kez: `npm --prefix web exec playwright install chromium`
 
+## Platformlar arası geçiş (Windows ↔ macOS)
+
+Proje iki platformda da **aynı komutlarla** çalışır: `scripts/*` POSIX sh'dir, `scripts/residue`
+bellek ölçümünü platforma göre yapar (Windows PowerShell, Linux `/proc/meminfo`, macOS `vm_stat`) ve
+satır sonları `.gitattributes` ile sabitlenmiştir (`scripts/*` LF, `*.cmd`/`*.bat` CRLF).
+
+**macOS kurulumu (Apple Silicon dâhil):**
+
+```bash
+brew install --cask temurin@25     # veya: brew install openjdk@25
+brew install node@24
+brew install --cask docker         # ya da OrbStack
+git clone <repo> && cd company-leave-manager
+npm --prefix web ci
+npx --prefix web playwright install chromium   # --with-deps Linux'a özgüdür
+cp .env.example .env
+docker compose up -d db
+./scripts/doctor --strict && ./scripts/check
+```
+
+**Taşınırken dikkat:**
+
+- `npx playwright install --with-deps` yalnız Linux'ta anlamlıdır; macOS'ta bayraksız çalıştırın.
+- `scripts/tokens` dosya listesini `find`'dan alır ve her dosyayı ayrı tarar: macOS'un BSD grep'i
+  `--include` konusunda GNU'dan farklı davrandığı için. Grep hatası yine yutulmaz (exit > 1 kapıyı
+  kırar).
+- Testcontainers (entegrasyon testleri) ve e2e Docker ister; Docker Desktop ya da OrbStack açık
+  olmalı.
+- Portlar: projenin veritabanı **5434**, e2e kendi compose projesini rastgele bir portla açar; Mac'te
+  5432/5433 çakışması yoktur.
+- `git config core.autocrlf false` (macOS varsayılanı) + `.gitattributes` yeterlidir; `mvnw` ve
+  `scripts/*` git'te `100755` olduğu için çalıştırma izni ayrıca verilmez.
+
+**DSH sohbet geçmişini taşımak:** oturumlar `~/.dsh/sessions/<kodlanmış-workspace-yolu>/<session-id>/`
+altında tutulur. Mac'e `~/.dsh` içeriği (sessions, attachments, profiles, storages,
+`.credentials.yaml`) kopyalanır ve proje klasörü Mac'teki yolun kodlanmış adına (ör.
+`--Users-<kullanıcı>-projects-company-leave-manager-company-leave-manager--`) yeniden adlandırılır.
+Kalıcı kayıt yine repodur: spec'ler, planlar, ADR'ler ve git history.
+
 ## Hızlı başlangıç
 
 ```bash
