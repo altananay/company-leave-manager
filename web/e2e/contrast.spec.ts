@@ -96,7 +96,8 @@ test('shouldKeepTheRoleListboxReadable', async ({ page }) => {
   await goToUsers(page)
   await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
 
-  await page.getByRole('combobox').click()
+  // The role select is named: the form has a second one (the manager) since spec 0004.
+  await page.getByRole('combobox', { name: 'Rol' }).click()
   const listbox = page.getByRole('listbox')
   await expect(listbox).toBeVisible()
 

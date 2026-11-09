@@ -2,7 +2,7 @@ import AxeBuilder from '@axe-core/playwright'
 import type { NodeResult, Result } from 'axe-core'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
-import { goToUsers, openUsers } from './navigation'
+import { goToLeave, goToUsers, openUsers } from './navigation'
 
 const HR_EMAIL = 'hr@e2e.test'
 const HR_PASSWORD = 'hr-e2e-password-123'
@@ -163,11 +163,17 @@ async function expectFocusTrappedInDialog(page: Page, label: string) {
  * The real accessibility measurement: a real browser, real CSS, real contrast.
  * jest-axe runs in jsdom, where colour rules are switched off and no stylesheet is loaded, so this
  * test is the one that can actually fail on a contrast regression (spec 0003, AC-3).
+ *
+ * <p>{@code include} narrows the scan to a surface that overlaps the page (an open menu): axe marks
+ * the partially covered text behind it "incomplete", which is a measurement gap, not a defect. The
+ * page itself is measured before such a surface opens.
  */
-async function expectNoViolations(page: Page, label: string) {
-  const results = await new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-    .analyze()
+async function expectNoViolations(page: Page, label: string, include?: string | string[]) {
+  const builder = new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+  for (const selector of include === undefined ? [] : [include].flat()) {
+    builder.include(selector)
+  }
+  const results = await builder.analyze()
 
   expect(results.violations.map(describeRule), `${label} has accessibility violations`).toEqual([])
 
@@ -414,10 +420,18 @@ test('shouldHaveNoAccessibilityViolationsOnEveryScreen', async ({ page }) => {
 
   await page.getByRole('button', { name: 'İşlemler' }).first().click()
   await expect(page.getByRole('menuitem', { name: 'Pasife al' })).toBeVisible()
-  await expectNoViolations(page, 'row actions menu')
+  // The open menu covers part of the form behind it, so axe cannot measure that text: scan the
+  // menu and its trigger, which is the surface this step exists for.
+  await expectNoViolations(page, 'row actions menu', [
+    '[role="menu"]',
+    'button[aria-haspopup="menu"][aria-expanded="true"]',
+  ])
   await page.getByRole('menuitem', { name: 'Pasife al' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
-  await expectNoViolations(page, 'deactivation dialog')
+  // A modal dims the page behind it, so axe can no longer decide the contrast of the text it
+  // covers: measure the dialog itself, and prove the focus trap the modal promises separately.
+  await expectNoViolations(page, 'deactivation dialog', '[role="dialog"]')
+  await expectFocusTrappedInDialog(page, 'deactivation dialog')
   await page.keyboard.press('Escape')
 })
 
@@ -512,6 +526,70 @@ test('shouldHaveNoAccessibilityViolationsOnTheMobileShell', async ({ page }) => 
   await page.getByRole('button', { name: 'İşlemler' }).first().click()
   await expect(page.getByRole('menuitem', { name: 'Pasife al' })).toBeVisible()
   await expectNoViolations(page, 'row actions menu at 360 px')
+})
+
+test('shouldHaveNoAccessibilityViolationsOnTheLeaveScreen', async ({ page }) => {
+  // HR sees the balance card, the adjustment form and the empty list (AC-6, AC-10).
+  await page.goto('/')
+  await page.getByLabel('E-posta').fill(HR_EMAIL)
+  await page.getByLabel('Parola').fill(HR_PASSWORD)
+  await page.getByRole('button', { name: 'Giriş yap' }).click()
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+
+  await goToLeave(page)
+  await expect(page.getByRole('heading', { name: 'İzin talepleri' })).toBeVisible()
+  await expect(page.locator('[data-slot="balance-remaining"]')).toHaveText(/\d+/)
+  await expectNoViolations(page, 'leave screen')
+
+  // An employee with a manager can open the request dialog; it is the tightest form in the slice.
+  const stamp = Date.now()
+  const created = await page.evaluate(async (suffix) => {
+    const token = (await (await fetch('/api/auth/csrf')).json()).token
+    const post = (body: unknown) =>
+      fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+        body: JSON.stringify(body),
+      }).then((response) => response.json())
+    const manager = await post({
+      email: `scan-lead-${suffix}@acme.test`,
+      displayName: `Scan Lead ${suffix}`,
+      role: 'MANAGER',
+    })
+    const employee = await post({
+      email: `scan-leave-${suffix}@acme.test`,
+      displayName: `Scan Leave ${suffix}`,
+      role: 'EMPLOYEE',
+      managerId: manager.user.id,
+      hireDate: '2024-01-15',
+    })
+    return { email: employee.user.email, password: employee.temporaryPassword }
+  }, stamp)
+
+  const employeeContext = await page.context().browser()!.newContext()
+  const employeePage = await employeeContext.newPage()
+  await employeePage.goto('/')
+  await employeePage.getByLabel('E-posta').fill(created.email)
+  await employeePage.getByLabel('Parola').fill(created.password)
+  await employeePage.getByRole('button', { name: 'Giriş yap' }).click()
+  await expect(employeePage.getByRole('heading', { name: 'Parola değiştirme' })).toBeVisible()
+  await employeePage.getByLabel('Mevcut parola').fill(created.password)
+  await employeePage.getByLabel('Yeni parola', { exact: true }).fill('leave-scan-password-123')
+  await employeePage.getByLabel('Yeni parola (tekrar)').fill('leave-scan-password-123')
+  await employeePage.getByRole('button', { name: 'Parolayı değiştir' }).click()
+  await expect(employeePage.getByText('Giriş yapan:')).toBeVisible()
+
+  await employeePage.setViewportSize({ width: 360, height: 900 })
+  await goToLeave(employeePage)
+  await expect(employeePage.locator('[data-slot="balance-remaining"]')).toHaveText(/\d+/)
+  await expectNoViolations(employeePage, 'leave screen at 360 px')
+
+  await employeePage.getByRole('button', { name: 'Yeni talep' }).click()
+  await expect(employeePage.getByRole('dialog')).toBeVisible()
+  await expectNoViolations(employeePage, 'leave request dialog', '[role="dialog"]')
+  await expectFocusTrappedInDialog(employeePage, 'leave request dialog')
+
+  await employeeContext.close()
 })
 
 test('shouldKeepTheBrandPanelTextReadable', async ({ page }) => {

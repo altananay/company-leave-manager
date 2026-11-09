@@ -26,6 +26,17 @@ async function goToUsers(page: Page) {
   await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
 }
 
+/** The leave screen is open to every signed-in role; what it shows depends on the role (AC-6). */
+async function openLeave(page: Page) {
+  await openNavigation(page)
+  await navigation(page).getByRole('button', { name: 'İzin talepleri' }).click()
+}
+
+async function goToLeave(page: Page) {
+  await openLeave(page)
+  await expect(page.getByRole('heading', { name: 'İzin talepleri' })).toBeVisible()
+}
+
 async function goToHome(page: Page) {
   await openNavigation(page)
   await navigation(page).getByRole('button', { name: 'Ana ekran' }).click()
@@ -38,4 +49,4 @@ async function logOut(page: Page) {
   await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
 }
 
-export { goToHome, goToUsers, logOut, navigation, openNavigation, openUsers }
+export { goToHome, goToLeave, goToUsers, logOut, navigation, openLeave, openNavigation, openUsers }
