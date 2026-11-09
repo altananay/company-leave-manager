@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright'
 import type { NodeResult, Result } from 'axe-core'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
+import { nextBusinessMonday } from './dates'
 import { goToLeave, goToUsers, openUsers } from './navigation'
 
 const HR_EMAIL = 'hr@e2e.test'
@@ -666,7 +667,7 @@ test('shouldHaveNoAccessibilityViolationsOnTheManagerQueueAndTheHrAdjustment', a
   await expect(page.getByText('Giriş yapan:')).toBeVisible()
 
   const stamp = Date.now()
-  const start = nextMonday()
+  const start = await nextBusinessMonday(page)
   const fixture = await page.evaluate(
     async ({ suffix, startDate }) => {
       const token = (await (await fetch('/api/auth/csrf')).json()).token
@@ -749,19 +750,6 @@ test('shouldHaveNoAccessibilityViolationsOnTheManagerQueueAndTheHrAdjustment', a
 
   await managerContext.close()
 })
-
-/** The next Monday at least a week ahead: the fixture request is always in the future (BR-11). */
-function nextMonday(): string {
-  const date = new Date()
-  date.setDate(date.getDate() + 7)
-  while (date.getDay() !== 1) {
-    date.setDate(date.getDate() + 1)
-  }
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
 
 test('shouldKeepTheBrandPanelTextReadable', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })

@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
+import { nextBusinessMonday } from './dates'
 import { controlContrast, expectTouchTargets, horizontalOverflow } from './layout'
 import { goToLeave, logOut, navigation } from './navigation'
 
@@ -8,16 +9,6 @@ const HR_EMAIL = 'hr@e2e.test'
 const HR_PASSWORD = 'hr-e2e-password-123'
 const EMPLOYEE_PASSWORD = 'leave-e2e-password-123'
 const MANAGER_PASSWORD = 'leader-e2e-password-123'
-
-/** A Monday at least a week ahead: the request is always in the future (BR-11). */
-function nextMonday(): string {
-  const date = new Date()
-  date.setDate(date.getDate() + 7)
-  while (date.getDay() !== 1) {
-    date.setDate(date.getDate() + 1)
-  }
-  return isoDate(date)
-}
 
 function plusDays(iso: string, days: number): string {
   const date = new Date(`${iso}T12:00:00`)
@@ -136,7 +127,7 @@ test('shouldRequestApproveAndCancelLeave', async ({ page }) => {
   await signInAs(page, employeeEmail, employeePassword, EMPLOYEE_PASSWORD)
   await goToLeave(page)
   const before = await remaining(page)
-  const start = nextMonday()
+  const start = await nextBusinessMonday(page)
   await page.getByRole('button', { name: 'Yeni talep' }).click()
   const requestDialog = page.getByRole('dialog')
   await expect(requestDialog.getByRole('heading', { name: 'Yeni izin talebi' })).toBeVisible()
@@ -259,7 +250,7 @@ test('shouldFitTheManagerQueueAndTheHrAdjustmentAtEveryWidth', async ({ page, br
   await expect(page.getByText('Giriş yapan:')).toBeVisible()
 
   const stamp = Date.now()
-  const start = nextMonday()
+  const start = await nextBusinessMonday(page)
   const fixture = await page.evaluate(
     async ({ suffix, startDate }) => {
       const token = (await (await fetch('/api/auth/csrf')).json()).token
