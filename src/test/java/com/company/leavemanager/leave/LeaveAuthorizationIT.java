@@ -96,6 +96,24 @@ class LeaveAuthorizationIT extends LeaveTestSupport {
     }
 
     @Test
+    void shouldRefuseARequestWhenTheAccountIsItsOwnManager() throws Exception {
+        // M-05: a self-linked manager would be their own approver — BR-7's "nobody approves their
+        // own request" made unreachable. Only the database can hold the link (the admin API refuses
+        // it), so the request-time gate is the one that has to catch it.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, today().minusYears(1));
+        jdbc.update("update users set manager_id = ? where id = ?", manager.id(), manager.id());
+        Session member = signIn(manager);
+
+        HttpResponse<String> response = createLeave(member, "ANNUAL", nextMonday(), nextMonday(), "izin");
+
+        assertThat(response.statusCode()).isEqualTo(403);
+        assertThat(errorCode(response)).isEqualTo("LEAVE_NO_MANAGER");
+        // Nothing was written: the account has no request to strand.
+        assertThat(number(member.get("/api/leave/requests").body(), "total")).isZero();
+    }
+
+    @Test
     void shouldRejectADecisionOnARequestThatIsNotPending() throws Exception {
         loginAsHr();
         Account manager = createAccount("MANAGER", null, null);

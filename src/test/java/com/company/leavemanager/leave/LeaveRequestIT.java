@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.net.http.HttpResponse;
+import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -602,6 +603,82 @@ class LeaveRequestIT extends LeaveTestSupport {
                 "/api/leave/requests/" + rejectId + "/reject", "{\"note\":\"" + tooLong + "\"}");
         assertThat(rejectRefused.statusCode()).isEqualTo(400);
         assertThat(rejectRefused.body()).contains("VALIDATION_FAILED");
+    }
+
+    @Test
+    void shouldKeepTheBalanceNonNegativeWhenHrEditsTheHireDate() throws Exception {
+        // M-01, leave side: the org-edit guard is the leave module's own balance computation, so the
+        // number on this screen can never be negative — the refused edit leaves it where it was.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(2));
+        Session member = signIn(employee);
+        Session managerSession = signIn(manager);
+        LocalDate monday = nextMonday();
+        String requestId = extract(createLeave(member, "ANNUAL", monday, monday.plusDays(11), "iki hafta").body(), "id");
+        assertThat(approve(managerSession, requestId).statusCode()).isEqualTo(200);
+        assertThat(number(member.get("/api/leave/balance").body(), "remaining")).isEqualTo(18);
+
+        HttpResponse<String> refused = session.patch("/api/users/" + employee.id(),
+                "{\"managerId\":\"" + manager.id() + "\",\"hireDate\":\"" + today().minusMonths(1) + "\"}");
+
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+        assertThat(errorCode(refused)).isEqualTo("USER_EDIT_WOULD_GO_NEGATIVE");
+        String balance = member.get("/api/leave/balance").body();
+        assertThat(number(balance, "remaining")).isEqualTo(18);
+        assertThat(extract(balance, "hireDate")).isEqualTo(today().minusYears(2).toString());
+        assertThat(number(balance, "remaining")).isGreaterThanOrEqualTo(0);
+    }
+
+    @Test
+    void shouldRefuseARetroactiveRequestThatStartsBeforeTheHireDate() throws Exception {
+        // M-06: even BR-11's HR exception cannot put leave before the employment started; the same
+        // retroactive record inside the employment is still accepted.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        LocalDate beforeHire = weekdayYearsAgo(2);
+
+        HttpResponse<String> refused = createLeaveFor(session, employee.id(), "EXCUSE",
+                beforeHire, beforeHire, "işe girişten önce");
+
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(400);
+        assertThat(errorCode(refused)).isEqualTo("LEAVE_INVALID_RANGE");
+
+        LocalDate insideEmployment = today().minusDays(7);
+        assertThat(createLeaveFor(session, employee.id(), "EXCUSE", insideEmployment, insideEmployment,
+                "rapor sonradan iletildi").statusCode()).isEqualTo(201);
+    }
+
+    @Test
+    void shouldAnswer400ForADateOutsideTheSupportedYears() throws Exception {
+        // M-07: an extreme date is a data-entry error. Without the bound the range arithmetic
+        // overflows and the endpoint answers 500 — a server fault for a client mistake.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+
+        HttpResponse<String> extremeCreate = createLeave(member, "EXCUSE",
+                LocalDate.of(999999999, 12, 28), LocalDate.of(999999999, 12, 31), "aşırı");
+
+        assertThat(extremeCreate.statusCode()).as(extremeCreate.body()).isEqualTo(400);
+        assertThat(errorCode(extremeCreate)).isEqualTo("LEAVE_INVALID_RANGE");
+
+        HttpResponse<String> extremePreview = member.get(
+                "/api/leave/preview?startDate=" + nextMonday() + "&endDate=%2B999999999-12-31");
+
+        assertThat(extremePreview.statusCode()).as(extremePreview.body()).isEqualTo(400);
+        assertThat(errorCode(extremePreview)).isEqualTo("LEAVE_INVALID_RANGE");
+    }
+
+    /** A weekday {@code years} before today: a retroactive single day that really is a working day. */
+    private static LocalDate weekdayYearsAgo(int years) {
+        LocalDate day = today().minusYears(years);
+        while (day.getDayOfWeek() == DayOfWeek.SATURDAY || day.getDayOfWeek() == DayOfWeek.SUNDAY) {
+            day = day.minusDays(1);
+        }
+        return day;
     }
 
     @Test

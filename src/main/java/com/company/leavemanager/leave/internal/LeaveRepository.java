@@ -32,4 +32,7 @@ public interface LeaveRepository extends JpaRepository<LeaveRequest, UUID> {
     /** The manager queue: pending requests of a set of direct reports. */
     List<LeaveRequest> findByEmployeeIdInAndStatusOrderByStartDateAsc(
             Collection<UUID> employeeIds, LeaveRequestStatus status);
+
+    /** Whether the account still has a request only its current manager could decide (M-02). */
+    boolean existsByEmployeeIdAndStatus(UUID employeeId, LeaveRequestStatus status);
 }

@@ -292,7 +292,17 @@ test('shouldLoginDenyAndLogout', async ({ page }) => {
   await expect(page.getByText('Giriş yapan:')).toBeVisible()
   // The home screen now carries the balance summary too (spec 0004, L-21): its "no hire date"
   // notice is a second live region, so the health status is selected by its own text.
-  await expect(page.getByRole('status').filter({ hasText: 'Sistem çalışıyor' })).toBeVisible()
+  // M-09: the text equality is the assertion — `hasText` alone passes on "Sistem çalışıyor…" and
+  // would survive a status that only starts with the phrase.
+  await expect(page.getByRole('status').filter({ hasText: 'Sistem çalışıyor' })).toHaveText(
+    'Sistem çalışıyor',
+  )
+  // The seeded HR account has no hire date, so the balance card shows the 0-day notice (L-05, D3):
+  // the number and the reason are on screen, not a guessed 14-day default.
+  await expect(
+    page.getByText(/İşe giriş tarihi girilmedi; yıllık izin hakkı hesaplanamıyor \(0 gün\)/),
+  ).toBeVisible()
+  await expect(page.locator('[data-slot="balance-remaining"]')).toHaveText('0')
 
   // HR creates an employee and receives a one-time password.
   await goToUsers(page)

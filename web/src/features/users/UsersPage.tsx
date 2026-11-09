@@ -49,7 +49,15 @@ type ErrorKey =
   | 'selfAction'
   | 'invalidManager'
   | 'managerHasReports'
+  | 'managerHasPendingRequests'
+  | 'invalidHireDate'
+  | 'hireDateWouldGoNegative'
   | 'genericError'
+
+/** The edit dialog's two fields: the refusal has to land on the field it is about (M-13). */
+type EditField = 'manager' | 'hireDate'
+
+type EditError = { key: ErrorKey; field: EditField | null }
 
 /** How many rows one page holds. A thousand accounts are not a scroll, they are pages (AC-14). */
 const PAGE_SIZE = 10
@@ -74,8 +82,33 @@ function errorKeyFor(failure: unknown): ErrorKey {
       return 'invalidManager'
     case 'MANAGER_HAS_REPORTS':
       return 'managerHasReports'
+    case 'MANAGER_HAS_PENDING_REQUESTS':
+      return 'managerHasPendingRequests'
+    case 'INVALID_HIRE_DATE':
+      return 'invalidHireDate'
+    case 'USER_EDIT_WOULD_GO_NEGATIVE':
+      return 'hireDateWouldGoNegative'
     default:
       return 'genericError'
+  }
+}
+
+/**
+ * Which field of the edit dialog a refusal belongs to (M-13): an invalid manager is not a bad hire
+ * date, and marking both fields invalid tells the user to fix the wrong one.
+ */
+function editErrorFor(failure: unknown): EditError {
+  const key = errorKeyFor(failure)
+  switch (key) {
+    case 'invalidManager':
+    case 'managerHasPendingRequests':
+      return { key, field: 'manager' }
+    case 'invalidHireDate':
+    case 'hireDateWouldGoNegative':
+    case 'validationFailed':
+      return { key, field: 'hireDate' }
+    default:
+      return { key, field: null }
   }
 }
 
@@ -111,7 +144,7 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
   const [editManagerId, setEditManagerId] = useState('NONE')
   const [editHireDate, setEditHireDate] = useState('')
   const [editBusy, setEditBusy] = useState(false)
-  const [editError, setEditError] = useState<ErrorKey | null>(null)
+  const [editError, setEditError] = useState<EditError | null>(null)
   const [notice, setNotice] = useState<'usersUpdated' | null>(null)
   const [query, setQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('ALL')
@@ -238,7 +271,7 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
       setNotice('usersUpdated')
       await load()
     } catch (failure) {
-      setEditError(errorKeyFor(failure))
+      setEditError(editErrorFor(failure))
     } finally {
       setEditBusy(false)
     }
@@ -651,7 +684,14 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="edit-manager-trigger">{t('manager')}</Label>
                 <Select value={editManagerId} onValueChange={setEditManagerId}>
-                  <SelectTrigger id="edit-manager-trigger">
+                  <SelectTrigger
+                    id="edit-manager-trigger"
+                    // M-13: only the field the refusal is about carries the invalid state.
+                    aria-invalid={editError?.field === 'manager' || undefined}
+                    aria-describedby={
+                      editError?.field === 'manager' ? 'edit-user-error' : undefined
+                    }
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -668,8 +708,8 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
                 label={t('hireDate')}
                 type="date"
                 value={editHireDate}
-                invalid={editError !== null}
-                describedBy={editError ? 'edit-user-error' : undefined}
+                invalid={editError?.field === 'hireDate'}
+                describedBy={editError?.field === 'hireDate' ? 'edit-user-error' : undefined}
                 onChange={(event) => {
                   setEditHireDate(event.target.value)
                   setEditError(null)
@@ -677,7 +717,7 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
               />
               {editError && (
                 <Alert variant="destructive" id="edit-user-error">
-                  <p className="font-medium">{t(editError)}</p>
+                  <p className="font-medium">{t(editError.key)}</p>
                 </Alert>
               )}
               <DialogFooter>

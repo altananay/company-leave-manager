@@ -50,9 +50,15 @@
   a button is UX, never authorization. Default deny: only the SPA shell, its assets, `/error`,
   `/api/health`, `/api/auth/login` and `/api/auth/csrf` are public; every other path is denied.
   İK can assign only `EMPLOYEE` and `MANAGER`; the `HR`/`CEO` roles come from the environment seed.
-  İK cannot deactivate itself or reset its own password through the admin screen, and cannot
-  deactivate or reset a seeded `HR`/`CEO` account (`403 PROTECTED_ACCOUNT`): those accounts are
-  managed by the environment only.
+  İK cannot deactivate itself, reset its own password, or edit its own org data through the admin
+  screen, and cannot deactivate, reset or edit a seeded `HR`/`CEO` account (`403 PROTECTED_ACCOUNT`):
+  those accounts are managed by the environment only. A `PATCH /api/users/{id}` carries the same two
+  gates (`SELF_ACTION_NOT_ALLOWED`, `PROTECTED_ACCOUNT`) as deactivate and reset-password, plus the
+  domain guards the edit could break: clearing the manager of an account with a `PENDING` request is
+  refused (`409 MANAGER_HAS_PENDING_REQUESTS`, because only the direct manager could decide it), and
+  a hire-date change that would push the balance below zero is refused
+  (`409 USER_EDIT_WOULD_GO_NEGATIVE`) — the balance stays non-negative through org edits too, and the
+  row is left untouched.
 - **SPA routes:** the shell is served at `/` and for the client routes under `/leave/**` and
   `/users` (spec 0004, backlog B-4; L-09): opening `/leave/requests` or `/users` directly returns
   the shell and the SPA picks the screen. The allow-list is explicit — a route is added to

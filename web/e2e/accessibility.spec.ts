@@ -209,15 +209,13 @@ async function expectFocusTrappedInDialog(page: Page, label: string) {
  * jest-axe runs in jsdom, where colour rules are switched off and no stylesheet is loaded, so this
  * test is the one that can actually fail on a contrast regression (spec 0003, AC-3).
  *
- * <p>The scan is the whole page. An {@code include} is no longer used to dodge an open overlay
- * (review round 1, L-10): covered text is handled where it can be measured, and the overlay's own
- * text is never excused.
+ * <p>The scan is the whole page, always. There is no `include` narrowing: an overlay is part of the
+ * page's accessibility, and narrowing the scan hid every regression outside the overlay (review round
+ * 1, L-10, for the menus; review round 2, M-08, for the leave request dialog). Covered text is
+ * handled where it can be measured, and the overlay's own text is never excused.
  */
-async function expectNoViolations(page: Page, label: string, include?: string | string[]) {
+async function expectNoViolations(page: Page, label: string) {
   const builder = new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-  for (const selector of include === undefined ? [] : [include].flat()) {
-    builder.include(selector)
-  }
   const results = await builder.analyze()
 
   expect(results.violations.map(describeRule), `${label} has accessibility violations`).toEqual([])
@@ -645,7 +643,11 @@ test('shouldHaveNoAccessibilityViolationsOnTheLeaveScreen', async ({ page }) => 
 
   await employeePage.getByRole('button', { name: 'Yeni talep' }).click()
   await expect(employeePage.getByRole('dialog')).toBeVisible()
-  await expectNoViolations(employeePage, 'leave request dialog', '[role="dialog"]')
+  // Full page, not `include: '[role="dialog"]'` (M-08, completing L-10): the dialog sits on the leave
+  // screen, and narrowing the scan to it hid every regression outside — the same mistake L-10 fixed
+  // for the menu. Covered page text is handled by the `bgOverlap` branch above; the dialog's own text
+  // still has to pass.
+  await expectNoViolations(employeePage, 'leave request dialog')
   await expectFocusTrappedInDialog(employeePage, 'leave request dialog')
 
   await employeeContext.close()

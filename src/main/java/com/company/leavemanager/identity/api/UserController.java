@@ -75,32 +75,38 @@ public class UserController {
                                     Authentication authentication) {
         UserAdminService.UpdateResult result = admin.update(
                 actor(authentication).id(), id, request.managerId(), request.hireDate());
-        return switch (result.outcome()) {
-            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiExceptionHandler.problem(HttpStatus.NOT_FOUND, "NOT_FOUND"));
-            case INVALID_MANAGER -> ResponseEntity.badRequest()
-                    .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_MANAGER"));
-            case DONE -> ResponseEntity.ok(result.response());
-            default -> ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(ApiExceptionHandler.problem(HttpStatus.CONFLICT, "INVALID_REQUEST"));
-        };
+        return respond(result.outcome(), result.response());
     }
 
     private static ResponseEntity<?> respond(UserAdminService.AdminResult result) {
-        return switch (result.outcome()) {
+        return respond(result.outcome(), result.response());
+    }
+
+    /**
+     * One mapping per outcome, shared by every admin endpoint so an edit cannot answer differently
+     * from the deactivate/reset pair it mirrors (M-04). A DONE with no body is a 204.
+     */
+    private static ResponseEntity<?> respond(UserAdminService.AdminOutcome outcome, Object body) {
+        return switch (outcome) {
             case SELF_ACTION -> ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(ApiExceptionHandler.problem(HttpStatus.FORBIDDEN, "SELF_ACTION_NOT_ALLOWED"));
             case PROTECTED_ACCOUNT -> ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(ApiExceptionHandler.problem(HttpStatus.FORBIDDEN, "PROTECTED_ACCOUNT"));
             case HAS_REPORTS -> ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ApiExceptionHandler.problem(HttpStatus.CONFLICT, "MANAGER_HAS_REPORTS"));
+            case HAS_PENDING_REQUESTS -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiExceptionHandler.problem(HttpStatus.CONFLICT, "MANAGER_HAS_PENDING_REQUESTS"));
+            case WOULD_GO_NEGATIVE -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiExceptionHandler.problem(HttpStatus.CONFLICT, "USER_EDIT_WOULD_GO_NEGATIVE"));
+            case INVALID_HIRE_DATE -> ResponseEntity.badRequest()
+                    .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_HIRE_DATE"));
             case INVALID_MANAGER -> ResponseEntity.badRequest()
                     .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_MANAGER"));
             case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ApiExceptionHandler.problem(HttpStatus.NOT_FOUND, "NOT_FOUND"));
-            case DONE -> result.response() == null
+            case DONE -> body == null
                     ? ResponseEntity.noContent().build()
-                    : ResponseEntity.ok(result.response());
+                    : ResponseEntity.ok(body);
         };
     }
 

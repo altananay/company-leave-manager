@@ -1,6 +1,7 @@
 package com.company.leavemanager.identity.internal;
 
 import com.company.leavemanager.audit.api.AuditRecorder;
+import com.company.leavemanager.identity.api.EmployeeLeaveFacts;
 import com.company.leavemanager.identity.api.dto.CreateUserResponse;
 import com.company.leavemanager.identity.api.dto.UserResponse;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -12,6 +13,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.UUID;
 
 /** HR user administration use cases; controllers never touch the repository (architecture rule 2). */
@@ -23,7 +25,20 @@ public class UserAdminService {
     public record CreateResult(CreateOutcome outcome, CreateUserResponse response) {
     }
 
-    public enum AdminOutcome { DONE, SELF_ACTION, PROTECTED_ACCOUNT, NOT_FOUND, HAS_REPORTS, INVALID_MANAGER }
+    public enum AdminOutcome {
+        DONE,
+        SELF_ACTION,
+        PROTECTED_ACCOUNT,
+        NOT_FOUND,
+        HAS_REPORTS,
+        INVALID_MANAGER,
+        /** M-02: the account still has pending requests only its current manager could decide. */
+        HAS_PENDING_REQUESTS,
+        /** M-01: the edit would push the annual balance below zero — the invariant forbids it. */
+        WOULD_GO_NEGATIVE,
+        /** M-01: a hire date before {@link #EARLIEST_HIRE_DATE} or in the future is a typo. */
+        INVALID_HIRE_DATE
+    }
 
     public record AdminResult(AdminOutcome outcome, CreateUserResponse response) {
     }
@@ -32,21 +47,30 @@ public class UserAdminService {
     public record UpdateResult(AdminOutcome outcome, UserResponse response) {
     }
 
+    /**
+     * The earliest hire date the company can have on record: anyone still employed in 2026 was born
+     * well after this, so an earlier date is a typo, not a career (review round 2, M-01).
+     */
+    static final LocalDate EARLIEST_HIRE_DATE = LocalDate.of(1950, 1, 1);
+
     private final UserRepository users;
     private final PasswordEncoder encoder;
     private final SessionInvalidator sessions;
     private final AuditRecorder audit;
+    private final EmployeeLeaveFacts leaveFacts;
     private final Clock clock;
 
     public UserAdminService(UserRepository users,
                             PasswordEncoder encoder,
                             SessionInvalidator sessions,
                             AuditRecorder audit,
+                            EmployeeLeaveFacts leaveFacts,
                             Clock clock) {
         this.users = users;
         this.encoder = encoder;
         this.sessions = sessions;
         this.audit = audit;
+        this.leaveFacts = leaveFacts;
         this.clock = clock;
     }
 
@@ -132,18 +156,52 @@ public class UserAdminService {
      *
      * <p>The manager must be an active MANAGER and may not be the account itself or one of its own
      * reports (a cycle), so BR-7's "direct manager decides" stays true after every edit.
+     *
+     * <p>Review round 2 adds three gates, all before the row is touched:
+     * <ul>
+     *   <li>M-04: the same self-action and protected-account rules as deactivate/reset — an edit of
+     *       your own account, or of a seeded HR/CEO account, would hand the admin screen a takeover
+     *       path the other two endpoints already refuse;</li>
+     *   <li>M-02: clearing the manager of an employee with a pending request would leave that
+     *       request without the one person who may decide it (BR-7);</li>
+     *   <li>M-01: the new hire date is run through the leave module's own balance
+     *       ({@link EmployeeLeaveFacts}) before it is stored, so "bakiye negatif olamaz" holds after
+     *       an org edit too — a refusal leaves the row exactly as it was.</li>
+     * </ul>
      */
     @Transactional
     public UpdateResult update(UUID actorId, UUID targetId, UUID managerId, LocalDate hireDate) {
+        if (actorId.equals(targetId)) {
+            return new UpdateResult(AdminOutcome.SELF_ACTION, null);
+        }
         Optional<User> found = users.lockById(targetId);
         if (found.isEmpty()) {
             return new UpdateResult(AdminOutcome.NOT_FOUND, null);
         }
         User user = found.get();
+        if (isProtected(user)) {
+            return new UpdateResult(AdminOutcome.PROTECTED_ACCOUNT, null);
+        }
         if (!isAssignableManager(managerId)
                 || targetId.equals(managerId)
                 || createsCycle(targetId, managerId)) {
             return new UpdateResult(AdminOutcome.INVALID_MANAGER, null);
+        }
+        if (hireDate != null && (hireDate.isBefore(EARLIEST_HIRE_DATE) || hireDate.isAfter(latestHireDate()))) {
+            return new UpdateResult(AdminOutcome.INVALID_HIRE_DATE, null);
+        }
+        if (managerId == null && leaveFacts.hasPendingRequests(targetId)) {
+            // M-02: only the direct manager can decide these; clearing the link strands them.
+            return new UpdateResult(AdminOutcome.HAS_PENDING_REQUESTS, null);
+        }
+        OptionalInt remaining = leaveFacts.remainingIfHiredOn(targetId, hireDate);
+        if (remaining.isEmpty()) {
+            return new UpdateResult(AdminOutcome.NOT_FOUND, null);
+        }
+        if (remaining.getAsInt() < 0) {
+            // M-01: the domain invariant (docs/domain.md) — no sequence of HR edits may leave the
+            // balance below zero, so the edit is refused and the row is never written.
+            return new UpdateResult(AdminOutcome.WOULD_GO_NEGATIVE, null);
         }
         UUID beforeManager = user.getManagerId();
         LocalDate beforeHireDate = user.getHireDate();
@@ -151,6 +209,15 @@ public class UserAdminService {
         users.save(user);
         audit.userUpdated(actorId, user.getId(), beforeManager, beforeHireDate, managerId, hireDate);
         return new UpdateResult(AdminOutcome.DONE, UserResponse.of(user));
+    }
+
+    /**
+     * The latest hire date: today, plus one day of slack. The clock is UTC while HR types the date in
+     * the business zone (UTC+3), so for three hours every night "today" there is already tomorrow in
+     * UTC; the slack keeps that from refusing a legitimate date without letting a future one through.
+     */
+    private LocalDate latestHireDate() {
+        return LocalDate.now(clock).plusDays(1);
     }
 
     /** Whether pointing {@code targetId} at {@code managerId} would close a loop in the org tree. */

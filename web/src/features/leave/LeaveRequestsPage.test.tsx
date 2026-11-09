@@ -451,7 +451,7 @@ describe('request dialog', () => {
     expect(submit).toBeEnabled()
   })
 
-  it('shouldMapTheRangeCapAndTheExcuseBoundToTheirOwnMessages', async () => {
+  it('shouldMapTheRangeCapToItsOwnMessage', async () => {
     stubApi(
       leaveRoutes({
         'POST /api/leave/requests': () => json(400, { status: 400, code: 'LEAVE_RANGE_TOO_LONG' }),
@@ -473,6 +473,38 @@ describe('request dialog', () => {
     expect(
       await within(dialog).findByText('En fazla 366 günlük bir tarih aralığı seçilebilir.'),
     ).toBeInTheDocument()
+  })
+
+  it('shouldMapTheExcuseBoundToItsOwnMessage', async () => {
+    // M-10: the excuse bound has its own sentence; asserting only the range cap left the name of the
+    // old test claiming a case it never exercised.
+    stubApi(
+      leaveRoutes({
+        'POST /api/leave/requests': () => json(400, { status: 400, code: 'LEAVE_EXCUSE_TOO_LONG' }),
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Yeni talep' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('combobox', { name: 'İzin türü' }))
+    await user.click(await screen.findByRole('option', { name: 'Mazeret izni' }))
+    fireEvent.change(within(dialog).getByLabelText('Başlangıç'), {
+      target: { value: '2026-11-30' },
+    })
+    fireEvent.change(within(dialog).getByLabelText('Bitiş'), { target: { value: '2026-12-11' } })
+    await user.type(within(dialog).getByLabelText('Gerekçe'), 'uzun mazeret')
+    await user.click(within(dialog).getByRole('button', { name: 'Talebi gönder' }))
+
+    expect(
+      await within(dialog).findByText('Mazeret izni en fazla 5 iş günü olabilir.'),
+    ).toBeInTheDocument()
+    expect(
+      within(dialog).queryByText('En fazla 366 günlük bir tarih aralığı seçilebilir.'),
+    ).toBeNull()
   })
 
   it('shouldReturnFocusToTheTriggerWhenTheDialogCloses', async () => {

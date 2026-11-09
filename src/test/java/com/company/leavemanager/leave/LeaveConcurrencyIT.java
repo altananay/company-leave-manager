@@ -1,10 +1,13 @@
 package com.company.leavemanager.leave;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
+import javax.sql.DataSource;
 import java.net.http.HttpResponse;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,6 +33,9 @@ class LeaveConcurrencyIT extends LeaveTestSupport {
 
     @Autowired
     JdbcTemplate jdbc;
+
+    @Autowired
+    DataSource dataSource;
 
     @Test
     void shouldSerialiseConcurrentCreatesForOneEmployee() throws Exception {
@@ -97,6 +103,76 @@ class LeaveConcurrencyIT extends LeaveTestSupport {
                 "select count(*) from leave_request where id = ? and status = 'APPROVED'",
                 Integer.class, java.util.UUID.fromString(requestId));
         assertThat(approved).isEqualTo(1);
+    }
+
+    /**
+     * M-03: the create reads the employee before it takes the row lock, and the lock is what makes
+     * that read authoritative. A hire-date edit that commits while the create waits must be what the
+     * rules see — otherwise the request is judged against a snapshot the lock has already outgrown.
+     *
+     * <p>The race is made deterministic instead of hoped for: a second connection holds the row lock
+     * and edits the hire date, the create blocks behind it, and the test waits until PostgreSQL
+     * reports the create's own lock wait before releasing the edit. One month of service funds no
+     * entitlement (BR-2); two completed years fund the five requested days, so the stale snapshot
+     * answers 409 and the fresh row answers 201.
+     */
+    @Test
+    void shouldSeeAConcurrentHireDateEditAfterTheRowLock() throws Exception {
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusMonths(1));
+        Session member = signIn(employee);
+        LocalDate monday = nextMonday();
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection blocker = dataSource.getConnection()) {
+            blocker.setAutoCommit(false);
+            try (PreparedStatement hold = blocker.prepareStatement(
+                    "select 1 from users where id = ? for update")) {
+                hold.setObject(1, employee.id());
+                hold.execute();
+            }
+
+            Future<HttpResponse<String>> create = pool.submit(
+                    () -> createLeave(member, "ANNUAL", monday, monday.plusDays(4), "eşzamanlı izin"));
+
+            // The create has read the old row and is now provably inside the lock wait.
+            awaitALockWait(create);
+            try (PreparedStatement edit = blocker.prepareStatement(
+                    "update users set hire_date = ? where id = ?")) {
+                edit.setObject(1, today().minusYears(2));
+                edit.setObject(2, employee.id());
+                edit.executeUpdate();
+            }
+            blocker.commit();
+
+            HttpResponse<String> response = create.get(60, TimeUnit.SECONDS);
+
+            assertThat(response.statusCode())
+                    .as("the row lock returned the edit (the stale snapshot answers 409): "
+                            + response.body())
+                    .isEqualTo(201);
+            assertThat(number(response.body(), "businessDays")).isEqualTo(5);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /** Waits until another session is blocked on a lock: the create has reached the row lock. */
+    private void awaitALockWait(Future<?> create) throws Exception {
+        for (int attempt = 0; attempt < 200; attempt++) {
+            if (create.isDone()) {
+                throw new AssertionError("the create answered before it waited for the lock: " + create.get());
+            }
+            Integer waiting = jdbc.queryForObject(
+                    "select count(*) from pg_stat_activity where wait_event_type = 'Lock'",
+                    Integer.class);
+            if (waiting != null && waiting > 0) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        throw new AssertionError("the create never waited for the employee row lock");
     }
 
     /** One call's answer: the status, and the business days of a created request. */

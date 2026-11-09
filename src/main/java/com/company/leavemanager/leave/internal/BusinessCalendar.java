@@ -23,6 +23,16 @@ public final class BusinessCalendar {
     /** The longest range the API accepts: a year plus its leap day (spec 0004, L-03). */
     public static final int MAX_RANGE_DAYS = 366;
 
+    /**
+     * The years a leave date may fall in (spec 0004 review round 2, M-07). Outside this window the
+     * date is a data-entry error, and the range arithmetic ({@code plusDays}, {@code between}) would
+     * overflow instead of refusing it — which must answer 400, never 500.
+     */
+    public static final int MIN_YEAR = 2000;
+
+    /** @see #MIN_YEAR */
+    public static final int MAX_YEAR = 2100;
+
     private final Set<LocalDate> holidays;
 
     public BusinessCalendar(Collection<LocalDate> holidays) {
@@ -36,6 +46,11 @@ public final class BusinessCalendar {
 
     public boolean isWorkingDay(LocalDate day) {
         return !isWeekend(day) && !holidays.contains(day);
+    }
+
+    /** Whether the calendar can count this date at all (M-07): inside {@link #MIN_YEAR}…{@link #MAX_YEAR}. */
+    public static boolean isSupported(LocalDate day) {
+        return day.getYear() >= MIN_YEAR && day.getYear() <= MAX_YEAR;
     }
 
     /**

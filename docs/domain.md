@@ -62,7 +62,10 @@
 
 ## Key domain invariants
 
-- Bakiye hiçbir zaman negatif olamaz.
+- Bakiye hiçbir zaman negatif olamaz — bakiye düzeltmesinde olduğu gibi **İK'nın işe giriş tarihi
+  düzenlemesinde de**: bakiyeyi eksiye düşürecek bir tarih reddedilir ve satır değişmez.
+- İzin, çalışanın işe giriş tarihinden önce başlayamaz; İK'nın geçmiş tarihli kaydı da bu sınırın
+  dışında değildir.
 - Bir talep aynı anda tek durumdadır: `PENDING`, `APPROVED`, `REJECTED`, `CANCELLED`.
 - Onaylanmış talebin tarihleri değiştirilemez; değişiklik = iptal + yeni talep.
 - Aynı çalışanın çakışan iki aktif talebi olamaz.

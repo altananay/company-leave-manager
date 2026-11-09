@@ -2,6 +2,7 @@ package com.company.leavemanager.identity.api;
 
 import com.company.leavemanager.identity.internal.User;
 import com.company.leavemanager.identity.internal.UserRepository;
+import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -43,9 +44,11 @@ public class EmployeeDirectory {
     }
 
     private final UserRepository users;
+    private final EntityManager entityManager;
 
-    public EmployeeDirectory(UserRepository users) {
+    public EmployeeDirectory(UserRepository users, EntityManager entityManager) {
         this.users = users;
+        this.entityManager = entityManager;
     }
 
     public Optional<EmployeeView> find(UUID id) {
@@ -70,12 +73,18 @@ public class EmployeeDirectory {
     }
 
     /**
-     * Takes the employee's row lock for the rest of the transaction (spec 0004, L-07). The leave
-     * module calls this before it reads the state a rule depends on, so writes for one employee run
-     * one after the other while two different employees never wait for each other.
+     * Takes the employee's row lock for the rest of the transaction (spec 0004, L-07) and answers the
+     * row as it stands <strong>after</strong> the lock was granted.
+     *
+     * <p>The refresh is the point (review round 2, M-03): a read made before the lock can be stale —
+     * a concurrent hire-date or manager edit that commits while this transaction waits is not in the
+     * persistence context, and a plain re-read would return the same cached instance. The leave
+     * module judges its rules on the view this method returns, so "current" is what the lock bought.
      */
-    public void lock(UUID employeeId) {
-        users.lockById(employeeId);
+    public Optional<EmployeeView> lock(UUID employeeId) {
+        Optional<User> locked = users.lockById(employeeId);
+        locked.ifPresent(entityManager::refresh);
+        return locked.map(EmployeeDirectory::view);
     }
 
     private static EmployeeView view(User user) {

@@ -9,6 +9,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.net.http.HttpResponse;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -472,5 +475,152 @@ class UserAdminIT extends IdentityTestSupport {
 
     private static String unique(String prefix) {
         return prefix + "-" + System.nanoTime() + "@acme.test";
+    }
+
+    // ------------------------------------------------- review round 2 (M-01/M-02/M-04)
+
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Europe/Istanbul");
+
+    private static LocalDate today() {
+        return LocalDate.now(BUSINESS_ZONE);
+    }
+
+    /** A Monday three weeks ahead: the pending fixture always starts in the future (BR-11). */
+    private static LocalDate nextMonday() {
+        LocalDate day = today().plusWeeks(3);
+        while (day.getDayOfWeek() != DayOfWeek.MONDAY) {
+            day = day.plusDays(1);
+        }
+        return day;
+    }
+
+    /** HR records a pending request on the employee's behalf; returns its id. */
+    private String recordPendingLeave(String employeeId, LocalDate start, LocalDate end) throws Exception {
+        HttpResponse<String> created = session.post("/api/leave/requests",
+                "{\"type\":\"ANNUAL\",\"startDate\":\"" + start + "\",\"endDate\":\"" + end
+                        + "\",\"reason\":\"bekleyen talep\",\"employeeId\":\"" + employeeId + "\"}");
+        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
+        return extract(created.body(), "id");
+    }
+
+    private String createEmployeeWith(UUID managerId, LocalDate hireDate) throws Exception {
+        HttpResponse<String> created = session.post("/api/users",
+                "{\"email\":\"" + unique("org") + "\",\"displayName\":\"Org Person\","
+                        + "\"role\":\"EMPLOYEE\"" + managerAndHireDate(managerId, hireDate) + "}");
+        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
+        return extract(created.body(), "id");
+    }
+
+    private static String managerAndHireDate(UUID managerId, LocalDate hireDate) {
+        StringBuilder fields = new StringBuilder();
+        if (managerId != null) {
+            fields.append(",\"managerId\":\"").append(managerId).append('"');
+        }
+        if (hireDate != null) {
+            fields.append(",\"hireDate\":\"").append(hireDate).append('"');
+        }
+        return fields.toString();
+    }
+
+    @Test
+    void shouldRefuseAHireDateEditThatWouldMakeTheBalanceNegative() throws Exception {
+        // M-01: "bakiye negatif olamaz" must survive an org edit, not only a leave write. Ten pending
+        // business days fit two completed years; one month of service funds nothing.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> manager = session.post("/api/users", body(unique("edit-lead"), "Edit Lead", "MANAGER"));
+        String managerId = extract(manager.body(), "id");
+        LocalDate twoYears = today().minusYears(2);
+        String employeeId = createEmployeeWith(UUID.fromString(managerId), twoYears);
+        recordPendingLeave(employeeId, nextMonday(), nextMonday().plusDays(11));
+
+        HttpResponse<String> refused = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"" + today().minusMonths(1) + "\"}");
+
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+        assertThat(refused.body()).contains("USER_EDIT_WOULD_GO_NEGATIVE");
+        // The row is untouched: the hire date on record is still the funded one.
+        assertThat(jdbc.queryForObject("select hire_date from users where id = ?",
+                LocalDate.class, UUID.fromString(employeeId))).isEqualTo(twoYears);
+
+        // The gate is the negative balance, not hire-date edits as such: a funded date still saves.
+        HttpResponse<String> accepted = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"" + today().minusYears(3) + "\"}");
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(200);
+        assertThat(extract(accepted.body(), "hireDate")).isEqualTo(today().minusYears(3).toString());
+    }
+
+    @Test
+    void shouldRefuseToClearTheManagerOfAnEmployeeWithAPendingRequest() throws Exception {
+        // M-02: BR-7's approver is the direct manager, so taking the link away strands a PENDING
+        // request. The refusal mirrors MANAGER_HAS_REPORTS, and an employee without pending work can
+        // still have the link cleared.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> manager = session.post("/api/users", body(unique("strand-lead"), "Strand Lead", "MANAGER"));
+        String managerId = extract(manager.body(), "id");
+        String employeeId = createEmployeeWith(UUID.fromString(managerId), today().minusYears(2));
+        recordPendingLeave(employeeId, nextMonday(), nextMonday());
+        String freeId = createEmployeeWith(UUID.fromString(managerId), today().minusYears(2));
+
+        HttpResponse<String> refused = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":null,\"hireDate\":\"" + today().minusYears(2) + "\"}");
+
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+        assertThat(refused.body()).contains("MANAGER_HAS_PENDING_REQUESTS");
+        // The link survives the refusal: the request still has the one person who can decide it.
+        assertThat(jdbc.queryForObject("select manager_id from users where id = ?",
+                UUID.class, UUID.fromString(employeeId))).isEqualTo(UUID.fromString(managerId));
+
+        HttpResponse<String> allowed = session.patch("/api/users/" + freeId,
+                "{\"managerId\":null,\"hireDate\":\"" + today().minusYears(2) + "\"}");
+        assertThat(allowed.statusCode()).as(allowed.body()).isEqualTo(200);
+        assertThat(allowed.body()).contains("\"managerId\":null");
+    }
+
+    @Test
+    void shouldRejectAHireDateOutsideTheSaneRange() throws Exception {
+        // M-01: bound the field. A 1900 date and a future one are typos, not careers.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> manager = session.post("/api/users", body(unique("range-lead"), "Range Lead", "MANAGER"));
+        String managerId = extract(manager.body(), "id");
+        String employeeId = createEmployeeWith(UUID.fromString(managerId), null);
+
+        HttpResponse<String> ancient = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"1900-01-01\"}");
+        assertThat(ancient.statusCode()).as(ancient.body()).isEqualTo(400);
+        assertThat(ancient.body()).contains("INVALID_HIRE_DATE");
+
+        HttpResponse<String> future = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"" + today().plusYears(1) + "\"}");
+        assertThat(future.statusCode()).as(future.body()).isEqualTo(400);
+        assertThat(future.body()).contains("INVALID_HIRE_DATE");
+
+        // Nothing was written by either refusal.
+        assertThat(jdbc.queryForObject("select hire_date from users where id = ?",
+                LocalDate.class, UUID.fromString(employeeId))).isNull();
+    }
+
+    @Test
+    void shouldRefuseTheSelfEditAndAProtectedAccountEdit() throws Exception {
+        // M-04: the org-data edit carries the same two gates as deactivate/reset-password; without
+        // them PATCH would be a takeover path around them.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String myId = extract(session.get("/api/auth/me").body(), "id");
+
+        HttpResponse<String> self = session.patch("/api/users/" + myId,
+                "{\"managerId\":null,\"hireDate\":\"2020-02-03\"}");
+
+        assertThat(self.statusCode()).as(self.body()).isEqualTo(403);
+        assertThat(self.body()).contains("SELF_ACTION_NOT_ALLOWED");
+
+        User otherHr = seededRoleAccount(users, encoder, "hr-edit-" + System.nanoTime() + "@acme.test",
+                Role.HR, HR_PASSWORD);
+        HttpResponse<String> protectedAccount = session.patch("/api/users/" + otherHr.getId(),
+                "{\"managerId\":null,\"hireDate\":\"2020-02-03\"}");
+
+        assertThat(protectedAccount.statusCode()).as(protectedAccount.body()).isEqualTo(403);
+        assertThat(protectedAccount.body()).contains("PROTECTED_ACCOUNT");
+        // The refusal left the seeded account's row alone.
+        assertThat(jdbc.queryForObject("select hire_date from users where id = ?",
+                LocalDate.class, otherHr.getId())).isNull();
     }
 }

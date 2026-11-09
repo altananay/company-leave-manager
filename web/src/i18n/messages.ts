@@ -192,8 +192,13 @@ export const messages = {
       'Yönetici ve işe giriş tarihi sonradan İK tarafından doldurulur; her kullanıcı tek tek düzenlenir.',
     usersEditSave: 'Kaydet',
     usersUpdated: 'Kullanıcı güncellendi.',
+    invalidHireDate: 'İşe giriş tarihi 1950 ile bugün arasında olmalı.',
+    hireDateWouldGoNegative:
+      'Bu işe giriş tarihi bakiyeyi eksiye düşüreceği için kaydedilemez; düzenleme yapılmadı.',
+    managerHasPendingRequests:
+      'Bu çalışanın bekleyen izin talepleri var; yönetici bağlantısı kaldırılamaz.',
     homeLastRequests: 'Son talepler',
-    homeLastRequestsSubtitle: 'En son açtığınız izin talepleri.',
+    homeLastRequestsSubtitle: 'Son izin talepleri.',
     homeLastRequestsEmpty: 'Henüz izin talebiniz yok.',
     homeLastRequestsError: 'Son talepler şu anda yüklenemiyor.',
     homeOpenLeave: 'Tüm talepleri gör',
@@ -395,8 +400,13 @@ export const messages = {
       'The manager and the hire date are filled in later by HR, one account at a time.',
     usersEditSave: 'Save',
     usersUpdated: 'The user has been updated.',
+    invalidHireDate: 'The hire date must fall between 1950 and today.',
+    hireDateWouldGoNegative:
+      'This hire date would make the balance negative, so it cannot be saved; nothing changed.',
+    managerHasPendingRequests:
+      'This employee still has pending leave requests; the manager link cannot be removed.',
     homeLastRequests: 'Last requests',
-    homeLastRequestsSubtitle: 'The leave requests you opened most recently.',
+    homeLastRequestsSubtitle: 'The latest leave requests.',
     homeLastRequestsEmpty: 'You have no leave requests yet.',
     homeLastRequestsError: 'The last requests cannot be loaded right now.',
     homeOpenLeave: 'See all requests',

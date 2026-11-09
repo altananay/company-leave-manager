@@ -756,6 +756,66 @@ describe('users screen', () => {
     expect(await screen.findByText('Kullanıcı güncellendi.')).toBeInTheDocument()
   })
 
+  it('shouldMarkOnlyTheFieldTheEditRefusalIsAbout', async () => {
+    // M-13: an INVALID_MANAGER refusal belongs to the manager select. Marking the hire date as
+    // invalid too points the user at the field that is not wrong.
+    const target = {
+      id: 'u-edit',
+      email: 'edit@acme.test',
+      displayName: 'Edit Person',
+      role: 'EMPLOYEE',
+      mustChangePassword: false,
+      active: true,
+      managerId: null,
+      hireDate: null,
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(json(200, HR))
+        }
+        if (url.includes('/api/health')) {
+          return Promise.resolve(json(200, { status: 'UP' }))
+        }
+        if (url.includes('/api/users') && init?.method === 'PATCH') {
+          return Promise.resolve(json(400, { status: 400, code: 'INVALID_MANAGER' }))
+        }
+        if (url.includes('/api/users')) {
+          return Promise.resolve(json(200, [target]))
+        }
+        return Promise.resolve(json(404, null))
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await navigationButton('Kullanıcılar'))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+    await screen.findByRole('table')
+
+    await user.click(screen.getAllByRole('button', { name: 'İşlemler' })[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'Düzenle' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('İşe giriş tarihi'), {
+      target: { value: '2021-04-05' },
+    })
+    await user.click(within(dialog).getByRole('button', { name: 'Kaydet' }))
+
+    expect(
+      await within(dialog).findByText('Yönetici olarak yalnızca aktif bir yönetici seçilebilir.'),
+    ).toBeInTheDocument()
+    expect(within(dialog).getByRole('combobox', { name: 'Yönetici' })).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    )
+    expect(within(dialog).getByLabelText('İşe giriş tarihi')).not.toHaveAttribute('aria-invalid')
+  })
+
   it('shouldShowTheBalanceAndTheLastRequestsOnTheHomeScreen', async () => {
     // L-21: the spec's home screen carries the balance card and the last requests.
     authenticated(HR, () => json(200, { status: 'UP' }), {
@@ -811,6 +871,9 @@ describe('users screen', () => {
     renderApp()
 
     expect(await screen.findByText('Son talepler')).toBeInTheDocument()
+    // M-12: the list is role-scoped, so the copy must not claim it is "the requests you opened".
+    expect(await screen.findByText('Son izin talepleri.')).toBeInTheDocument()
+    expect(screen.queryByText('En son açtığınız izin talepleri.')).toBeNull()
     expect(await screen.findByText('Kalan')).toBeInTheDocument()
     expect(await screen.findByText(/30\.11\.2026 – 02\.12\.2026/)).toBeInTheDocument()
     expect(screen.getByText('Bekliyor')).toBeInTheDocument()

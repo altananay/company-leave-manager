@@ -171,13 +171,21 @@ class LeaveAuthorizationMatrixIT extends LeaveTestSupport {
         // The direct manager decides; the manager's own manager does not (the queue is direct only).
         assertThat(errorCode(approve(topManager, requestId))).isEqualTo("NOT_FOUND");
 
-        // Self-manager: a MANAGER whose own manager is themselves can create, but never approves it.
-        Account selfManager = createAccount("MANAGER", null, today().minusYears(1));
-        jdbc.update("update users set manager_id = ? where id = ?", selfManager.id(), selfManager.id());
+        // Self-manager: the link is pointed at the employee *after* a real request exists, because
+        // M-05 now refuses to open one behind a self-link at all. The decision gate is what is left
+        // to prove here: BR-7 never lets an account decide its own request (and the request stays
+        // pending through both refusals).
+        Account selfManager = createAccount("MANAGER", team.manager().id(), today().minusYears(1));
         Session selfSession = signIn(selfManager);
-        String selfRequest = extract(createLeave(selfSession, "ANNUAL", monday, monday, "kendi").body(), "id");
+        String selfRequest = extract(
+                createLeave(selfSession, "ANNUAL", monday.plusDays(1), monday.plusDays(1), "kendi").body(), "id");
+        jdbc.update("update users set manager_id = ? where id = ?", selfManager.id(), selfManager.id());
         assertThat(errorCode(approve(selfSession, selfRequest))).isEqualTo("LEAVE_NOT_MANAGER");
         assertThat(errorCode(reject(selfSession, selfRequest, "kendi"))).isEqualTo("LEAVE_NOT_MANAGER");
+        // M-05: the self-link cannot open a new request either — that would be an approve-your-own
+        // request waiting to happen (LeaveAuthorizationIT proves the refusal).
+        assertThat(errorCode(createLeave(selfSession, "ANNUAL", monday.plusDays(2), monday.plusDays(2), "yeni")))
+                .isEqualTo("LEAVE_NO_MANAGER");
 
         // EMPLOYEE-as-manager: the tree points at an employee; the role gate refuses before loading.
         Account fakeLead = createAccount("EMPLOYEE", team.manager().id(), today().minusYears(1));
