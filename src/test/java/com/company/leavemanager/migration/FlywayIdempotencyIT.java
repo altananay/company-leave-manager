@@ -22,7 +22,9 @@ class FlywayIdempotencyIT {
 
         assertThat(flyway.migrate().migrationsExecuted).isPositive();
         assertThat(flyway.migrate().migrationsExecuted).isZero();
-        // V1 (app_metadata) and V2 (identity, audit, sessions) are both applied exactly once.
-        assertThat(flyway.info().applied()).hasSize(2);
+        // V1 (app_metadata), V2 (identity, audit, sessions), V3 (leave, public holidays),
+        // V4 (cancellation record + retroactive marker), V5 (audit states as jsonb) and
+        // V6 (2027 holidays) are each applied exactly once.
+        assertThat(flyway.info().applied()).hasSize(6);
     }
 }

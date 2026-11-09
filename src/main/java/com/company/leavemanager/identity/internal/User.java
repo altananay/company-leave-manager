@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
@@ -49,11 +50,29 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /** The direct manager in the org tree (BR-7); null until HR connects the employee (AC-8). */
+    @Column(name = "manager_id")
+    private UUID managerId;
+
+    /** The hire date; null on every account that V2 created (the migration keeps them untouched). */
+    @Column(name = "hire_date")
+    private LocalDate hireDate;
+
     protected User() {
         // for JPA
     }
 
     public static User create(String email, String displayName, Role role, String passwordHash, Instant now) {
+        return create(email, displayName, role, passwordHash, null, null, now);
+    }
+
+    public static User create(String email,
+                              String displayName,
+                              Role role,
+                              String passwordHash,
+                              UUID managerId,
+                              LocalDate hireDate,
+                              Instant now) {
         User user = new User();
         user.id = UUID.randomUUID();
         user.email = email.toLowerCase(java.util.Locale.ROOT);
@@ -65,6 +84,8 @@ public class User {
         user.failedAttempts = 0;
         user.createdAt = now;
         user.updatedAt = now;
+        user.managerId = managerId;
+        user.hireDate = hireDate;
         return user;
     }
 
@@ -95,6 +116,17 @@ public class User {
 
     public void deactivate(Instant now) {
         this.active = false;
+        this.updatedAt = now;
+    }
+
+    /**
+     * HR sets the org data of an existing account (spec 0004 review round 1, L-04): the manager link
+     * and the hire date are write-once facts HR backfills one account at a time. A null clears the
+     * field; nothing else about the account changes here.
+     */
+    public void updateOrg(UUID managerId, LocalDate hireDate, Instant now) {
+        this.managerId = managerId;
+        this.hireDate = hireDate;
         this.updatedAt = now;
     }
 
@@ -132,5 +164,13 @@ public class User {
 
     public int getFailedAttempts() {
         return failedAttempts;
+    }
+
+    public UUID getManagerId() {
+        return managerId;
+    }
+
+    public LocalDate getHireDate() {
+        return hireDate;
     }
 }

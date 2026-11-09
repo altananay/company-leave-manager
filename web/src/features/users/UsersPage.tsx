@@ -30,7 +30,16 @@ import { Input } from '@/ui/input'
 import { Label } from '@/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
 import { Skeleton } from '@/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  responsiveCell,
+} from '@/ui/table'
+import { formatDate } from '@/lib/date'
 
 type ErrorKey =
   | 'emailExists'
@@ -38,7 +47,17 @@ type ErrorKey =
   | 'validationFailed'
   | 'protectedAccountError'
   | 'selfAction'
+  | 'invalidManager'
+  | 'managerHasReports'
+  | 'managerHasPendingRequests'
+  | 'invalidHireDate'
+  | 'hireDateWouldGoNegative'
   | 'genericError'
+
+/** The edit dialog's two fields: the refusal has to land on the field it is about (M-13). */
+type EditField = 'manager' | 'hireDate'
+
+type EditError = { key: ErrorKey; field: EditField | null }
 
 /** How many rows one page holds. A thousand accounts are not a scroll, they are pages (AC-14). */
 const PAGE_SIZE = 10
@@ -59,18 +78,44 @@ function errorKeyFor(failure: unknown): ErrorKey {
       return 'protectedAccountError'
     case 'SELF_ACTION_NOT_ALLOWED':
       return 'selfAction'
+    case 'INVALID_MANAGER':
+      return 'invalidManager'
+    case 'MANAGER_HAS_REPORTS':
+      return 'managerHasReports'
+    case 'MANAGER_HAS_PENDING_REQUESTS':
+      return 'managerHasPendingRequests'
+    case 'INVALID_HIRE_DATE':
+      return 'invalidHireDate'
+    case 'USER_EDIT_WOULD_GO_NEGATIVE':
+      return 'hireDateWouldGoNegative'
     default:
       return 'genericError'
   }
 }
 
 /**
- * Under md the table becomes a stack of cards: each cell prints its column name with `before:`.
- * The label never wraps and never shrinks, so a long value (an address) wraps instead of pushing
- * "E-POSTA" onto two lines.
+ * Which field of the edit dialog a refusal belongs to (M-13): an invalid manager is not a bad hire
+ * date, and marking both fields invalid tells the user to fix the wrong one.
  */
-const CELL_LABEL =
-  'flex items-baseline justify-between gap-4 py-1 before:shrink-0 before:whitespace-nowrap before:text-label before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none'
+function editErrorFor(failure: unknown): EditError {
+  const key = errorKeyFor(failure)
+  switch (key) {
+    case 'invalidManager':
+    case 'managerHasPendingRequests':
+      return { key, field: 'manager' }
+    case 'invalidHireDate':
+    case 'hireDateWouldGoNegative':
+    case 'validationFailed':
+      return { key, field: 'hireDate' }
+    default:
+      return { key, field: null }
+  }
+}
+
+/**
+ * Under md the table becomes a stack of cards: each cell prints its column name with `before:`.
+ * The rule lives in the design system so every table prints it the same way.
+ */
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
@@ -90,8 +135,17 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
   const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [role, setRole] = useState('EMPLOYEE')
+  const [managerId, setManagerId] = useState('NONE')
+  const [hireDate, setHireDate] = useState('')
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState<User | null>(null)
+  // The org-data edit (review round 1, L-04): manager + hire date, one account at a time.
+  const [editing, setEditing] = useState<User | null>(null)
+  const [editManagerId, setEditManagerId] = useState('NONE')
+  const [editHireDate, setEditHireDate] = useState('')
+  const [editBusy, setEditBusy] = useState(false)
+  const [editError, setEditError] = useState<EditError | null>(null)
+  const [notice, setNotice] = useState<'usersUpdated' | null>(null)
   const [query, setQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('ALL')
   const [page, setPage] = useState(1)
@@ -99,6 +153,7 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
   const displayNameRef = useRef<HTMLInputElement>(null)
   // The button that opened the dialog, so focus can return to it when the dialog closes.
   const deactivateTrigger = useRef<HTMLElement | null>(null)
+  const editTrigger = useRef<HTMLElement | null>(null)
   // The newest list request: an older answer must not overwrite it.
   const latestRequest = useRef(0)
   // The screen is unmounted when the user goes back: an answer that arrives later must be dropped.
@@ -151,9 +206,19 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
     setError(null)
     setBusy(true)
     try {
-      setCreated(await authApi.createUser(email, displayName, role))
+      setCreated(
+        await authApi.createUser(
+          email,
+          displayName,
+          role,
+          managerId === 'NONE' ? null : managerId,
+          hireDate || null,
+        ),
+      )
       setEmail('')
       setDisplayName('')
+      setManagerId('NONE')
+      setHireDate('')
       await load()
     } catch (failure) {
       const key = errorKeyFor(failure)
@@ -180,6 +245,38 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
     }
   }
 
+  function openEdit(user: User) {
+    setEditError(null)
+    setNotice(null)
+    setEditManagerId(user.managerId ?? 'NONE')
+    setEditHireDate(user.hireDate ?? '')
+    setEditing(user)
+  }
+
+  /** Saves the manager link and the hire date; the server validates the manager and the cycle. */
+  async function saveEdit(event: FormEvent) {
+    event.preventDefault()
+    if (!editing) {
+      return
+    }
+    setEditBusy(true)
+    setEditError(null)
+    try {
+      await authApi.updateUser(
+        editing.id,
+        editManagerId === 'NONE' ? null : editManagerId,
+        editHireDate || null,
+      )
+      setEditing(null)
+      setNotice('usersUpdated')
+      await load()
+    } catch (failure) {
+      setEditError(editErrorFor(failure))
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
   async function resetPassword(user: User) {
     setError(null)
     try {
@@ -192,7 +289,22 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
 
   /** True when the error belongs to the create form, not to a row action. */
   const formError =
-    error === 'emailExists' || error === 'validationFailed' || error === 'roleNotAssignable'
+    error === 'emailExists' ||
+    error === 'validationFailed' ||
+    error === 'roleNotAssignable' ||
+    error === 'invalidManager'
+
+  // Only an active MANAGER can be assigned: BR-7 makes any other choice an approver who could never
+  // approve, and the server refuses it with INVALID_MANAGER.
+  const managerOptions = useMemo(
+    () => users.filter((user) => user.role === 'MANAGER' && user.active),
+    [users],
+  )
+  // An account cannot be its own manager; the server refuses it too, this only hides the choice.
+  const editManagerChoices = useMemo(
+    () => managerOptions.filter((manager) => manager.id !== editing?.id),
+    [managerOptions, editing],
+  )
 
   const active = users.filter((user) => user.active).length
   const filtered = useMemo(() => {
@@ -238,6 +350,7 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
           </div>
         </Alert>
       )}
+      {notice && <Alert variant="success">{t(notice)}</Alert>}
       {error && !formError && (
         <Alert variant="destructive" id="users-error">
           <p className="font-medium">{t(error)}</p>
@@ -271,7 +384,7 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
                 required
               />
             </div>
-            <div className="grid gap-4 sm:grid-cols-[12rem_auto] sm:items-end">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="role-trigger">{t('role')}</Label>
                 <Select value={role} onValueChange={setRole}>
@@ -284,6 +397,31 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="manager-trigger">{t('manager')}</Label>
+                <Select value={managerId} onValueChange={setManagerId}>
+                  <SelectTrigger id="manager-trigger">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">{t('managerNone')}</SelectItem>
+                    {managerOptions.map((manager) => (
+                      <SelectItem key={manager.id} value={manager.id}>
+                        {manager.displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-[12rem_auto] sm:items-end">
+              <Field
+                label={t('hireDate')}
+                type="date"
+                value={hireDate}
+                describedBy={formError ? 'users-error' : undefined}
+                onChange={(event) => setHireDate(event.target.value)}
+              />
               <Button type="submit" disabled={busy} className="sm:justify-self-start">
                 {t('create')}
               </Button>
@@ -360,9 +498,11 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
               <TableHeader className="hidden md:table-header-group">
                 <TableRow>
                   <TableHead>{t('displayName')}</TableHead>
-                  <TableHead className="md:w-24">{t('role')}</TableHead>
-                  <TableHead className="md:w-24">{t('active')}</TableHead>
-                  <TableHead className="md:w-56">
+                  <TableHead className="md:w-20">{t('role')}</TableHead>
+                  <TableHead className="md:w-36">{t('manager')}</TableHead>
+                  <TableHead className="md:w-24">{t('hireDate')}</TableHead>
+                  <TableHead className="md:w-20">{t('active')}</TableHead>
+                  <TableHead className="md:w-32">
                     <span className="sr-only">{t('actions')}</span>
                   </TableHead>
                 </TableRow>
@@ -370,7 +510,7 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
               <TableBody>
                 {visible.map((user) => (
                   <TableRow key={user.id} className="block py-4 md:table-row md:py-0">
-                    <TableCell data-label={t('displayName')} className={CELL_LABEL}>
+                    <TableCell data-label={t('displayName')} className={responsiveCell}>
                       <span className="flex min-w-0 items-center gap-2.5">
                         <Avatar name={user.displayName} className="md:size-8" />
                         <span className="flex min-w-0 flex-col">
@@ -383,10 +523,19 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
                         </span>
                       </span>
                     </TableCell>
-                    <TableCell data-label={t('role')} className={CELL_LABEL}>
+                    <TableCell data-label={t('role')} className={responsiveCell}>
                       <Badge variant="default">{t(roleKey(user.role))}</Badge>
                     </TableCell>
-                    <TableCell data-label={t('active')} className={CELL_LABEL}>
+                    <TableCell data-label={t('manager')} className={responsiveCell}>
+                      <span className="min-w-0 [overflow-wrap:anywhere] md:truncate">
+                        {users.find((candidate) => candidate.id === user.managerId)?.displayName ??
+                          '—'}
+                      </span>
+                    </TableCell>
+                    <TableCell data-label={t('hireDate')} className={responsiveCell}>
+                      {formatDate(user.hireDate)}
+                    </TableCell>
+                    <TableCell data-label={t('active')} className={responsiveCell}>
                       <Badge variant={user.active ? 'success' : 'muted'} className="gap-1.5">
                         {/* AC-15: the status is a dot and a word, never colour alone. */}
                         <span
@@ -423,6 +572,14 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent>
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                editTrigger.current = deactivateTrigger.current
+                                openEdit(user)
+                              }}
+                            >
+                              {t('usersEdit')}
+                            </DropdownMenuItem>
                             <DropdownMenuItem onSelect={() => resetPassword(user)}>
                               {t('resetPassword')}
                             </DropdownMenuItem>
@@ -504,6 +661,77 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
               {t('confirm')}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent
+          closeLabel={t('close')}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            editTrigger.current?.focus()
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{t('usersEditTitle')}</DialogTitle>
+            <DialogDescription>{t('usersEditDescription')}</DialogDescription>
+          </DialogHeader>
+          {editing && (
+            <form className="flex flex-col gap-4" onSubmit={saveEdit}>
+              <p className="text-small font-medium">
+                {editing.displayName} · {editing.email}
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-manager-trigger">{t('manager')}</Label>
+                <Select value={editManagerId} onValueChange={setEditManagerId}>
+                  <SelectTrigger
+                    id="edit-manager-trigger"
+                    // M-13: only the field the refusal is about carries the invalid state.
+                    aria-invalid={editError?.field === 'manager' || undefined}
+                    aria-describedby={
+                      editError?.field === 'manager' ? 'edit-user-error' : undefined
+                    }
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">{t('managerNone')}</SelectItem>
+                    {editManagerChoices.map((manager) => (
+                      <SelectItem key={manager.id} value={manager.id}>
+                        {manager.displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Field
+                label={t('hireDate')}
+                type="date"
+                value={editHireDate}
+                invalid={editError?.field === 'hireDate'}
+                describedBy={editError?.field === 'hireDate' ? 'edit-user-error' : undefined}
+                onChange={(event) => {
+                  setEditHireDate(event.target.value)
+                  setEditError(null)
+                }}
+              />
+              {editError && (
+                <Alert variant="destructive" id="edit-user-error">
+                  <p className="font-medium">{t(editError.key)}</p>
+                </Alert>
+              )}
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="secondary">
+                    {t('cancel')}
+                  </Button>
+                </DialogClose>
+                <Button type="submit" disabled={editBusy}>
+                  {t('usersEditSave')}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>

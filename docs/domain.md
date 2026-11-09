@@ -30,7 +30,9 @@
 - **BR-2** Hak dönemi işe giriş yıl dönümünde başlar ve 12 ay sürer; ilk hak için 1 yıl fiili
   çalışma şartı vardır.
 - **BR-3** Dönem sonunda kullanılmayan yıllık izin hakkının **tamamı** sonraki döneme devreder;
-  üst sınır yok. Örnek: 14 gün haktan 4 gün kullanıldıysa 10 gün devreder.
+  üst sınır yok. Örnek: 14 gün haktan 4 gün kullanıldıysa 10 gün devreder. Devir **nettir**: önceki
+  dönemlerin hakkından o dönemlerde kullanılan günler düşülür, kullanılmış bir gün sonraki dönemde
+  ikinci kez teklif edilmez.
 - **BR-4** İzin süresi **iş günü** olarak hesaplanır; hafta sonu ve resmî tatiller düşülür.
 - **BR-5** Talep kalan bakiyeyi aşamaz; kontrol hem talep anında hem onay anında yapılır.
 - **BR-6** Aynı çalışanın tarih aralıkları çakışan iki aktif talebi olamaz.
@@ -60,7 +62,11 @@
 
 ## Key domain invariants
 
-- Bakiye hiçbir zaman negatif olamaz.
+- Bakiye hiçbir zaman negatif olamaz — bakiye düzeltmesinde olduğu gibi **İK'nın işe giriş tarihi
+  düzenlemesinde de**: bakiyeyi eksiye düşürecek bir tarih reddedilir ve satır değişmez.
+- İzin, çalışanın işe giriş tarihinden önce başlayamaz; İK'nın geçmiş tarihli kaydı da bu sınırın
+  dışında değildir ve işe giriş tarihi sonradan düzenlense de kural korunur (aktif bir iznin
+  başlangıcından sonraya taşınamaz).
 - Bir talep aynı anda tek durumdadır: `PENDING`, `APPROVED`, `REJECTED`, `CANCELLED`.
 - Onaylanmış talebin tarihleri değiştirilemez; değişiklik = iptal + yeni talep.
 - Aynı çalışanın çakışan iki aktif talebi olamaz.

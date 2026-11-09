@@ -4,6 +4,7 @@ import com.company.leavemanager.web.Problems;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -81,6 +82,18 @@ public class SecurityConfig {
                         // Every other API endpoint is listed explicitly; an unlisted one is denied.
                         .requestMatchers("/api/auth/me", "/api/auth/logout", "/api/auth/password").authenticated()
                         .requestMatchers("/api/users/**").hasRole("HR")
+                        // Leave: reads for every signed-in role; the balance correction is HR's, and
+                        // the manager queue is the direct manager's (BR-7). The rest of the rules are
+                        // the service's job — a path rule is the coarse gate, never the authorization.
+                        .requestMatchers(HttpMethod.POST, "/api/leave/adjustments").hasRole("HR")
+                        .requestMatchers(HttpMethod.GET, "/api/leave/queue").hasRole("MANAGER")
+                        .requestMatchers("/api/leave/**").authenticated()
+                        // The SPA shell is served for its client routes too, so a nested route can be
+                        // opened directly (spec 0004 AC-9, backlog B-4). The HTML is public; every
+                        // endpoint behind it still requires a session. `/users` is a top-level client
+                        // route as well (review round 1, L-09). Nothing else is forwarded: an unknown
+                        // non-API path stays denied (spec 0002).
+                        .requestMatchers(HttpMethod.GET, "/leave", "/leave/**", "/users").permitAll()
                         // The SPA shell and its assets stay public; anything else is denied by default.
                         .requestMatchers("/", "/index.html", "/favicon.svg", "/icons.svg", "/assets/**", "/error")
                         .permitAll()

@@ -50,18 +50,35 @@
   a button is UX, never authorization. Default deny: only the SPA shell, its assets, `/error`,
   `/api/health`, `/api/auth/login` and `/api/auth/csrf` are public; every other path is denied.
   İK can assign only `EMPLOYEE` and `MANAGER`; the `HR`/`CEO` roles come from the environment seed.
-  İK cannot deactivate itself or reset its own password through the admin screen, and cannot
-  deactivate or reset a seeded `HR`/`CEO` account (`403 PROTECTED_ACCOUNT`): those accounts are
-  managed by the environment only.
-- **No SPA deep links:** the shell is served at `/`; client-side routes are view state, so an
-  unknown non-API path is denied rather than forwarded to `index.html`.
+  İK cannot deactivate itself, reset its own password, or edit its own org data through the admin
+  screen, and cannot deactivate, reset or edit a seeded `HR`/`CEO` account (`403 PROTECTED_ACCOUNT`):
+  those accounts are managed by the environment only. A `PATCH /api/users/{id}` carries the same two
+  gates (`SELF_ACTION_NOT_ALLOWED`, `PROTECTED_ACCOUNT`) as deactivate and reset-password, plus the
+  domain guards the edit could break: clearing the manager of an account with a `PENDING` request is
+  refused (`409 MANAGER_HAS_PENDING_REQUESTS`, because only the direct manager could decide it), a
+  hire-date change that would push the balance below zero is refused
+  (`409 USER_EDIT_WOULD_GO_NEGATIVE`) — the balance stays non-negative through org edits too, and the
+  row is left untouched — and a hire date moved past the start of an active leave is refused
+  (`400 INVALID_HIRE_DATE`): "izin işe girişten önce başlayamaz" holds after an edit, not only when
+  the request is created (review round 3, N-01). A hire date outside 1950…today is refused on
+  creation with the same code and the same validator (N-03/N-06).
+- **SPA routes:** the shell is served at `/` and for the client routes under `/leave/**` and
+  `/users` (spec 0004, backlog B-4; L-09): opening `/leave/requests` or `/users` directly returns
+  the shell and the SPA picks the screen. The allow-list is explicit — a route is added to
+  `SecurityConfig` and `SpaController` together; any other non-API path is still denied rather than
+  forwarded to `index.html`.
 - **Object-level checks:** every endpoint that takes an employee or request identifier verifies the
-  caller's scope before loading the object, not after.
+  caller's scope *in the query that loads the object*, not after loading it. A decision loads the
+  request through the manager's own reports, a cancellation through the owner's id, and a balance
+  checks self/subtree/HR first; an identifier outside that scope answers **404**, exactly like one
+  that does not exist, so the endpoint never confirms that the row is real. Role and self gates
+  that need no object (HR/CEO never decide, an employee never approves) answer **403** without
+  loading anything — AC-4 names those codes.
 
 | Role | Scope | May write |
 |---|---|---|
 | Employee | own requests and balance | create/cancel own requests |
-| Manager | own subtree (read), direct reports (approve) | approve/reject direct reports' requests |
+| Manager | own subtree (read, balance included), direct reports (approve) | approve/reject direct reports' requests |
 | HR | company-wide | users, departments, balances (audited adjustments), imports, reports |
 | CEO | company-wide, read-only | nothing |
 

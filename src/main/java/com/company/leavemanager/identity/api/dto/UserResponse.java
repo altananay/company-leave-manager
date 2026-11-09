@@ -2,6 +2,7 @@ package com.company.leavemanager.identity.api.dto;
 
 import com.company.leavemanager.identity.internal.User;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 public record UserResponse(
@@ -10,7 +11,9 @@ public record UserResponse(
         String displayName,
         String role,
         boolean active,
-        boolean mustChangePassword) {
+        boolean mustChangePassword,
+        UUID managerId,
+        LocalDate hireDate) {
 
     public static UserResponse of(User user) {
         return new UserResponse(
@@ -19,6 +22,8 @@ public record UserResponse(
                 user.getDisplayName(),
                 user.getRole().name(),
                 user.isActive(),
-                user.isMustChangePassword());
+                user.isMustChangePassword(),
+                user.getManagerId(),
+                user.getHireDate());
     }
 }

@@ -37,23 +37,27 @@ SCALE_PATTERN="(^|[^[:alnum:]_])text-(${SIZE_UTILITIES})\\b|(^|[^[:alnum:]_])sha
 
 PATTERN="#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|hwb\(|oklab\(|oklch\(|lab\(|lch\(|color\(|(bg|text|border|ring|fill|stroke|from|via|to|outline|decoration|caret|accent|divide|placeholder|shadow|inset-shadow|drop-shadow)-\[(${COLOUR_KEYWORDS})\]|(^|[^[:alnum:]_])(${COMMON_NAMES})\b|(rounded|shadow|text)-\[[0-9]|${SCALE_PATTERN}"
 
-# grep exits 1 when nothing matches: that is the good case. Anything else is a real failure.
-status=0
-raw=$(grep -REn --include='*.tsx' --include='*.ts' -e "$PATTERN" web/src) || status=$?
-
-if [ "$status" -gt 1 ]; then
-  echo "TOKENS ERROR - grep failed on the component sources (exit $status)" >&2
-  exit "$status"
-fi
-
-# Every stylesheet except the token file is held to the same rule (AC-12).
-css_status=0
-css_raw=$(grep -REn --include='*.css' -e "$PATTERN" web/src) || css_status=$?
-
-if [ "$css_status" -gt 1 ]; then
-  echo "TOKENS ERROR - grep failed on the stylesheets (exit $css_status)" >&2
-  exit "$css_status"
-fi
+# Portable scan: macOS ships BSD grep, whose --include support differs from GNU's, so the file list
+# comes from find and grep runs per file. grep exits 1 when nothing matches (the good case) and
+# anything above 1 is a real failure, which this loop keeps instead of swallowing.
+raw=''
+css_raw=''
+while IFS= read -r file; do
+  [ -n "$file" ] || continue
+  code=0
+  out=$(grep -EHn -e "$PATTERN" "$file") || code=$?
+  if [ "$code" -gt 1 ]; then
+    echo "TOKENS ERROR - grep failed on $file (exit $code)" >&2
+    exit "$code"
+  fi
+  [ -n "$out" ] || continue
+  case "$file" in
+    *.css) css_raw="$css_raw$out
+" ;;
+    *) raw="$raw$out
+" ;;
+  esac
+done < <(find web/src -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.css' \) | LC_ALL=C sort)
 
 matches=$(printf '%s\n%s\n' "${raw:-}" "${css_raw:-}" |
   grep -v '^web/src/index.css:' |

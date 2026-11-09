@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 
+import { expectTouchTargets, horizontalOverflow } from './layout'
 import { goToHome, goToUsers, logOut, navigation, openUsers } from './navigation'
 
 const HR_EMAIL = 'hr@e2e.test'
@@ -152,8 +153,9 @@ test('shouldKeepTouchTargetsAtLeast44Pixels', async ({ page }) => {
   await expectTouchTargets(page, 'row action menu', '[role="menuitem"]:visible')
   await page.keyboard.press('Escape')
 
-  // The role listbox is a control too: open it and measure its options.
-  await page.getByRole('combobox').click()
+  // The role listbox is a control too: open it and measure its options. The form now has a second
+  // select (the manager, spec 0004 AC-8), so the role one is named instead of being the only one.
+  await page.getByRole('combobox', { name: 'Rol' }).click()
   await expect(page.getByRole('option').first()).toBeVisible()
   await expectTouchTargets(page, 'role listbox', '[role="option"]:visible')
   await page.keyboard.press('Escape')
@@ -274,41 +276,8 @@ test('shouldShowTheContentFocusRingOnlyForTheKeyboard', async ({ page }) => {
 })
 
 /**
- * Every control a thumb has to hit: buttons, fields, the combobox, listbox options and menu items
- * (AC-8).
+ * Every control a thumb has to hit lives in ./layout; this file keeps the journey assertions.
  */
-async function expectTouchTargets(
-  page: import('@playwright/test').Page,
-  label: string,
-  selector = 'button:visible, input:visible, [role="combobox"]:visible, [role="menuitem"]:visible',
-) {
-  const controls = page.locator(selector)
-  const count = await controls.count()
-  expect(count, `${label} has controls`).toBeGreaterThan(0)
-
-  for (let index = 0; index < count; index += 1) {
-    const box = await controls.nth(index).boundingBox()
-    expect(box?.height ?? 0, `${label} control ${index} height`).toBeGreaterThanOrEqual(44)
-    expect(box?.width ?? 0, `${label} control ${index} width`).toBeGreaterThanOrEqual(44)
-  }
-}
-
-/**
- * The horizontal overflow a user can actually reach (AC-4). On shell screens the root is
- * `overflow-hidden`, so `document.documentElement` is structurally clean and the content region
- * (`<main id="content">`, which scrolls on both axes) is the box that can overflow. Anonymous
- * screens have no `#content` and scroll on the document. Measure both and report the larger one, so
- * a regression on either layout fails.
- */
-async function horizontalOverflow(page: import('@playwright/test').Page) {
-  return page.evaluate(() => {
-    const documentOverflow =
-      document.documentElement.scrollWidth - document.documentElement.clientWidth
-    const content = document.querySelector<HTMLElement>('main#content')
-    const contentOverflow = content ? content.scrollWidth - content.clientWidth : 0
-    return Math.max(documentOverflow, contentOverflow)
-  })
-}
 
 test('shouldLoginDenyAndLogout', async ({ page }) => {
   // Anonymous: the shell shows the login screen.
@@ -321,7 +290,19 @@ test('shouldLoginDenyAndLogout', async ({ page }) => {
   await page.getByRole('button', { name: 'Giriş yap' }).click()
 
   await expect(page.getByText('Giriş yapan:')).toBeVisible()
-  await expect(page.getByRole('status')).toHaveText('Sistem çalışıyor')
+  // The home screen now carries the balance summary too (spec 0004, L-21): its "no hire date"
+  // notice is a second live region, so the health status is selected by its own text.
+  // M-09: the text equality is the assertion — `hasText` alone passes on "Sistem çalışıyor…" and
+  // would survive a status that only starts with the phrase.
+  await expect(page.getByRole('status').filter({ hasText: 'Sistem çalışıyor' })).toHaveText(
+    'Sistem çalışıyor',
+  )
+  // The seeded HR account has no hire date, so the balance card shows the 0-day notice (L-05, D3):
+  // the number and the reason are on screen, not a guessed 14-day default.
+  await expect(
+    page.getByText(/İşe giriş tarihi girilmedi; yıllık izin hakkı hesaplanamıyor \(0 gün\)/),
+  ).toBeVisible()
+  await expect(page.locator('[data-slot="balance-remaining"]')).toHaveText('0')
 
   // HR creates an employee and receives a one-time password.
   await goToUsers(page)

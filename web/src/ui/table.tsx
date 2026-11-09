@@ -61,4 +61,12 @@ function TableCell({ className, ...props }: ComponentProps<'td'>) {
   )
 }
 
-export { Table, TableBody, TableCell, TableHead, TableHeader, TableRow }
+/**
+ * A cell that prints its column name below `md` and becomes an ordinary table cell from `md` up.
+ * The label never wraps and never shrinks, so a long value (an address) wraps instead of pushing
+ * the label onto two lines. Screens pass `data-label={t(column)}` on the cell.
+ */
+const responsiveCell =
+  'flex items-baseline justify-between gap-4 py-1 before:shrink-0 before:whitespace-nowrap before:text-label before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none'
+
+export { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, responsiveCell }

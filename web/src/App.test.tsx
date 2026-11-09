@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -89,6 +89,9 @@ function setBrowserLanguage(language: string) {
 beforeEach(() => {
   localStorage.clear()
   sessionStorage.clear()
+  // The screen follows the URL (spec 0004, AC-9): a test that navigated must not leave the next
+  // one on that route, so every test starts at the shell's home path.
+  window.history.replaceState({}, '', '/')
   setBrowserLanguage('tr-TR')
   document.documentElement.lang = 'tr'
 })
@@ -684,6 +687,202 @@ describe('users screen', () => {
     expect(screen.getByLabelText('E-posta')).not.toHaveAttribute('aria-describedby')
   })
 
+  it('shouldEditTheManagerAndHireDateOfAnExistingUser', async () => {
+    // L-04: the row action opens the edit dialog and PATCHes the two org fields.
+    const manager = {
+      id: 'u-lead',
+      email: 'lead@acme.test',
+      displayName: 'Lead Person',
+      role: 'MANAGER',
+      mustChangePassword: false,
+      active: true,
+      managerId: null,
+      hireDate: '2020-01-01',
+    }
+    const target = {
+      id: 'u-edit',
+      email: 'edit@acme.test',
+      displayName: 'Edit Person',
+      role: 'EMPLOYEE',
+      mustChangePassword: false,
+      active: true,
+      managerId: null,
+      hireDate: null,
+    }
+    let patched: unknown = null
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(json(200, HR))
+        }
+        if (url.includes('/api/health')) {
+          return Promise.resolve(json(200, { status: 'UP' }))
+        }
+        if (url.includes('/api/users') && init?.method === 'PATCH') {
+          patched = JSON.parse(String(init.body))
+          return Promise.resolve(
+            json(200, { ...target, managerId: manager.id, hireDate: '2021-04-05' }),
+          )
+        }
+        if (url.includes('/api/users')) {
+          return Promise.resolve(json(200, [target, manager]))
+        }
+        return Promise.resolve(json(404, null))
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await navigationButton('Kullanıcılar'))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+    await screen.findByRole('table')
+
+    await user.click(screen.getAllByRole('button', { name: 'İşlemler' })[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'Düzenle' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('combobox', { name: 'Yönetici' }))
+    await user.click(await screen.findByRole('option', { name: 'Lead Person' }))
+    fireEvent.change(within(dialog).getByLabelText('İşe giriş tarihi'), {
+      target: { value: '2021-04-05' },
+    })
+    await user.click(within(dialog).getByRole('button', { name: 'Kaydet' }))
+
+    await waitFor(() => expect(patched).toEqual({ managerId: 'u-lead', hireDate: '2021-04-05' }))
+    expect(await screen.findByText('Kullanıcı güncellendi.')).toBeInTheDocument()
+  })
+
+  it('shouldMarkOnlyTheFieldTheEditRefusalIsAbout', async () => {
+    // M-13: an INVALID_MANAGER refusal belongs to the manager select. Marking the hire date as
+    // invalid too points the user at the field that is not wrong.
+    const target = {
+      id: 'u-edit',
+      email: 'edit@acme.test',
+      displayName: 'Edit Person',
+      role: 'EMPLOYEE',
+      mustChangePassword: false,
+      active: true,
+      managerId: null,
+      hireDate: null,
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(json(200, HR))
+        }
+        if (url.includes('/api/health')) {
+          return Promise.resolve(json(200, { status: 'UP' }))
+        }
+        if (url.includes('/api/users') && init?.method === 'PATCH') {
+          return Promise.resolve(json(400, { status: 400, code: 'INVALID_MANAGER' }))
+        }
+        if (url.includes('/api/users')) {
+          return Promise.resolve(json(200, [target]))
+        }
+        return Promise.resolve(json(404, null))
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await navigationButton('Kullanıcılar'))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+    await screen.findByRole('table')
+
+    await user.click(screen.getAllByRole('button', { name: 'İşlemler' })[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'Düzenle' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('İşe giriş tarihi'), {
+      target: { value: '2021-04-05' },
+    })
+    await user.click(within(dialog).getByRole('button', { name: 'Kaydet' }))
+
+    expect(
+      await within(dialog).findByText('Yönetici olarak yalnızca aktif bir yönetici seçilebilir.'),
+    ).toBeInTheDocument()
+    expect(within(dialog).getByRole('combobox', { name: 'Yönetici' })).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    )
+    expect(within(dialog).getByLabelText('İşe giriş tarihi')).not.toHaveAttribute('aria-invalid')
+  })
+
+  it('shouldShowTheBalanceAndTheLastRequestsOnTheHomeScreen', async () => {
+    // L-21: the spec's home screen carries the balance card and the last requests.
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/leave/balance': () =>
+        json(200, {
+          entitlement: 20,
+          carryover: 10,
+          adjustments: 0,
+          approved: 3,
+          pending: 2,
+          remaining: 25,
+          periodStart: '2026-03-15',
+          periodEnd: '2027-03-15',
+          hireDate: '2020-03-15',
+          entitlementDefaulted: false,
+          completedYears: 6,
+          hasManager: true,
+          managerName: 'Manager Person',
+        }),
+      '/api/leave/requests': () =>
+        json(200, {
+          items: [
+            {
+              id: 'r-home',
+              employeeId: 'u-hr',
+              employeeName: 'HR Admin',
+              type: 'ANNUAL',
+              startDate: '2026-11-30',
+              endDate: '2026-12-02',
+              businessDays: 3,
+              status: 'PENDING',
+              reason: 'aile',
+              decidedBy: null,
+              decidedByName: null,
+              decidedAt: null,
+              decisionNote: null,
+              createdAt: '2026-11-09T08:00:00Z',
+              cancellable: false,
+              cancelledAt: null,
+              cancelledBy: null,
+              cancelledByName: null,
+              retroactive: false,
+            },
+          ],
+          page: 1,
+          size: 3,
+          total: 1,
+          totalPages: 1,
+        }),
+    })
+
+    const user = userEvent.setup()
+    renderApp()
+
+    expect(await screen.findByText('Son talepler')).toBeInTheDocument()
+    // M-12: the list is role-scoped, so the copy must not claim it is "the requests you opened".
+    expect(await screen.findByText('Son izin talepleri.')).toBeInTheDocument()
+    expect(screen.queryByText('En son açtığınız izin talepleri.')).toBeNull()
+    expect(await screen.findByText('Kalan')).toBeInTheDocument()
+    expect(await screen.findByText(/30\.11\.2026 – 02\.12\.2026/)).toBeInTheDocument()
+    expect(screen.getByText('Bekliyor')).toBeInTheDocument()
+
+    // The summary links to the leave screen, which is where a request is opened.
+    await user.click(screen.getByRole('button', { name: 'Tüm talepleri gör' }))
+    expect(await screen.findByRole('heading', { name: 'İzin talepleri' })).toBeInTheDocument()
+  })
+
   it('shouldMarkAnInactiveUser', async () => {
     authenticated(HR, () => json(200, { status: 'UP' }), {
       '/api/users': () =>
@@ -802,6 +1001,57 @@ describe('users screen', () => {
     // Announced as an alert, and the field it belongs to is marked invalid (AC-3).
     expect(screen.getByRole('alert')).toHaveTextContent('Bu e-posta ile bir kullanıcı zaten var.')
     expect(screen.getByLabelText('E-posta')).toHaveAttribute('aria-invalid', 'true')
+  })
+})
+
+describe('leave requests route', () => {
+  const BALANCE = {
+    entitlement: 14,
+    carryover: 0,
+    adjustments: 0,
+    approved: 0,
+    pending: 0,
+    remaining: 14,
+    periodStart: '2026-03-15',
+    periodEnd: '2027-03-15',
+    hireDate: '2020-03-15',
+    entitlementDefaulted: false,
+    completedYears: 6,
+    hasManager: true,
+    managerName: 'Manager Person',
+  }
+  const EMPTY_PAGE = { items: [], page: 1, size: 10, total: 0, totalPages: 0 }
+
+  function leaveScreen() {
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/leave/balance': () => json(200, BALANCE),
+      '/api/leave/requests': () => json(200, EMPTY_PAGE),
+      '/api/users': () => json(200, []),
+    })
+  }
+
+  it('shouldOpenTheLeaveRequestsScreenFromTheNavigation', async () => {
+    leaveScreen()
+    const user = userEvent.setup()
+    renderApp()
+    await screen.findByText(/Giriş yapan:/)
+
+    await user.click(await navigationButton('İzin talepleri'))
+
+    expect(await screen.findByRole('heading', { name: 'İzin talepleri' })).toBeInTheDocument()
+    // The URL follows the screen, so a reload returns to the same route (AC-9).
+    expect(window.location.pathname).toBe('/leave/requests')
+    expect(await navigationButton('İzin talepleri')).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('shouldOpenTheLeaveRequestsScreenFromTheUrl', async () => {
+    // Opening the nested route directly: the server served the shell, the SPA picks the screen.
+    window.history.replaceState({}, '', '/leave/requests')
+    leaveScreen()
+    renderApp()
+
+    expect(await screen.findByRole('heading', { name: 'İzin talepleri' })).toBeInTheDocument()
+    expect(await screen.findByText('Henüz izin talebiniz yok.')).toBeInTheDocument()
   })
 })
 
@@ -1445,6 +1695,11 @@ describe('accessibility', () => {
     expect(screen.getByLabelText('Ad soyad')).toHaveFocus()
     await user.tab()
     expect(screen.getByRole('combobox', { name: 'Rol' })).toHaveFocus()
+    // The manager and hire-date fields join the form (spec 0004, AC-8) between the role and submit.
+    await user.tab()
+    expect(screen.getByRole('combobox', { name: 'Yönetici' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByLabelText('İşe giriş tarihi')).toHaveFocus()
     await user.tab()
     expect(screen.getByRole('button', { name: 'Oluştur' })).toHaveFocus()
 
@@ -1464,8 +1719,12 @@ describe('accessibility', () => {
     expect(screen.getByRole('button', { name: 'İşlemler' })).toHaveFocus()
 
     // The menu opens from the keyboard; its items are reachable and Escape returns to the trigger.
+    // "Düzenle" joins the menu with the org-data edit (review round 1, L-04), ahead of the two
+    // account actions; the expected list grows by that item and loses none.
     await user.keyboard('{Enter}')
-    expect(await screen.findByRole('menuitem', { name: 'Parola sıfırla' })).toHaveFocus()
+    expect(await screen.findByRole('menuitem', { name: 'Düzenle' })).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('menuitem', { name: 'Parola sıfırla' })).toHaveFocus()
     await user.keyboard('{ArrowDown}')
     expect(screen.getByRole('menuitem', { name: 'Pasife al' })).toHaveFocus()
     await user.keyboard('{Escape}')

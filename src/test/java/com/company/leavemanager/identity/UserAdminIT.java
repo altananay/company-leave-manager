@@ -3,11 +3,17 @@ package com.company.leavemanager.identity;
 import com.company.leavemanager.identity.internal.Role;
 import com.company.leavemanager.identity.internal.User;
 import com.company.leavemanager.identity.internal.UserRepository;
+import com.company.leavemanager.testing.WorkingDays;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.net.http.HttpResponse;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.Set;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -19,6 +25,9 @@ class UserAdminIT extends IdentityTestSupport {
 
     @Autowired
     PasswordEncoder encoder;
+
+    @Autowired
+    JdbcTemplate jdbc;
 
     @Test
     void shouldReturnTheTemporaryPasswordOnlyAtCreation() throws Exception {
@@ -276,7 +285,390 @@ class UserAdminIT extends IdentityTestSupport {
         return "{\"email\":\"" + email + "\",\"displayName\":\"" + displayName + "\",\"role\":\"" + role + "\"}";
     }
 
+    @Test
+    void shouldStoreManagerAndHireDate() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> manager = session.post("/api/users",
+                body(unique("lead"), "Lead Person", "MANAGER"));
+        assertThat(manager.statusCode()).isEqualTo(201);
+        String managerId = extract(manager.body(), "id");
+        String email = unique("staff");
+
+        HttpResponse<String> created = session.post("/api/users",
+                "{\"email\":\"" + email + "\",\"displayName\":\"Staff Person\",\"role\":\"EMPLOYEE\","
+                        + "\"managerId\":\"" + managerId + "\",\"hireDate\":\"2020-02-03\"}");
+
+        assertThat(created.statusCode()).isEqualTo(201);
+        assertThat(extract(created.body(), "managerId")).isEqualTo(managerId);
+        assertThat(extract(created.body(), "hireDate")).isEqualTo("2020-02-03");
+
+        // The list carries both fields too: the screen resolves the manager's name from it.
+        String list = session.get("/api/users").body();
+        assertThat(list).contains("\"managerId\":\"" + managerId + "\"");
+        assertThat(list).contains("\"hireDate\":\"2020-02-03\"");
+    }
+
+    @Test
+    void shouldKeepManagerAndHireDateOptional() throws Exception {
+        // AC-8's backward compatibility: an account made without them keeps both fields null, and
+        // the response says so instead of inventing a value.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+
+        HttpResponse<String> created = session.post("/api/users", body(unique("plain"), "Plain Person", "EMPLOYEE"));
+
+        assertThat(created.statusCode()).isEqualTo(201);
+        assertThat(created.body()).contains("\"managerId\":null");
+        assertThat(created.body()).contains("\"hireDate\":null");
+    }
+
+    @Test
+    void shouldUpdateManagerAndHireDate() throws Exception {
+        // L-04: HR backfills the org data of an existing account; the pair is replaced on every call
+        // and a null clears it. There is no bulk migration — one account at a time.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> manager = session.post("/api/users", body(unique("patch-lead"), "Patch Lead", "MANAGER"));
+        String managerId = extract(manager.body(), "id");
+        HttpResponse<String> employee = session.post("/api/users", body(unique("patch"), "Patch Person", "EMPLOYEE"));
+        String employeeId = extract(employee.body(), "id");
+        assertThat(extract(employee.body(), "managerId")).isNull();
+
+        HttpResponse<String> updated = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"2019-05-06\"}");
+
+        assertThat(updated.statusCode()).as(updated.body()).isEqualTo(200);
+        assertThat(extract(updated.body(), "managerId")).isEqualTo(managerId);
+        assertThat(extract(updated.body(), "hireDate")).isEqualTo("2019-05-06");
+        String list = session.get("/api/users").body();
+        assertThat(list).contains("\"id\":\"" + employeeId + "\"");
+        assertThat(list).contains("\"managerId\":\"" + managerId + "\"");
+        assertThat(list).contains("\"hireDate\":\"2019-05-06\"");
+
+        HttpResponse<String> cleared = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":null,\"hireDate\":null}");
+
+        assertThat(cleared.statusCode()).as(cleared.body()).isEqualTo(200);
+        assertThat(cleared.body()).contains("\"managerId\":null");
+        assertThat(cleared.body()).contains("\"hireDate\":null");
+    }
+
+    @Test
+    void shouldAuditTheManagerAndHireDateEdit() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> manager = session.post("/api/users", body(unique("audit-lead"), "Audit Lead", "MANAGER"));
+        String managerId = extract(manager.body(), "id");
+        HttpResponse<String> employee = session.post("/api/users", body(unique("audit"), "Audit Person", "EMPLOYEE"));
+        String employeeId = extract(employee.body(), "id");
+
+        assertThat(session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"2020-02-03\"}").statusCode())
+                .isEqualTo(200);
+
+        // One event, and its jsonb states answer both sides of the change (BR-13, L-15).
+        assertThat(jdbc.queryForObject(
+                "select count(*) from audit_event where event_type = 'USER_UPDATED' and target_user_id = ?",
+                Integer.class, UUID.fromString(employeeId))).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "select after_state->>'managerId' from audit_event where event_type = 'USER_UPDATED' "
+                        + "and target_user_id = ?", String.class, UUID.fromString(employeeId)))
+                .isEqualTo(managerId);
+        assertThat(jdbc.queryForObject(
+                "select after_state->>'hireDate' from audit_event where event_type = 'USER_UPDATED' "
+                        + "and target_user_id = ?", String.class, UUID.fromString(employeeId)))
+                .isEqualTo("2020-02-03");
+        assertThat(jdbc.queryForObject(
+                "select before_state->>'managerId' from audit_event where event_type = 'USER_UPDATED' "
+                        + "and target_user_id = ?", String.class, UUID.fromString(employeeId)))
+                .isNull();
+    }
+
+    @Test
+    void shouldRejectANonHrManagerEdit() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String email = unique("patch-mgr");
+        HttpResponse<String> created = session.post("/api/users", body(email, "Patch Manager", "MANAGER"));
+        String temporaryPassword = extract(created.body(), "temporaryPassword");
+        String id = extract(created.body(), "id");
+
+        Session manager = new Session();
+        assertThat(manager.login(email, temporaryPassword).statusCode()).isEqualTo(200);
+        assertThat(manager.post("/api/auth/password",
+                "{\"currentPassword\":\"" + temporaryPassword + "\","
+                        + "\"newPassword\":\"manager-pass-123\",\"confirmPassword\":\"manager-pass-123\"}")
+                .statusCode()).isEqualTo(204);
+
+        HttpResponse<String> forbidden = manager.patch("/api/users/" + id,
+                "{\"managerId\":null,\"hireDate\":\"2020-02-03\"}");
+
+        assertThat(forbidden.statusCode()).isEqualTo(403);
+        assertThat(forbidden.body()).contains("NOT_AUTHORIZED");
+    }
+
+    @Test
+    void shouldRefuseToDeactivateAManagerWithActiveReports() throws Exception {
+        // L-12: a request must never be left without an approver. HR clears the reports first.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> manager = session.post("/api/users", body(unique("held-lead"), "Held Lead", "MANAGER"));
+        String managerId = extract(manager.body(), "id");
+        HttpResponse<String> report = session.post("/api/users",
+                "{\"email\":\"" + unique("held") + "\",\"displayName\":\"Held Report\","
+                        + "\"role\":\"EMPLOYEE\",\"managerId\":\"" + managerId + "\"}");
+        String reportId = extract(report.body(), "id");
+
+        HttpResponse<String> refused = session.post("/api/users/" + managerId + "/deactivate", "{}");
+
+        assertThat(refused.statusCode()).isEqualTo(409);
+        assertThat(refused.body()).contains("MANAGER_HAS_REPORTS");
+        assertThat(session.get("/api/users").body()).contains("\"id\":\"" + managerId + "\"");
+        assertThat(session.get("/api/users").body()).contains("\"active\":true");
+
+        // Once the report has another manager (here: none), the deactivation goes through.
+        assertThat(session.patch("/api/users/" + reportId, "{\"managerId\":null,\"hireDate\":null}")
+                .statusCode()).isEqualTo(200);
+        assertThat(session.post("/api/users/" + managerId + "/deactivate", "{}").statusCode()).isEqualTo(204);
+    }
+
+    @Test
+    void shouldRejectACycleInTheManagerEdit() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> top = session.post("/api/users", body(unique("cycle-top"), "Cycle Top", "MANAGER"));
+        String topId = extract(top.body(), "id");
+        HttpResponse<String> middle = session.post("/api/users",
+                "{\"email\":\"" + unique("cycle-mid") + "\",\"displayName\":\"Cycle Mid\","
+                        + "\"role\":\"MANAGER\",\"managerId\":\"" + topId + "\"}");
+        String middleId = extract(middle.body(), "id");
+
+        // Top → Middle would close the loop; Top → Top is the same mistake in one row.
+        assertThat(errorCodeOf(session.patch("/api/users/" + topId,
+                "{\"managerId\":\"" + middleId + "\",\"hireDate\":null}"))).isEqualTo("INVALID_MANAGER");
+        assertThat(errorCodeOf(session.patch("/api/users/" + topId,
+                "{\"managerId\":\"" + topId + "\",\"hireDate\":null}"))).isEqualTo("INVALID_MANAGER");
+        // An employee can never be a manager either: BR-7 would have no approver.
+        HttpResponse<String> employee = session.post("/api/users", body(unique("cycle-emp"), "Cycle Emp", "EMPLOYEE"));
+        assertThat(errorCodeOf(session.patch("/api/users/" + topId,
+                "{\"managerId\":\"" + extract(employee.body(), "id") + "\",\"hireDate\":null}")))
+                .isEqualTo("INVALID_MANAGER");
+    }
+
+    private static String errorCodeOf(HttpResponse<String> response) {
+        return extract(response.body(), "code");
+    }
+
+    @Test
+    void shouldRejectAManagerWhoCouldNeverApprove() throws Exception {        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+
+        // BR-7: an employee cannot be a request's approver, and HR/CEO never approve at all.
+        HttpResponse<String> employee = session.post("/api/users", body(unique("plain"), "Plain Person", "EMPLOYEE"));
+        String employeeId = extract(employee.body(), "id");
+        HttpResponse<String> reportToEmployee = session.post("/api/users",
+                "{\"email\":\"" + unique("report") + "\",\"displayName\":\"Report Person\","
+                        + "\"role\":\"EMPLOYEE\",\"managerId\":\"" + employeeId + "\"}");
+        assertThat(reportToEmployee.statusCode()).isEqualTo(400);
+        assertThat(reportToEmployee.body()).contains("INVALID_MANAGER");
+
+        User hr = seededRoleAccount(users, encoder, "hr-manager-" + System.nanoTime() + "@acme.test",
+                Role.HR, HR_PASSWORD);
+        HttpResponse<String> reportToHr = session.post("/api/users",
+                "{\"email\":\"" + unique("report") + "\",\"displayName\":\"Report Person\","
+                        + "\"role\":\"EMPLOYEE\",\"managerId\":\"" + hr.getId() + "\"}");
+        assertThat(reportToHr.statusCode()).isEqualTo(400);
+        assertThat(reportToHr.body()).contains("INVALID_MANAGER");
+    }
+
     private static String unique(String prefix) {
         return prefix + "-" + System.nanoTime() + "@acme.test";
+    }
+
+    // ------------------------------------------------- review round 2 (M-01/M-02/M-04)
+
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Europe/Istanbul");
+
+    private static LocalDate today() {
+        return LocalDate.now(BUSINESS_ZONE);
+    }
+
+    /** A Monday three weeks ahead that starts a holiday-free week, so a one-day fixture works (N-02). */
+    private LocalDate nextMonday() {
+        return WorkingDays.holidayFreeMonday(today().plusWeeks(3), 1, publicHolidays());
+    }
+
+    /** The rows the production business calendar reads (BR-4); the fixture never hard-codes them. */
+    private Set<LocalDate> publicHolidays() {
+        return Set.copyOf(jdbc.queryForList("select day from public_holiday", LocalDate.class));
+    }
+
+    /** HR records a pending request on the employee's behalf; returns its id. */
+    private String recordPendingLeave(String employeeId, LocalDate start, LocalDate end) throws Exception {
+        HttpResponse<String> created = session.post("/api/leave/requests",
+                "{\"type\":\"ANNUAL\",\"startDate\":\"" + start + "\",\"endDate\":\"" + end
+                        + "\",\"reason\":\"bekleyen talep\",\"employeeId\":\"" + employeeId + "\"}");
+        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
+        return extract(created.body(), "id");
+    }
+
+    private String createEmployeeWith(UUID managerId, LocalDate hireDate) throws Exception {
+        HttpResponse<String> created = session.post("/api/users",
+                "{\"email\":\"" + unique("org") + "\",\"displayName\":\"Org Person\","
+                        + "\"role\":\"EMPLOYEE\"" + managerAndHireDate(managerId, hireDate) + "}");
+        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
+        return extract(created.body(), "id");
+    }
+
+    private static String managerAndHireDate(UUID managerId, LocalDate hireDate) {
+        StringBuilder fields = new StringBuilder();
+        if (managerId != null) {
+            fields.append(",\"managerId\":\"").append(managerId).append('"');
+        }
+        if (hireDate != null) {
+            fields.append(",\"hireDate\":\"").append(hireDate).append('"');
+        }
+        return fields.toString();
+    }
+
+    @Test
+    void shouldRejectAnInsaneHireDateOnCreationToo() throws Exception {
+        // N-03: creation had no bound at all. A 1900-01-01 typo would arrive with ~3,168 business days
+        // of entitlement and a future date describes no employment — the shared hire-date validator
+        // the edit already used now answers for both endpoints (N-03); it is clamped to today in the
+        // business zone (N-06), so today is accepted and tomorrow is not.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+
+        String ancientEmail = unique("ancient");
+        HttpResponse<String> ancient = session.post("/api/users",
+                "{\"email\":\"" + ancientEmail + "\",\"displayName\":\"Ancient Person\","
+                        + "\"role\":\"EMPLOYEE\",\"hireDate\":\"1900-01-01\"}");
+        assertThat(ancient.statusCode()).as(ancient.body()).isEqualTo(400);
+        assertThat(ancient.body()).contains("INVALID_HIRE_DATE");
+
+        String futureEmail = unique("future");
+        HttpResponse<String> future = session.post("/api/users",
+                "{\"email\":\"" + futureEmail + "\",\"displayName\":\"Future Person\","
+                        + "\"role\":\"EMPLOYEE\",\"hireDate\":\"" + today().plusDays(1) + "\"}");
+        assertThat(future.statusCode()).as(future.body()).isEqualTo(400);
+        assertThat(future.body()).contains("INVALID_HIRE_DATE");
+
+        // Neither refusal created an account.
+        String list = session.get("/api/users").body();
+        assertThat(list).doesNotContain(ancientEmail);
+        assertThat(list).doesNotContain(futureEmail);
+
+        // The last accepted day is today itself: the bound did not overshoot in the other direction.
+        HttpResponse<String> accepted = session.post("/api/users",
+                "{\"email\":\"" + unique("today") + "\",\"displayName\":\"Today Person\","
+                        + "\"role\":\"EMPLOYEE\",\"hireDate\":\"" + today() + "\"}");
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
+        assertThat(extract(accepted.body(), "hireDate")).isEqualTo(today().toString());
+    }
+
+    @Test
+    void shouldRefuseAHireDateEditThatWouldMakeTheBalanceNegative() throws Exception {
+        // M-01: "bakiye negatif olamaz" must survive an org edit, not only a leave write. Ten pending
+        // business days fit two completed years; one month of service funds nothing.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> manager = session.post("/api/users", body(unique("edit-lead"), "Edit Lead", "MANAGER"));
+        String managerId = extract(manager.body(), "id");
+        LocalDate twoYears = today().minusYears(2);
+        String employeeId = createEmployeeWith(UUID.fromString(managerId), twoYears);
+        recordPendingLeave(employeeId, nextMonday(), nextMonday().plusDays(11));
+
+        HttpResponse<String> refused = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"" + today().minusMonths(1) + "\"}");
+
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+        assertThat(refused.body()).contains("USER_EDIT_WOULD_GO_NEGATIVE");
+        // The row is untouched: the hire date on record is still the funded one.
+        assertThat(jdbc.queryForObject("select hire_date from users where id = ?",
+                LocalDate.class, UUID.fromString(employeeId))).isEqualTo(twoYears);
+
+        // The gate is the negative balance, not hire-date edits as such: a funded date still saves.
+        HttpResponse<String> accepted = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"" + today().minusYears(3) + "\"}");
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(200);
+        assertThat(extract(accepted.body(), "hireDate")).isEqualTo(today().minusYears(3).toString());
+    }
+
+    @Test
+    void shouldRefuseToClearTheManagerOfAnEmployeeWithAPendingRequest() throws Exception {
+        // M-02: BR-7's approver is the direct manager, so taking the link away strands a PENDING
+        // request. The refusal mirrors MANAGER_HAS_REPORTS, and an employee without pending work can
+        // still have the link cleared.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> manager = session.post("/api/users", body(unique("strand-lead"), "Strand Lead", "MANAGER"));
+        String managerId = extract(manager.body(), "id");
+        String employeeId = createEmployeeWith(UUID.fromString(managerId), today().minusYears(2));
+        recordPendingLeave(employeeId, nextMonday(), nextMonday());
+        String freeId = createEmployeeWith(UUID.fromString(managerId), today().minusYears(2));
+
+        HttpResponse<String> refused = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":null,\"hireDate\":\"" + today().minusYears(2) + "\"}");
+
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+        assertThat(refused.body()).contains("MANAGER_HAS_PENDING_REQUESTS");
+        // The link survives the refusal: the request still has the one person who can decide it.
+        assertThat(jdbc.queryForObject("select manager_id from users where id = ?",
+                UUID.class, UUID.fromString(employeeId))).isEqualTo(UUID.fromString(managerId));
+
+        HttpResponse<String> allowed = session.patch("/api/users/" + freeId,
+                "{\"managerId\":null,\"hireDate\":\"" + today().minusYears(2) + "\"}");
+        assertThat(allowed.statusCode()).as(allowed.body()).isEqualTo(200);
+        assertThat(allowed.body()).contains("\"managerId\":null");
+    }
+
+    @Test
+    void shouldRejectAHireDateOutsideTheSaneRange() throws Exception {
+        // M-01: bound the field. A 1900 date and a future one are typos, not careers.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> manager = session.post("/api/users", body(unique("range-lead"), "Range Lead", "MANAGER"));
+        String managerId = extract(manager.body(), "id");
+        String employeeId = createEmployeeWith(UUID.fromString(managerId), null);
+
+        HttpResponse<String> ancient = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"1900-01-01\"}");
+        assertThat(ancient.statusCode()).as(ancient.body()).isEqualTo(400);
+        assertThat(ancient.body()).contains("INVALID_HIRE_DATE");
+
+        HttpResponse<String> future = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"" + today().plusYears(1) + "\"}");
+        assertThat(future.statusCode()).as(future.body()).isEqualTo(400);
+        assertThat(future.body()).contains("INVALID_HIRE_DATE");
+
+        // N-06: the upper bound is today in the business zone, not today+1 in UTC. Tomorrow is
+        // already a date no employment can have started on; only today is the last accepted day.
+        HttpResponse<String> tomorrow = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"" + today().plusDays(1) + "\"}");
+        assertThat(tomorrow.statusCode()).as(tomorrow.body()).isEqualTo(400);
+        assertThat(tomorrow.body()).contains("INVALID_HIRE_DATE");
+        HttpResponse<String> currentDay = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"" + today() + "\"}");
+        assertThat(currentDay.statusCode()).as(currentDay.body()).isEqualTo(200);
+        assertThat(extract(currentDay.body(), "hireDate")).isEqualTo(today().toString());
+
+        // Nothing was written by the refusals: the row holds exactly the accepted day.
+        assertThat(jdbc.queryForObject("select hire_date from users where id = ?",
+                LocalDate.class, UUID.fromString(employeeId))).isEqualTo(today());
+    }
+
+    @Test
+    void shouldRefuseTheSelfEditAndAProtectedAccountEdit() throws Exception {
+        // M-04: the org-data edit carries the same two gates as deactivate/reset-password; without
+        // them PATCH would be a takeover path around them.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String myId = extract(session.get("/api/auth/me").body(), "id");
+
+        HttpResponse<String> self = session.patch("/api/users/" + myId,
+                "{\"managerId\":null,\"hireDate\":\"2020-02-03\"}");
+
+        assertThat(self.statusCode()).as(self.body()).isEqualTo(403);
+        assertThat(self.body()).contains("SELF_ACTION_NOT_ALLOWED");
+
+        User otherHr = seededRoleAccount(users, encoder, "hr-edit-" + System.nanoTime() + "@acme.test",
+                Role.HR, HR_PASSWORD);
+        HttpResponse<String> protectedAccount = session.patch("/api/users/" + otherHr.getId(),
+                "{\"managerId\":null,\"hireDate\":\"2020-02-03\"}");
+
+        assertThat(protectedAccount.statusCode()).as(protectedAccount.body()).isEqualTo(403);
+        assertThat(protectedAccount.body()).contains("PROTECTED_ACCOUNT");
+        // The refusal left the seeded account's row alone.
+        assertThat(jdbc.queryForObject("select hire_date from users where id = ?",
+                LocalDate.class, otherHr.getId())).isNull();
     }
 }

@@ -55,8 +55,19 @@ Upgrades keep `scripts/check` green; a major upgrade that changes behavior is it
   `PASSWORD_CHANGE_REQUIRED`, `ACCOUNT_LOCKED`, `INVALID_PASSWORD`, `PASSWORD_MISMATCH`,
   `WEAK_PASSWORD`, `VALIDATION_FAILED`, `INVALID_REQUEST`, `INVALID_PARAMETER`, `INVALID_ROLE`,
   `ROLE_NOT_ASSIGNABLE`, `PROTECTED_ACCOUNT`, `EMAIL_EXISTS`, `SELF_ACTION_NOT_ALLOWED`, `NOT_FOUND`,
-  `METHOD_NOT_ALLOWED`, `UNSUPPORTED_MEDIA_TYPE`, `CONFLICT`, `INTERNAL_ERROR`, and the leave
-  codes `LEAVE_BALANCE_INSUFFICIENT`, `LEAVE_OVERLAP`, `LEAVE_PAST_DATE`.
+  `METHOD_NOT_ALLOWED`, `UNSUPPORTED_MEDIA_TYPE`, `INTERNAL_ERROR`, and `ERROR` — the advice's
+  fallback for a status that has no code of its own (`ApiExceptionHandler.codeFor`).
+- User-administration codes: `INVALID_MANAGER`, `INVALID_HIRE_DATE`, `MANAGER_HAS_REPORTS`,
+  `MANAGER_HAS_PENDING_REQUESTS`, `USER_EDIT_WOULD_GO_NEGATIVE`.
+- Leave codes — exactly the constants of `leave/internal/LeaveError.java`, and the SPA maps them in
+  `web/src/features/leave/format.ts`: `LEAVE_PAST_DATE`, `LEAVE_INVALID_RANGE`,
+  `LEAVE_RANGE_TOO_LONG`, `LEAVE_NO_WORKING_DAY`, `LEAVE_REASON_REQUIRED`, `LEAVE_EXCUSE_TOO_LONG`,
+  `LEAVE_RETROACTIVE_REASON_REQUIRED`, `LEAVE_NO_HIRE_DATE`, `LEAVE_OVERLAP`,
+  `LEAVE_BALANCE_EXCEEDED`, `LEAVE_INVALID_ADJUSTMENT`, `LEAVE_ADJUSTMENT_NOT_ALLOWED`,
+  `LEAVE_NO_MANAGER`, `LEAVE_NOT_MANAGER`, `LEAVE_NOT_OWNER`, `LEAVE_NOT_PENDING`,
+  `LEAVE_NOT_APPROVED`, `LEAVE_ALREADY_STARTED`. The three shared codes above (`NOT_FOUND`,
+  `NOT_AUTHORIZED`, `INVALID_PARAMETER`) are reused rather than minted a second time with a `LEAVE_`
+  prefix. The enum, not this line, is the source of truth: a new code is added there and here.
 - 5xx never leaks internals or stack traces; the response carries `requestId` and the server logs
   the detail against the same `requestId`. 4xx never carries a stack trace either.
 - User-facing text comes from the UI catalogue (tr/en); the API returns a stable English `code` and
@@ -104,7 +115,9 @@ Upgrades keep `scripts/check` green; a major upgrade that changes behavior is it
   for the structural rules. **Contrast is measured in the real browser**: text contrast by the axe
   scan in `web/e2e/accessibility.spec.ts`; the gradient sign-in panel by computing its text against
   every gradient stop (`::shouldKeepTheBrandPanelTextReadable`); control boundaries (WCAG 1.4.11) by
-  the computed-colour check in `web/e2e/contrast.spec.ts` — jsdom has no stylesheet, axe cannot
+  the computed-colour check in `web/e2e/contrast.spec.ts` (the helper itself, `controlContrast`, lives
+  in `web/e2e/layout.ts`; the `/leave` employee listbox's own boundary and its 44 px options are
+  measured once while open in `web/e2e/leave.spec.ts`) — jsdom has no stylesheet, axe cannot
   resolve a background image, and axe has no rule for non-text contrast.
 - Layout is mobile-first: 360 px is the smallest width to keep working, 1024 px and up is the target.
 
