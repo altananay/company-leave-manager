@@ -4,6 +4,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -35,4 +36,11 @@ public interface LeaveRepository extends JpaRepository<LeaveRequest, UUID> {
 
     /** Whether the account still has a request only its current manager could decide (M-02). */
     boolean existsByEmployeeIdAndStatus(UUID employeeId, LeaveRequestStatus status);
+
+    /**
+     * Whether an active request starts before {@code day} (N-01): the org-data edit asks this before
+     * it moves the hire date past the start of a leave.
+     */
+    boolean existsByEmployeeIdAndStatusInAndStartDateBefore(
+            UUID employeeId, Collection<LeaveRequestStatus> statuses, LocalDate day);
 }

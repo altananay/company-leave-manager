@@ -482,6 +482,17 @@ public class LeaveService {
         return requests.existsByEmployeeIdAndStatus(employeeId, LeaveRequestStatus.PENDING);
     }
 
+    /**
+     * Whether an active request starts before {@code hireDate} (spec 0004 review round 3, N-01): the
+     * key invariant "izin işe girişten önce başlayamaz" ({@code docs/domain.md}) must hold after an
+     * org edit, not only when a request is created. The identity module asks before it stores a new
+     * hire date; the request state is this module's to read, so the question is answered here.
+     */
+    public boolean hasActiveLeaveStartingBefore(UUID employeeId, LocalDate hireDate) {
+        return hireDate != null && requests.existsByEmployeeIdAndStatusInAndStartDateBefore(
+                employeeId, LeaveRequestStatus.active(), hireDate);
+    }
+
     private static EmployeeView withHireDate(EmployeeView employee, LocalDate hireDate) {
         return new EmployeeView(
                 employee.id(),

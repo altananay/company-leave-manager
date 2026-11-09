@@ -7,7 +7,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.net.http.HttpResponse;
-import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -21,8 +20,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class LeaveRequestIT extends LeaveTestSupport {
 
-    @Autowired
-    JdbcTemplate jdbc;
 
     @Autowired
     LeaveAdjustmentRepository adjustments;
@@ -41,11 +38,14 @@ class LeaveRequestIT extends LeaveTestSupport {
         assertThat(weekend.statusCode()).as(weekend.body()).isEqualTo(201);
         assertThat(number(weekend.body(), "businessDays")).isEqualTo(2);
 
-        // A public holiday inside the week is subtracted too: BR-4 reads the calendar table.
-        LocalDate holiday = LocalDate.of(2030, 1, 2);   // a Wednesday
+        // A public holiday inside the week is subtracted too: BR-4 reads the calendar table. The
+        // holiday is the Wednesday of the next clean week (N-02), not a fixed date whose weekday and
+        // distance from a seeded holiday would have to be rechecked by hand — and the week after the
+        // first request keeps the two ranges from overlapping (BR-6).
+        LocalDate weekStart = monday.plusDays(7);
+        LocalDate holiday = weekStart.plusDays(2);
         jdbc.update("insert into public_holiday (day, name) values (?, ?)", holiday, "Test tatili");
         try {
-            LocalDate weekStart = holiday.minusDays(2);
             HttpResponse<String> withHoliday = createLeave(member, "EXCUSE",
                     weekStart, weekStart.plusDays(4), "resmî tatil");
             assertThat(withHoliday.statusCode()).as(withHoliday.body()).isEqualTo(201);
@@ -518,7 +518,9 @@ class LeaveRequestIT extends LeaveTestSupport {
         Account manager = createAccount("MANAGER", null, null);
         Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(3));
         Session managerSession = signIn(manager);
-        LocalDate past = today().minusDays(7);
+        // A single retroactive day has to be a working day on any day of the year (N-02): a Saturday
+        // or a seeded holiday would count zero business days and answer LEAVE_NO_WORKING_DAY.
+        LocalDate past = workingDayDaysAgo(7);
 
         HttpResponse<String> noReason = createLeaveFor(session, employee.id(), "EXCUSE", past, past, "");
         assertThat(noReason.statusCode()).isEqualTo(400);
@@ -615,9 +617,19 @@ class LeaveRequestIT extends LeaveTestSupport {
         Session member = signIn(employee);
         Session managerSession = signIn(manager);
         LocalDate monday = nextMonday();
-        String requestId = extract(createLeave(member, "ANNUAL", monday, monday.plusDays(11), "iki hafta").body(), "id");
+        HttpResponse<String> created = createLeave(member, "ANNUAL", monday, monday.plusDays(11), "iki hafta");
+        String requestId = extract(created.body(), "id");
         assertThat(approve(managerSession, requestId).statusCode()).isEqualTo(200);
-        assertThat(number(member.get("/api/leave/balance").body(), "remaining")).isEqualTo(18);
+
+        // N-02: the expected remainder is the request's own business-day count, not a hard-coded 18.
+        // Two completed years fund 14 + 14 days (BR-1/BR-3) whatever day of the year CI runs on.
+        String before = member.get("/api/leave/balance").body();
+        int businessDays = number(created.body(), "businessDays");
+        int funded = number(before, "entitlement") + number(before, "carryover");
+        assertThat(number(before, "entitlement")).isEqualTo(14);
+        assertThat(number(before, "carryover")).isEqualTo(14);
+        assertThat(number(before, "approved")).isEqualTo(businessDays);
+        assertThat(number(before, "remaining")).isEqualTo(funded - businessDays);
 
         HttpResponse<String> refused = session.patch("/api/users/" + employee.id(),
                 "{\"managerId\":\"" + manager.id() + "\",\"hireDate\":\"" + today().minusMonths(1) + "\"}");
@@ -625,9 +637,75 @@ class LeaveRequestIT extends LeaveTestSupport {
         assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
         assertThat(errorCode(refused)).isEqualTo("USER_EDIT_WOULD_GO_NEGATIVE");
         String balance = member.get("/api/leave/balance").body();
-        assertThat(number(balance, "remaining")).isEqualTo(18);
+        assertThat(number(balance, "remaining")).isEqualTo(funded - businessDays);
         assertThat(extract(balance, "hireDate")).isEqualTo(today().minusYears(2).toString());
         assertThat(number(balance, "remaining")).isGreaterThanOrEqualTo(0);
+    }
+
+    @Test
+    void shouldRefuseAHireDateEditPastTheStartOfAnActiveExcuseLeave() throws Exception {
+        // N-01: an excuse request is balance-free (BR-9), so the negative-balance guard cannot see
+        // this edit at all. "İzin işe girişten önce başlayamaz" (docs/domain.md) has to refuse it on
+        // its own — and the refusal leaves the row and the request exactly as they were.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(2));
+        LocalDate leaveDay = workingDayDaysAgo(7);
+        HttpResponse<String> recorded = createLeaveFor(session, employee.id(), "EXCUSE",
+                leaveDay, leaveDay, "rapor sonradan iletildi");
+        assertThat(recorded.statusCode()).as(recorded.body()).isEqualTo(201);
+        String requestId = extract(recorded.body(), "id");
+
+        HttpResponse<String> refused = session.patch("/api/users/" + employee.id(),
+                "{\"managerId\":\"" + manager.id() + "\",\"hireDate\":\"" + leaveDay.plusDays(1) + "\"}");
+
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(400);
+        assertThat(errorCode(refused)).isEqualTo("INVALID_HIRE_DATE");
+        assertThat(jdbc.queryForObject("select hire_date from users where id = ?", LocalDate.class,
+                employee.id())).isEqualTo(today().minusYears(2));
+        assertThat(session.get("/api/leave/requests?size=100").body()).contains(requestId);
+
+        // The rule is the start, not hire-date edits as such: the leave's own day is accepted.
+        HttpResponse<String> accepted = session.patch("/api/users/" + employee.id(),
+                "{\"managerId\":\"" + manager.id() + "\",\"hireDate\":\"" + leaveDay + "\"}");
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(200);
+        assertThat(extract(accepted.body(), "hireDate")).isEqualTo(leaveDay.toString());
+    }
+
+    @Test
+    void shouldRefuseAHireDateEditPastTheStartOfAnActiveAnnualLeaveEvenWithAFundedBalance() throws Exception {
+        // N-01: an annual request can leave a *positive* remainder after the edit, so
+        // USER_EDIT_WOULD_GO_NEGATIVE would let this through. The +5-day adjustment funds the balance
+        // under the candidate hire date (0 entitlement, 1 used day, +5) so only the leave's start can
+        // refuse — and the same edit is accepted once that request is no longer active (rejected).
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(3));
+        Session managerSession = signIn(manager);
+        LocalDate leaveDay = workingDayDaysAgo(5);
+        HttpResponse<String> recorded = createLeaveFor(session, employee.id(), "ANNUAL",
+                leaveDay, leaveDay, "geçmiş dönem izni");
+        assertThat(recorded.statusCode()).as(recorded.body()).isEqualTo(201);
+        String requestId = extract(recorded.body(), "id");
+        HttpResponse<String> adjusted = session.post("/api/leave/adjustments",
+                "{\"employeeId\":\"" + employee.id() + "\",\"days\":5,\"reason\":\"geçmiş dönem düzeltmesi\"}");
+        assertThat(adjusted.statusCode()).as(adjusted.body()).isEqualTo(200);
+        assertThat(number(adjusted.body(), "remaining")).isGreaterThan(0);
+
+        HttpResponse<String> refused = session.patch("/api/users/" + employee.id(),
+                "{\"managerId\":\"" + manager.id() + "\",\"hireDate\":\"" + today() + "\"}");
+
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(400);
+        assertThat(errorCode(refused)).isEqualTo("INVALID_HIRE_DATE");
+        assertThat(jdbc.queryForObject("select hire_date from users where id = ?", LocalDate.class,
+                employee.id())).isEqualTo(today().minusYears(3));
+
+        // The same edit, with the request no longer active: accepted, so the refusal was the start.
+        assertThat(reject(managerSession, requestId, "geçmiş kayıt düzeltildi").statusCode()).isEqualTo(200);
+        HttpResponse<String> accepted = session.patch("/api/users/" + employee.id(),
+                "{\"managerId\":\"" + manager.id() + "\",\"hireDate\":\"" + today() + "\"}");
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(200);
+        assertThat(extract(accepted.body(), "hireDate")).isEqualTo(today().toString());
     }
 
     @Test
@@ -637,7 +715,9 @@ class LeaveRequestIT extends LeaveTestSupport {
         loginAsHr();
         Account manager = createAccount("MANAGER", null, null);
         Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
-        LocalDate beforeHire = weekdayYearsAgo(2);
+        // Two years ago is before the hire date on every day of the year, and the day itself has to be
+        // a working day or the zero-day rule answers first (N-02).
+        LocalDate beforeHire = workingDayYearsAgo(2);
 
         HttpResponse<String> refused = createLeaveFor(session, employee.id(), "EXCUSE",
                 beforeHire, beforeHire, "işe girişten önce");
@@ -645,7 +725,7 @@ class LeaveRequestIT extends LeaveTestSupport {
         assertThat(refused.statusCode()).as(refused.body()).isEqualTo(400);
         assertThat(errorCode(refused)).isEqualTo("LEAVE_INVALID_RANGE");
 
-        LocalDate insideEmployment = today().minusDays(7);
+        LocalDate insideEmployment = workingDayDaysAgo(7);
         assertThat(createLeaveFor(session, employee.id(), "EXCUSE", insideEmployment, insideEmployment,
                 "rapor sonradan iletildi").statusCode()).isEqualTo(201);
     }
@@ -670,15 +750,6 @@ class LeaveRequestIT extends LeaveTestSupport {
 
         assertThat(extremePreview.statusCode()).as(extremePreview.body()).isEqualTo(400);
         assertThat(errorCode(extremePreview)).isEqualTo("LEAVE_INVALID_RANGE");
-    }
-
-    /** A weekday {@code years} before today: a retroactive single day that really is a working day. */
-    private static LocalDate weekdayYearsAgo(int years) {
-        LocalDate day = today().minusYears(years);
-        while (day.getDayOfWeek() == DayOfWeek.SATURDAY || day.getDayOfWeek() == DayOfWeek.SUNDAY) {
-            day = day.minusDays(1);
-        }
-        return day;
     }
 
     @Test

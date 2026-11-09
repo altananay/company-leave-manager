@@ -1,8 +1,6 @@
 package com.company.leavemanager.leave;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.net.http.HttpResponse;
 import java.time.LocalDate;
@@ -17,8 +15,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class LeaveApprovalRulesIT extends LeaveTestSupport {
 
-    @Autowired
-    JdbcTemplate jdbc;
 
     @Test
     void shouldRejectAnApprovalWhoseStartIsInThePast() throws Exception {

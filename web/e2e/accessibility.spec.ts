@@ -708,9 +708,11 @@ test('shouldHaveNoAccessibilityViolationsOnTheManagerQueueAndTheHrAdjustment', a
   expect(fixture.status, 'the fixture request is pending').toBe('PENDING')
 
   // HR's adjustment row: choose the employee, then fill the form. The row's own states are scanned
-  // in full; the open listbox is measured by `contrast.spec.ts#shouldKeepTheRoleListboxReadable`
-  // and by the width test, because Radix's select marks the page `aria-hidden` while it is open and
-  // its focus guard would be reported as a false `aria-hidden-focus` violation.
+  // in full, with the popup closed: Radix marks the page `aria-hidden` while a select is open, so
+  // axe would report its focus guard as a false `aria-hidden-focus` violation. The open employee
+  // listbox is not left unmeasured — `leave.spec.ts#shouldKeepTheHrEmployeeListboxMeasurableWhileOpen`
+  // measures it once, while it is open (boundary contrast + 44 px options). That is the only
+  // listbox measurement on this screen; the `/users` role listbox is `contrast.spec.ts`'s.
   await goToLeave(page)
   await expect(page.getByRole('heading', { name: 'İzin talepleri' })).toBeVisible()
   await page.getByRole('combobox', { name: 'Çalışan' }).click()

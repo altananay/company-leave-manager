@@ -28,4 +28,14 @@ public interface EmployeeLeaveFacts {
      * can decide those (BR-7), so the manager link may not be taken away while one exists.
      */
     boolean hasPendingRequests(UUID employeeId);
+
+    /**
+     * Whether an active request ({@code PENDING} or {@code APPROVED}) starts before {@code hireDate}.
+     * "İzin işe girişten önce başlayamaz" ({@code docs/domain.md}, key invariants) has to survive an
+     * org edit too: moving the hire date past the start of an active leave would leave that leave
+     * outside the employment. The balance does not always catch it — an {@code EXCUSE} request is
+     * balance-free and an {@code ANNUAL} one can still leave a positive remainder — so identity asks
+     * the owner of the request state instead of re-deriving the question (review round 3, N-01).
+     */
+    boolean hasActiveLeaveStartingBefore(UUID employeeId, LocalDate hireDate);
 }

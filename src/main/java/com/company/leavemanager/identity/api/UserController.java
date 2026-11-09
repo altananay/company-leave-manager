@@ -54,6 +54,8 @@ public class UserController {
                     .body(ApiExceptionHandler.problem(HttpStatus.CONFLICT, "EMAIL_EXISTS"));
             case INVALID_MANAGER -> ResponseEntity.badRequest()
                     .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_MANAGER"));
+            case INVALID_HIRE_DATE -> ResponseEntity.badRequest()
+                    .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_HIRE_DATE"));
             case CREATED -> ResponseEntity.status(HttpStatus.CREATED).body(result.response());
         };
     }

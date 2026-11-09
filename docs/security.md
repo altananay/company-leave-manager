@@ -55,10 +55,13 @@
   those accounts are managed by the environment only. A `PATCH /api/users/{id}` carries the same two
   gates (`SELF_ACTION_NOT_ALLOWED`, `PROTECTED_ACCOUNT`) as deactivate and reset-password, plus the
   domain guards the edit could break: clearing the manager of an account with a `PENDING` request is
-  refused (`409 MANAGER_HAS_PENDING_REQUESTS`, because only the direct manager could decide it), and
-  a hire-date change that would push the balance below zero is refused
+  refused (`409 MANAGER_HAS_PENDING_REQUESTS`, because only the direct manager could decide it), a
+  hire-date change that would push the balance below zero is refused
   (`409 USER_EDIT_WOULD_GO_NEGATIVE`) — the balance stays non-negative through org edits too, and the
-  row is left untouched.
+  row is left untouched — and a hire date moved past the start of an active leave is refused
+  (`400 INVALID_HIRE_DATE`): "izin işe girişten önce başlayamaz" holds after an edit, not only when
+  the request is created (review round 3, N-01). A hire date outside 1950…today is refused on
+  creation with the same code and the same validator (N-03/N-06).
 - **SPA routes:** the shell is served at `/` and for the client routes under `/leave/**` and
   `/users` (spec 0004, backlog B-4; L-09): opening `/leave/requests` or `/users` directly returns
   the shell and the SPA picks the screen. The allow-list is explicit — a route is added to

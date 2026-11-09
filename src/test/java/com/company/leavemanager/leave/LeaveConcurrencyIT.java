@@ -31,8 +31,6 @@ class LeaveConcurrencyIT extends LeaveTestSupport {
 
     private static final int THREADS = 6;
 
-    @Autowired
-    JdbcTemplate jdbc;
 
     @Autowired
     DataSource dataSource;

@@ -3,15 +3,16 @@ package com.company.leavemanager.identity;
 import com.company.leavemanager.identity.internal.Role;
 import com.company.leavemanager.identity.internal.User;
 import com.company.leavemanager.identity.internal.UserRepository;
+import com.company.leavemanager.testing.WorkingDays;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.net.http.HttpResponse;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -485,13 +486,14 @@ class UserAdminIT extends IdentityTestSupport {
         return LocalDate.now(BUSINESS_ZONE);
     }
 
-    /** A Monday three weeks ahead: the pending fixture always starts in the future (BR-11). */
-    private static LocalDate nextMonday() {
-        LocalDate day = today().plusWeeks(3);
-        while (day.getDayOfWeek() != DayOfWeek.MONDAY) {
-            day = day.plusDays(1);
-        }
-        return day;
+    /** A Monday three weeks ahead that starts a holiday-free week, so a one-day fixture works (N-02). */
+    private LocalDate nextMonday() {
+        return WorkingDays.holidayFreeMonday(today().plusWeeks(3), 1, publicHolidays());
+    }
+
+    /** The rows the production business calendar reads (BR-4); the fixture never hard-codes them. */
+    private Set<LocalDate> publicHolidays() {
+        return Set.copyOf(jdbc.queryForList("select day from public_holiday", LocalDate.class));
     }
 
     /** HR records a pending request on the employee's behalf; returns its id. */
@@ -520,6 +522,41 @@ class UserAdminIT extends IdentityTestSupport {
             fields.append(",\"hireDate\":\"").append(hireDate).append('"');
         }
         return fields.toString();
+    }
+
+    @Test
+    void shouldRejectAnInsaneHireDateOnCreationToo() throws Exception {
+        // N-03: creation had no bound at all. A 1900-01-01 typo would arrive with ~3,168 business days
+        // of entitlement and a future date describes no employment — the shared hire-date validator
+        // the edit already used now answers for both endpoints (N-03); it is clamped to today in the
+        // business zone (N-06), so today is accepted and tomorrow is not.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+
+        String ancientEmail = unique("ancient");
+        HttpResponse<String> ancient = session.post("/api/users",
+                "{\"email\":\"" + ancientEmail + "\",\"displayName\":\"Ancient Person\","
+                        + "\"role\":\"EMPLOYEE\",\"hireDate\":\"1900-01-01\"}");
+        assertThat(ancient.statusCode()).as(ancient.body()).isEqualTo(400);
+        assertThat(ancient.body()).contains("INVALID_HIRE_DATE");
+
+        String futureEmail = unique("future");
+        HttpResponse<String> future = session.post("/api/users",
+                "{\"email\":\"" + futureEmail + "\",\"displayName\":\"Future Person\","
+                        + "\"role\":\"EMPLOYEE\",\"hireDate\":\"" + today().plusDays(1) + "\"}");
+        assertThat(future.statusCode()).as(future.body()).isEqualTo(400);
+        assertThat(future.body()).contains("INVALID_HIRE_DATE");
+
+        // Neither refusal created an account.
+        String list = session.get("/api/users").body();
+        assertThat(list).doesNotContain(ancientEmail);
+        assertThat(list).doesNotContain(futureEmail);
+
+        // The last accepted day is today itself: the bound did not overshoot in the other direction.
+        HttpResponse<String> accepted = session.post("/api/users",
+                "{\"email\":\"" + unique("today") + "\",\"displayName\":\"Today Person\","
+                        + "\"role\":\"EMPLOYEE\",\"hireDate\":\"" + today() + "\"}");
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
+        assertThat(extract(accepted.body(), "hireDate")).isEqualTo(today().toString());
     }
 
     @Test
@@ -594,9 +631,20 @@ class UserAdminIT extends IdentityTestSupport {
         assertThat(future.statusCode()).as(future.body()).isEqualTo(400);
         assertThat(future.body()).contains("INVALID_HIRE_DATE");
 
-        // Nothing was written by either refusal.
+        // N-06: the upper bound is today in the business zone, not today+1 in UTC. Tomorrow is
+        // already a date no employment can have started on; only today is the last accepted day.
+        HttpResponse<String> tomorrow = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"" + today().plusDays(1) + "\"}");
+        assertThat(tomorrow.statusCode()).as(tomorrow.body()).isEqualTo(400);
+        assertThat(tomorrow.body()).contains("INVALID_HIRE_DATE");
+        HttpResponse<String> currentDay = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"" + today() + "\"}");
+        assertThat(currentDay.statusCode()).as(currentDay.body()).isEqualTo(200);
+        assertThat(extract(currentDay.body(), "hireDate")).isEqualTo(today().toString());
+
+        // Nothing was written by the refusals: the row holds exactly the accepted day.
         assertThat(jdbc.queryForObject("select hire_date from users where id = ?",
-                LocalDate.class, UUID.fromString(employeeId))).isNull();
+                LocalDate.class, UUID.fromString(employeeId))).isEqualTo(today());
     }
 
     @Test

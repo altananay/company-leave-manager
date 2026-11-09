@@ -27,8 +27,6 @@ class LeaveAuditIT extends LeaveTestSupport {
     @Autowired
     AuditRepository auditRepository;
 
-    @Autowired
-    JdbcTemplate jdbc;
 
     @Test
     void shouldRecordEveryLeaveEventWithBeforeAndAfter() throws Exception {

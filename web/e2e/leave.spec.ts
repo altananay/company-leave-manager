@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
-import { expectTouchTargets, horizontalOverflow } from './layout'
+import { controlContrast, expectTouchTargets, horizontalOverflow } from './layout'
 import { goToLeave, logOut, navigation } from './navigation'
 
 const HR_EMAIL = 'hr@e2e.test'
@@ -298,8 +298,9 @@ test('shouldFitTheManagerQueueAndTheHrAdjustmentAtEveryWidth', async ({ page, br
   )
 
   // The HR adjustment row is filled once; the loop then measures the same row at each width. The
-  // open listbox is measured by the axe test (and by contrast.spec), not here: Radix portals it and
-  // its geometry is width-independent.
+  // open listbox is not measured here but once, while it is open, in
+  // `shouldKeepTheHrEmployeeListboxMeasurableWhileOpen` (boundary contrast + 44 px options): Radix
+  // portals it and its geometry is width-independent, so a per-width pass would add nothing.
   await goToLeave(page)
   await page.getByRole('combobox', { name: 'Çalışan' }).click()
   await page.getByRole('option', { name: fixture.employeeName, exact: true }).click()
@@ -341,6 +342,56 @@ test('shouldFitTheManagerQueueAndTheHrAdjustmentAtEveryWidth', async ({ page, br
   }
 
   await managerContext.close()
+})
+
+test('shouldKeepTheHrEmployeeListboxMeasurableWhileOpen', async ({ page }) => {
+  // N-05: nobody measured the /leave employee listbox while it was open. The accessibility scan
+  // closes it first (Radix marks the page `aria-hidden`, so axe would report a false
+  // `aria-hidden-focus` violation) and the width loop measures the page, not the portaled popup.
+  // Measured once here, while it is open: the popup boundary against the card behind it (WCAG
+  // 1.4.11, 3:1) and every option as a 44 px touch target.
+  await signIn(page, HR_EMAIL, HR_PASSWORD)
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+  const stamp = Date.now()
+  const employeeName = `Listbox Employee ${stamp}`
+  await page.evaluate(
+    async ({ suffix, displayName }) => {
+      const token = (await (await fetch('/api/auth/csrf')).json()).token
+      await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+        body: JSON.stringify({
+          email: `listbox-${suffix}@acme.test`,
+          displayName,
+          role: 'EMPLOYEE',
+        }),
+      })
+    },
+    { suffix: stamp, displayName: employeeName },
+  )
+
+  await goToLeave(page)
+  await page.getByRole('combobox', { name: 'Çalışan' }).click()
+  const listbox = page.getByRole('listbox')
+  await expect(listbox).toBeVisible()
+
+  expect(
+    await controlContrast(page, '[role="listbox"]', '[data-slot="card"]'),
+    'employee listbox border',
+  ).toBeGreaterThanOrEqual(3)
+
+  const options = page.getByRole('option')
+  const count = await options.count()
+  expect(count, 'the employee listbox lists the fixture account').toBeGreaterThan(0)
+  await expect(options.filter({ hasText: employeeName })).toBeVisible()
+  for (let index = 0; index < count; index += 1) {
+    const box = await options.nth(index).boundingBox()
+    expect(box?.height ?? 0, `employee option ${index} height`).toBeGreaterThanOrEqual(44)
+    expect(box?.width ?? 0, `employee option ${index} width`).toBeGreaterThanOrEqual(44)
+  }
+
+  await page.keyboard.press('Escape')
+  await expect(listbox).toHaveCount(0)
 })
 
 test('shouldServeTheNestedRouteDirectly', async ({ page }) => {
