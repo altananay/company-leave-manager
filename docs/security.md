@@ -53,8 +53,11 @@
   İK cannot deactivate itself or reset its own password through the admin screen, and cannot
   deactivate or reset a seeded `HR`/`CEO` account (`403 PROTECTED_ACCOUNT`): those accounts are
   managed by the environment only.
-- **No SPA deep links:** the shell is served at `/`; client-side routes are view state, so an
-  unknown non-API path is denied rather than forwarded to `index.html`.
+- **SPA routes:** the shell is served at `/` and for the client routes under `/leave/**`
+  (spec 0004, backlog B-4): opening `/leave/requests` directly returns the shell and the SPA picks
+  the screen. The allow-list is explicit — a route prefix is added to `SecurityConfig` and
+  `SpaController` together; any other non-API path is still denied rather than forwarded to
+  `index.html`.
 - **Object-level checks:** every endpoint that takes an employee or request identifier verifies the
   caller's scope before loading the object, not after.
 

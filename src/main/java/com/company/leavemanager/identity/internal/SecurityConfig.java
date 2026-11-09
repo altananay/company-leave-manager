@@ -88,6 +88,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/leave/adjustments").hasRole("HR")
                         .requestMatchers(HttpMethod.GET, "/api/leave/queue").hasRole("MANAGER")
                         .requestMatchers("/api/leave/**").authenticated()
+                        // The SPA shell is served for its client routes too, so a nested route can be
+                        // opened directly (spec 0004 AC-9, backlog B-4). The HTML is public; every
+                        // endpoint behind it still requires a session. Nothing else is forwarded:
+                        // an unknown non-API path stays denied (spec 0002).
+                        .requestMatchers(HttpMethod.GET, "/leave", "/leave/**").permitAll()
                         // The SPA shell and its assets stay public; anything else is denied by default.
                         .requestMatchers("/", "/index.html", "/favicon.svg", "/icons.svg", "/assets/**", "/error")
                         .permitAll()
