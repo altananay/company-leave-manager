@@ -1,7 +1,7 @@
 # Spec 0004 — İzin talebi akışı
 
 - Status: In progress
-- Phase: **A shipped (2026-11-09)** · B bekliyor (yarım gün + izinli günlerim)
+- Phase: **A shipped (2026-11-09)** · B: B1 + B2 planı onay bekliyor (2026-11-09)
 - Mode: lite
 - Plan: `specs/plans/0004-plan.md`
 - Business rules: `docs/domain.md` (BR-1…BR-11) — bu spec onları **yeniden tanımlamaz**, uygular.
@@ -19,8 +19,9 @@ raporlama ekranı, hastalık raporu dosyası, çok kademeli onay.
 
 ## Requirements
 
-- **Talep türleri:** `ANNUAL` (yıllık) ve `EXCUSE` (mazeret). Yalnız yıllık izin bakiye kullanır
-  (BR-9); mazeret bakiyesizdir (BR-10).
+- **Talep türleri:** `ANNUAL` (yıllık), `EXCUSE` (mazeret) ve B2'de BR-10'un altı özel türü
+  (evlilik, vefat, eş doğumu, karne, doğum günü, okulun ilk günü; D14). Yalnız yıllık izin bakiye
+  kullanır (BR-9); mazeret ve özel türler bakiyesizdir (BR-10).
 - **Tarih:** başlangıç/bitiş + yarım gün seçimi (`NONE` | `AM` | `PM`; yalnız tek günlük talepte).
   Süre **iş günü** olarak hesaplanır: hafta sonu ve resmî tatil düşülür (BR-4). Resmî tatiller
   veritabanında tutulur, İK yıllık olarak ekler.
@@ -66,6 +67,7 @@ raporlama ekranı, hastalık raporu dosyası, çok kademeli onay.
   - Talep formu: boş · doğrulama hatası (geçmiş tarih, çakışma, bakiye) · gönderiliyor · başarı
   - Yönetici kuyruğu: boş ("bekleyen talep yok") · liste · onay/ret sonrası güncellenmiş liste
   - Bakiye kartı: hesaplanıyor · bakiye · yönetici yok uyarısı
+  - İzinli günlerim: boş ("Önümüzdeki 90 günde izniniz yok") · liste · iskelet · hata
 - **Design reference:** yeni görsel dil yok; 0003'ün token'ları ve primitifleri. Yeni bileşen
   gerekirse yalnız kullanıldığı yerde doğar (ör. tarih aralığı alanı iki `Input` + takvim yerine
   metin alanı; takvim primitifi bu dilimde yok).
@@ -76,20 +78,22 @@ raporlama ekranı, hastalık raporu dosyası, çok kademeli onay.
 
 - **Sensitive area: evet** (izin hakkı ve onay yetkisi) — bu yüzden bağımsız inceleme ve iki turlu
   doğrulama zorunlu.
-- **BR-10'un altı özel izin türü Faz B'ye ertelendi** (evlilik, vefat, eş doğumu, karne, doğum günü,
-  okulun ilk günü). Neden: her biri kendi süresini, koşulunu ve penceresini getiriyor (doğum günü
-  180 gün, karne/okul günü yılda 1 gün, vefat için yakınlık derecesi) ve çocuk/akrabalık verisi
-  KVKK kapsamında ayrı bir inceleme ister; Faz A'da bunların yerine `EXCUSE` **gerekçe zorunlu ve
-  en çok 5 iş günü** olarak sınırlandı. Böylece "mazeret" ikinci bir yıllık izin gibi kullanılamaz.
+- **BR-10'un altı özel türü B2'de açılır** (evlilik, vefat, eş doğumu, karne, doğum günü, okulun ilk
+  günü). Faz A'da bunların yerine `EXCUSE` gerekçe zorunlu ve en çok 5 iş günü olarak sınırlandı;
+  B2 bu türleri kendi süre/koşul/pencereleriyle ekler (D17, D19). Çocuk/akraba verisi minimal
+  tutulur: yalnız doğum tarihi, okul çağı bayrağı ve yakınlık derecesi; çocuğun/akrabaların kimliği
+  toplanmaz.
 - **Kapsam dışı:** e-posta/Slack bildirimi, takvim (iCal/Google) entegrasyonu, mobil uygulama,
   raporlama/analitik ekranı, hastalık raporu dosyası veya eki, çok kademeli onay, vekalet (delegate),
-  toplu onay, yarım günden küçük süreler (saatlik izin), başka para birimi/tatil takvimi.
+  toplu onay, yarım günden küçük süreler (saatlik izin), çocuk/akraba kaydı (ad, doğum tarihi, okul;
+  D17'de reddedildi), başka para birimi/tatil takvimi.
 - **Backend:** yeni modül yok; `leave` modülü kendi sınırları içinde (ArchUnit kuralları korunur).
   Yeni uçlar `/api/leave/**` altında; oturum + CSRF + rol kuralları 0002'deki gibi.
 - **Veritabanı:** Flyway `V3__leave.sql` — `leave_request`, `public_holiday`, `leave_adjustment`,
   `users.manager_id`, `users.hire_date`. İnceleme turu 1 ekleri: `V4` iptal kaydı + İK geçmiş kayıt
-  işareti, `V5` denetim durumlarının `jsonb`'ye geçişi, `V6` 2027 tatil seed'i. Geri dönüşü olmayan
-  veri yok.
+  işareti, `V5` denetim durumlarının `jsonb`'ye geçişi, `V6` 2027 tatil seed'i. Faz B ekleri:
+  `V7` ondalık gün (`business_days`, `days`), `V8` doğum tarihi + okul çağı bayrağı + yakınlık
+  derecesi. Geri dönüşü olmayan veri yok.
 - **Tarih aralığı sınırı:** bir talep en çok **366 takvim günü** olabilir (`LEAVE_RANGE_TOO_LONG`);
   sınır hem `create` hem `preview` içinde, iş günü sayımından önce uygulanır.
 - **İş günü sayımı:** `business_days` **oluşturma anında dondurulur** (bilinçli): sonradan eklenen
@@ -98,9 +102,9 @@ raporlama ekranı, hastalık raporu dosyası, çok kademeli onay.
 - **Performans:** yeni bir bütçe yok; liste uçları sayfalanır (varsayılan 20, en çok 100).
 - **Eşzamanlılık:** aynı çalışanın yazma işlemleri (oluştur/karar/iptal/düzeltme) çalışan satırı
   kilitlenerek sıraya alınır; bakiye ve çakışma kontrolü kilit altında taze durumla yapılır.
-- **Split:** bu dilim büyük. Eğer plan aşamasında ikiye ayrılması gerekirse: **0004a** talep + onay +
-  bakiye (tam gün, hafta sonu hesabı), **0004b** yarım gün + resmî tatil takvimi + devir. Karar plan
-  kapısında verilir.
+- **Split:** Faz A tek PR olarak ship edildi. Faz B iki PR'a ayrıldı (D14): **B1** yarım gün +
+  ondalık gün + "izinli günlerim", **B2** BR-10'un altı özel türü + kişisel veri. B1 merge olmadan
+  B2 başlamaz.
 
 ## Review round 1 decisions (2026-11-09)
 
@@ -136,9 +140,77 @@ ayrıntı: plan `## Triage`):
 - **D13 (L-23) — kanıt.** Planın kanıt satırı, VERIFY'da bu commit'in CI koşu linki ve SHA'sı ile
   tamamlanır; o zamana kadar yer tutucudur.
 
+## Phase B decisions (2026-11-09)
+
+Faz B iki PR'a ayrıldı ve kararlar insan onayıyla verildi. Plan: `specs/plans/0004-plan.md` →
+"Phase B". B1 merge olmadan B2 başlamaz: B2, B1'in getirdiği ondalık gün birimini ve form altyapısını
+kullanır.
+
+- **D14 — B1/B2 ayrımı.** **B1**: yarım gün (AM/PM, 0,5), `business_days` `numeric(4,1)`, İK
+  düzeltmesinde 0,5 adımı, "izinli günlerim" görünümü. **B2**: BR-10'un altı özel türü (evlilik,
+  vefat, eş doğumu, karne, doğum günü, okulun ilk günü), süre/koşul/pencereleri ve gerektirdiği
+  minimal kişisel veri. Neden: B2 altı ayrı kural seti ve KVKK kararı getiriyor; ayrı inceleme ve
+  ayrı merge her dilimin kanıtını küçük tutar.
+- **D15 — Yarım gün kapsamı.** Yalnız `ANNUAL` ve `EXCUSE`; yalnız tek günlük talepte
+  (`startDate = endDate`) ve o gün iş günüyse; 0,5 gün sayılır. Özel türler tam gündür. Aynı gün
+  ikinci bir talep (biri öğleden önce, biri öğleden sonra olsa bile) BR-6 çakışmasıdır: kural gün
+  aralığına bakar, saat dilimine değil.
+- **D16 — Gün birimi.** `leave_request.business_days` ve `leave_adjustment.days` `numeric(4,1)`;
+  bakiye alanları (hak, devir, düzeltme, onaylı, bekleyen, kalan) 0,1 duyarlılığında döner. İK
+  düzeltmesi 0,5'in katı olmalı ve ±365 günle sınırlıdır. Neden: 0,5 gün taşıyan bir bakiye tam sayı
+  olamaz; tek birim her yerde aynı kalır (D12'nin uygulanışı).
+- **D17 — Kişisel veri (KVKK) minimal set.** BR-10'un koşullarını denetlemek için yalnız üç alan
+  tutulur: `users.birth_date` (doğum günü penceresi), `users.has_school_age_child` (karne ve okulun
+  ilk günü), `leave_request.kinship` (yalnız vefat; eş, çocuk, anne-baba, kardeş). Çocuğun adı,
+  doğum tarihi, okulu ve akrabanın kimliği **toplanmaz**. Amaç yalnız izin hakkının doğrulanmasıdır;
+  görünürlük D18'de; saklama istihdam süresi + yasal saklama, ayrıntı `docs/security.md`. Neden:
+  koşullar denetlenmeden BR-10 uygulanamaz; bayrak + enum, çocuk/akraba kaydından çok daha az veri
+  taşır.
+- **D18 — Görünürlük.** Doğum tarihi ve okul çağı bayrağı yalnız İK'nın kullanıcı uçlarında
+  (`GET/POST/PATCH /api/users`) görünür ve değişir; `/api/auth/me`, bakiye ve izin yanıtlarında
+  **yoktur**. Yakınlık derecesi talebin kendi kaydındadır ve yalnız çalışan, doğrudan yöneticisi ve
+  İK görür. Çalışan kendi doğum tarihini/bayrağını bu uygulamadan düzenleyemez (İK girer).
+- **D19 — BR-10 süre ve pencereleri.** "Süre" sütunu **üst sınırdır**: evlilik, vefat ve eş doğumu
+  en çok 5 iş günü; karne, doğum günü ve okulun ilk günü tam **1 iş günü** (tek gün). Karne ve okulun
+  ilk günü kotası **takvim yılında 1 gün**; doğum günü hakkı **en son doğum gününden itibaren 180
+  gün** içinde kullanılır ve o pencere başına 1 gündür. Kota onaylı **ve** bekleyen talepleri sayar;
+  onay anında kendi dışındakilerle yeniden kontrol edilir (D8 deseni). Altı tür de bakiyesizdir
+  (BR-9).
+- **D20 — "İzinli günlerim".** Çalışan yalnız kendi **onaylı** izin günlerini görür; uç
+  `GET /api/leave/days` tarih aralığı alır (varsayılan bugün…+90 gün, en çok 366 gün). Gün listesi
+  bugünkü tatil takvimiyle açılır; talebin dondurulmuş iş günü sayısı değişmez (D5). Bekleyen ve
+  iptal günler bu görünümde yoktur, talep listesindedir. Yönetici ve İK bu uçtan başkasının gün
+  listesini okuyamaz.
+
+### B1 — yarım gün, ondalık gün, izinli günlerim
+
+- `HalfDay` (`NONE|AM|PM`) talepte saklanır. Yarım gün seçimi tek günlük `ANNUAL`/`EXCUSE` talebinde
+  geçerlidir; iş günü sayısı 0,5 olur. Hafta sonu/tatil gününe yarım gün `LEAVE_NO_WORKING_DAY`,
+  birden çok güne veya özel türe yarım gün `LEAVE_HALF_DAY_INVALID`.
+- Özet (`preview`) ve bakiye 0,5 duyarlılığında döner; form "0,5 gün" gösterir.
+- "İzinli günlerim" kartı izin ekranındadır: tarih, tür ve yarım gün bilgisi; boş, yükleniyor ve
+  hata durumları; liste olarak ekran okuyucuyla okunur.
+- Göç: `V7__half_day_days.sql` — iki kolon `numeric(4,1)`, `business_days > 0` ve `days <> 0`
+  kontrolleri. Mevcut satırlar tam gün olarak korunur.
+
+### B2 — BR-10'un altı özel türü
+
+- Yeni türler: `MARRIAGE`, `BEREAVEMENT`, `SPOUSE_BIRTH`, `SCHOOL_REPORT`, `BIRTHDAY`,
+  `FIRST_SCHOOL_DAY`; hepsi bakiyesizdir. Gerekçe isteğe bağlıdır (mazerette olduğu gibi zorunlu
+  değil); vefat talebi yakınlık derecesini taşır ve zorunludur.
+- Karne ve okulun ilk günü okul çağında çocuk bayrağını, doğum günü doğum tarihini ister. Veri yoksa
+  talep kendi koduyla reddedilir: `LEAVE_NO_SCHOOL_AGE_CHILD`, `LEAVE_NO_BIRTH_DATE`.
+- İK kullanıcı formu doğum tarihi ve okul çağı bayrağını kazanır; ikisi de `USER_UPDATED`
+  denetiminde önce/sonra olarak görünür; `POST /api/users` da bu alanları kabul eder.
+- Göç: `V8__special_leave.sql` — `users.birth_date`, `users.has_school_age_child`,
+  `leave_request.kinship` ve üç kontrol kısıtı (yalnız vefatta zorunlu, dört değer, başka türde yok).
+- Yeni hata kodları: `LEAVE_SPECIAL_TOO_LONG`, `LEAVE_SPECIAL_ONE_DAY`, `LEAVE_KINSHIP_REQUIRED`,
+  `LEAVE_NO_SCHOOL_AGE_CHILD`, `LEAVE_NO_BIRTH_DATE`, `LEAVE_BIRTHDAY_WINDOW`,
+  `LEAVE_SPECIAL_QUOTA_USED`.
+
 ## Acceptance criteria
 
-- [ ] AC-1 — Çalışan `ANNUAL` veya `EXCUSE` türünde talep açar; süre iş günü olarak hesaplanır (hafta sonu ve resmî tatil düşülür) ve yarım gün seçimi tek günlük talepte 0,5 gün sayılır. **(Faz A: tür + iş günü tamam; yarım gün Faz B)**
+- [ ] AC-1 — Çalışan `ANNUAL` veya `EXCUSE` türünde talep açar; süre iş günü olarak hesaplanır (hafta sonu ve resmî tatil düşülür) ve yarım gün seçimi tek günlük talepte 0,5 gün sayılır. **(Faz A: tür + iş günü; yarım gün B1'de tamamlanır)**
 - [x] AC-2 — Talep kuralları uygulanır: geçmiş başlangıç, çakışan aktif talep ve bakiyeyi aşan yıllık talep reddedilir; kontrol hem talep hem onay anında çalışır.
 - [x] AC-3 — Bakiye kıdeme göre hak + devir + İK düzeltmeleri − onaylı − bekleyen olarak hesaplanır; yalnız yıllık izin bakiyeden düşer, mazeret düşmez.
 - [x] AC-4 — Onayı yalnızca çalışanın doğrudan yöneticisi verir; İK, CEO ve çalışanın kendisi onaylayamaz (403); yöneticisi olmayan çalışan talep açamaz.
@@ -149,6 +221,11 @@ ayrıntı: plan `## Triage`):
 - [x] AC-9 — İç içe rota (`/leave/requests`) doğrudan açıldığında 200 döner ve doğru ekranı gösterir (B-4 kapanır).
 - [x] AC-10 — Arayüz 0003'in kabuğunu ve bileşenlerini kullanır; 360/768/1440 px'te yatay kaydırma yok, tüm dokunma hedefleri ≥44 px, axe taraması sıfır ihlal, klavyeyle tam kullanım.
 - [x] AC-11 — Mevcut davranış korunur: giriş, kullanıcı yönetimi, parola akışı ve 0003'ün testleri değişmeden geçer; yeni uçlar oturum + CSRF olmadan 401/403 döner.
+- [ ] AC-12 — (B1) Yarım gün: tek günlük `ANNUAL`/`EXCUSE` talebinde `AM`/`PM` seçimi 0,5 iş günü sayılır ve `business_days` ondalık saklanır; özet, bakiye ve İK düzeltmesi 0,5 duyarlılığında çalışır; birden çok güne, özel türe veya iş günü olmayan güne yarım gün reddedilir.
+- [ ] AC-13 — (B1) Çalışan "İzinli günlerim" görünümünde yalnız kendi onaylı izin günlerini (tarih, tür, yarım gün) görür; bekleyen/iptal ve başkasının günleri görünmez; boş, yükleniyor ve hata durumları gösterilir.
+- [ ] AC-14 — (B2) Altı özel tür kendi süresi, koşulu ve penceresiyle açılır: evlilik/vefat/eş doğumu en çok 5 iş günü; karne/doğum günü/okulun ilk günü tam 1 iş günü; karne ve okulun ilk günü takvim yılında 1 gün; doğum günü en son doğum gününden 180 gün içinde 1 gün; hiçbiri bakiyeden düşmez; kota onay anında yeniden kontrol edilir.
+- [ ] AC-15 — (B2) Özel tür verisi minimal ve yetkilidir: doğum tarihi ile okul çağı bayrağı yalnız İK kullanıcı uçlarında yönetilir, değişikliği denetlenir ve izin/bakiye/`/me` yanıtlarında görünmez; yakınlık derecesi yalnız vefat talebinde saklanır ve yalnız çalışan, doğrudan yöneticisi ve İK görür; çocuk/akraba kimliği toplanmaz ve KVKK notu `docs/security.md`'de yer alır.
+- [ ] AC-16 — (B1+B2) Faz A ve 0003 davranışı korunur: tam gün taleplerin süresi ve bakiyesi değişmez, mevcut testler zayıflatılmadan geçer (gün birimi değiştiği için yalnız sayı tipi beklentileri güncellenir); yeni uçlar oturum + CSRF ister, kapsam dışına 404 döner; 360/768/1440 px'te yatay kaydırma yok, dokunma hedefleri ≥44 px, axe sıfır ihlal.
 
 ## Definition of Done
 
