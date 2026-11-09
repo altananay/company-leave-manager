@@ -126,6 +126,7 @@ function ManagerQueue({
                   <Button
                     type="button"
                     size="sm"
+                    className="min-w-11"
                     onClick={(event) => {
                       trigger.current = event.currentTarget
                       open({ request, approve: true })
@@ -137,6 +138,7 @@ function ManagerQueue({
                     type="button"
                     variant="secondary"
                     size="sm"
+                    className="min-w-11"
                     onClick={(event) => {
                       trigger.current = event.currentTarget
                       open({ request, approve: false })

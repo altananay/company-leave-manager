@@ -29,7 +29,10 @@ const buttonVariants = cva(
         // Compact is narrower, never shorter: the 44 px touch target holds on every size (AC-8).
         sm: 'h-11 rounded-control px-3 text-small',
         lg: 'h-12 rounded-panel px-6 text-body',
-        icon: 'size-11',
+        // An icon button is a square 44×44 target, and the floor is a minimum, not a hint: inside a
+        // tight flex row (the header at 360 px) flexbox would otherwise shrink it below 44, which is
+        // exactly what a wider Linux font did to the menu button (spec 0004, AC-10).
+        icon: 'size-11 min-w-11',
       },
     },
     defaultVariants: {

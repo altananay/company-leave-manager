@@ -394,6 +394,9 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
                   key={filter}
                   type="button"
                   size="sm"
+                  // A floor, not a look: a short label must still be a 44 px target (AC-10), the same
+                  // treatment the users screen's role chips already carry.
+                  className="min-w-11"
                   variant={statusFilter === filter ? 'default' : 'secondary'}
                   aria-pressed={statusFilter === filter}
                   onClick={() => {
@@ -466,6 +469,7 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
                         type="button"
                         size="sm"
                         variant="secondary"
+                        className="min-w-11"
                         onClick={(event) => {
                           detailTrigger.current = event.currentTarget
                           setDetail(request)
@@ -478,6 +482,7 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
                           type="button"
                           size="sm"
                           variant="destructive"
+                          className="min-w-11"
                           onClick={(event) => {
                             cancelTrigger.current = event.currentTarget
                             setCancelling(request)
@@ -504,6 +509,7 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
                   type="button"
                   variant="secondary"
                   size="sm"
+                  className="min-w-11"
                   onClick={() => setPage(currentPage - 1)}
                   disabled={currentPage === 1}
                 >
@@ -516,6 +522,7 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
                   type="button"
                   variant="secondary"
                   size="sm"
+                  className="min-w-11"
                   onClick={() => setPage(currentPage + 1)}
                   disabled={currentPage === pageCount}
                 >
