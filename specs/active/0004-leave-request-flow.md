@@ -1,6 +1,6 @@
 # Spec 0004 — İzin talebi akışı
 
-- Status: Approved (altananay, 2026-11-09)
+- Status: In progress — **Faz A shipped (2026-11-09)**, Faz B (yarım gün + izinli günlerim) bekliyor
 - Mode: lite
 - Plan: `specs/plans/0004-plan.md`
 - Business rules: `docs/domain.md` (BR-1…BR-11) — bu spec onları **yeniden tanımlamaz**, uygular.
@@ -137,17 +137,17 @@ ayrıntı: plan `## Triage`):
 
 ## Acceptance criteria
 
-- [ ] AC-1 — Çalışan `ANNUAL` veya `EXCUSE` türünde talep açar; süre iş günü olarak hesaplanır (hafta sonu ve resmî tatil düşülür) ve yarım gün seçimi tek günlük talepte 0,5 gün sayılır.
-- [ ] AC-2 — Talep kuralları uygulanır: geçmiş başlangıç, çakışan aktif talep ve bakiyeyi aşan yıllık talep reddedilir; kontrol hem talep hem onay anında çalışır.
-- [ ] AC-3 — Bakiye kıdeme göre hak + devir + İK düzeltmeleri − onaylı − bekleyen olarak hesaplanır; yalnız yıllık izin bakiyeden düşer, mazeret düşmez.
-- [ ] AC-4 — Onayı yalnızca çalışanın doğrudan yöneticisi verir; İK, CEO ve çalışanın kendisi onaylayamaz (403); yöneticisi olmayan çalışan talep açamaz.
-- [ ] AC-5 — Yaşam döngüsü: `PENDING → APPROVED | REJECTED`, `APPROVED → CANCELLED` (yalnız başlangıçtan önce, bakiye geri yüklenir); red/iptal bakiyeyi düşürmez.
-- [ ] AC-6 — Çalışan kendi taleplerini, bakiyesini ve izinli olduğu günleri görür; yönetici kendi ekibinin bekleyen taleplerini; İK tüm talepleri salt okuma görür (onay düğmesi yok).
-- [ ] AC-7 — Talep oluşturma, onay, ret, iptal ve bakiye düzeltmesi denetim kaydına yazılır; onay/ret kaydı önce/sonra durumunu taşır (B-7 kapanır).
-- [ ] AC-8 — Kullanıcı kaydı `manager` ve `hire_date` alanlarını kazanır; İK kullanıcı oluştururken yönetici atar; mevcut kullanıcılar etkilenmez (göç geriye dönük uyumlu).
-- [ ] AC-9 — İç içe rota (`/leave/requests`) doğrudan açıldığında 200 döner ve doğru ekranı gösterir (B-4 kapanır).
-- [ ] AC-10 — Arayüz 0003'in kabuğunu ve bileşenlerini kullanır; 360/768/1440 px'te yatay kaydırma yok, tüm dokunma hedefleri ≥44 px, axe taraması sıfır ihlal, klavyeyle tam kullanım.
-- [ ] AC-11 — Mevcut davranış korunur: giriş, kullanıcı yönetimi, parola akışı ve 0003'ün testleri değişmeden geçer; yeni uçlar oturum + CSRF olmadan 401/403 döner.
+- [ ] AC-1 — Çalışan `ANNUAL` veya `EXCUSE` türünde talep açar; süre iş günü olarak hesaplanır (hafta sonu ve resmî tatil düşülür) ve yarım gün seçimi tek günlük talepte 0,5 gün sayılır. **(Faz A: tür + iş günü tamam; yarım gün Faz B)**
+- [x] AC-2 — Talep kuralları uygulanır: geçmiş başlangıç, çakışan aktif talep ve bakiyeyi aşan yıllık talep reddedilir; kontrol hem talep hem onay anında çalışır.
+- [x] AC-3 — Bakiye kıdeme göre hak + devir + İK düzeltmeleri − onaylı − bekleyen olarak hesaplanır; yalnız yıllık izin bakiyeden düşer, mazeret düşmez.
+- [x] AC-4 — Onayı yalnızca çalışanın doğrudan yöneticisi verir; İK, CEO ve çalışanın kendisi onaylayamaz (403); yöneticisi olmayan çalışan talep açamaz.
+- [x] AC-5 — Yaşam döngüsü: `PENDING → APPROVED | REJECTED`, `APPROVED → CANCELLED` (yalnız başlangıçtan önce, bakiye geri yüklenir); red/iptal bakiyeyi düşürmez.
+- [x] AC-6 — Çalışan kendi taleplerini, bakiyesini ve izinli olduğu günleri görür; yönetici kendi ekibinin bekleyen taleplerini; İK tüm talepleri salt okuma görür (onay düğmesi yok).
+- [x] AC-7 — Talep oluşturma, onay, ret, iptal ve bakiye düzeltmesi denetim kaydına yazılır; onay/ret kaydı önce/sonra durumunu taşır (B-7 kapanır).
+- [x] AC-8 — Kullanıcı kaydı `manager` ve `hire_date` alanlarını kazanır; İK kullanıcı oluştururken yönetici atar; mevcut kullanıcılar etkilenmez (göç geriye dönük uyumlu).
+- [x] AC-9 — İç içe rota (`/leave/requests`) doğrudan açıldığında 200 döner ve doğru ekranı gösterir (B-4 kapanır).
+- [x] AC-10 — Arayüz 0003'in kabuğunu ve bileşenlerini kullanır; 360/768/1440 px'te yatay kaydırma yok, tüm dokunma hedefleri ≥44 px, axe taraması sıfır ihlal, klavyeyle tam kullanım.
+- [x] AC-11 — Mevcut davranış korunur: giriş, kullanıcı yönetimi, parola akışı ve 0003'ün testleri değişmeden geçer; yeni uçlar oturum + CSRF olmadan 401/403 döner.
 
 ## Definition of Done
 
