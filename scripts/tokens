@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# scripts/tokens - every visual colour, type size, shadow and radius comes from the design tokens
+# (spec 0003, AC-5 and AC-12).
+#
+# Scans the SPA source for colour literals and for named Tailwind size/shadow/radius utilities that
+# bypass the scale. The token file (web/src/index.css) is the only place a visual value may be
+# written; a literal or a `text-sm`/`shadow-lg`/`rounded-lg` anywhere else is a component that will
+# not follow a theme change. A line that genuinely needs a literal can opt out with the word
+# `tokens-allow` on that line.
+#
+# Scope: web/src/**/*.{ts,tsx} and every web/src/**/*.css except the token file itself. Assets
+# (favicon.svg, manifest) and web/index.html are outside the scan by design - an SVG cannot read a
+# CSS variable, and the page shell is not a component.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [ ! -d web/src ]; then
+  echo "TOKENS ERROR - web/src is missing; refusing to report a clean scan" >&2
+  exit 1
+fi
+
+# Two name lists, on purpose:
+# - inside a Tailwind arbitrary value (`text-[coral]`) the whole CSS keyword set is matched, because
+#   that is exactly how a colour sneaks past the tokens;
+# - as a bare word only the names a developer reaches for by accident are matched. Matching all 148
+#   there would flag English prose in comments ("the olive branch"), which is the false positive the
+#   gate must not produce.
+COLOUR_KEYWORDS='aliceblue|antiquewhite|aqua|aquamarine|azure|beige|bisque|black|blanchedalmond|blue|blueviolet|brown|burlywood|cadetblue|chartreuse|chocolate|coral|cornflowerblue|cornsilk|crimson|cyan|darkblue|darkcyan|darkgoldenrod|darkgray|darkgreen|darkgrey|darkkhaki|darkmagenta|darkolivegreen|darkorange|darkorchid|darkred|darksalmon|darkseagreen|darkslateblue|darkslategray|darkslategrey|darkturquoise|darkviolet|deeppink|deepskyblue|dimgray|dimgrey|dodgerblue|firebrick|floralwhite|forestgreen|fuchsia|gainsboro|ghostwhite|gold|goldenrod|gray|green|greenyellow|grey|honeydew|hotpink|indianred|indigo|ivory|khaki|lavender|lavenderblush|lawngreen|lemonchiffon|lightblue|lightcoral|lightcyan|lightgoldenrodyellow|lightgray|lightgreen|lightgrey|lightpink|lightsalmon|lightseagreen|lightskyblue|lightslategray|lightslategrey|lightsteelblue|lightyellow|lime|limegreen|linen|magenta|maroon|mediumaquamarine|mediumblue|mediumorchid|mediumpurple|mediumseagreen|mediumslateblue|mediumspringgreen|mediumturquoise|mediumvioletred|midnightblue|mintcream|mistyrose|moccasin|navajowhite|navy|oldlace|olive|olivedrab|orange|orangered|orchid|palegoldenrod|palegreen|paleturquoise|palevioletred|papayawhip|peachpuff|peru|pink|plum|powderblue|purple|rebeccapurple|red|rosybrown|royalblue|saddlebrown|salmon|sandybrown|seagreen|seashell|sienna|silver|skyblue|slateblue|slategray|slategrey|snow|springgreen|steelblue|tan|teal|thistle|tomato|turquoise|violet|wheat|white|whitesmoke|yellow|yellowgreen'
+COMMON_NAMES='white|black|red|green|blue|gray|grey|amber|orange|yellow|lime|emerald|teal|cyan|sky|indigo|violet|purple|fuchsia|pink|rose|slate|zinc|neutral|stone|coral|salmon|tomato|khaki|navy|olive|maroon|silver|aqua|gold|beige|ivory|lavender|orchid|plum|tan|wheat|azure'
+
+# The type scale is display/h1/h2/body/small/label and the elevation scale is shadow-1/2/3; the
+# semantic radius steps are chip/control/panel/card/pill. Any named Tailwind step is a bypass.
+SIZE_UTILITIES='xs|sm|base|lg|xl|[2-9]xl'
+SHADOW_UTILITIES='2xs|xs|sm|md|lg|xl|2xl|inner|none'
+RADIUS_UTILITIES='xs|sm|md|lg|xl|2xl|3xl|4xl|full|none'
+SCALE_PATTERN="(^|[^[:alnum:]_])text-(${SIZE_UTILITIES})\\b|(^|[^[:alnum:]_])shadow-(${SHADOW_UTILITIES})\\b|(^|[^[:alnum:]_])rounded-((t|r|b|l|tl|tr|br|bl|s|e|ss|se|es|ee)-)?(${RADIUS_UTILITIES})\\b|(^|[^[:alnum:]_])rounded($|[^[:alnum:]_-])|(^|[^[:alnum:]_])shadow($|[^[:alnum:]_-])"
+
+PATTERN="#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(|hwb\(|oklab\(|oklch\(|lab\(|lch\(|color\(|(bg|text|border|ring|fill|stroke|from|via|to|outline|decoration|caret|accent|divide|placeholder|shadow|inset-shadow|drop-shadow)-\[(${COLOUR_KEYWORDS})\]|(^|[^[:alnum:]_])(${COMMON_NAMES})\b|(rounded|shadow|text)-\[[0-9]|${SCALE_PATTERN}"
+
+# grep exits 1 when nothing matches: that is the good case. Anything else is a real failure.
+status=0
+raw=$(grep -REn --include='*.tsx' --include='*.ts' -e "$PATTERN" web/src) || status=$?
+
+if [ "$status" -gt 1 ]; then
+  echo "TOKENS ERROR - grep failed on the component sources (exit $status)" >&2
+  exit "$status"
+fi
+
+# Every stylesheet except the token file is held to the same rule (AC-12).
+css_status=0
+css_raw=$(grep -REn --include='*.css' -e "$PATTERN" web/src) || css_status=$?
+
+if [ "$css_status" -gt 1 ]; then
+  echo "TOKENS ERROR - grep failed on the stylesheets (exit $css_status)" >&2
+  exit "$css_status"
+fi
+
+matches=$(printf '%s\n%s\n' "${raw:-}" "${css_raw:-}" |
+  grep -v '^web/src/index.css:' |
+  grep -v 'tokens-allow' |
+  grep -v '^$' || true)
+
+if [ -n "${matches:-}" ]; then
+  echo "TOKENS FOUND - a value outside the token file and the visual scale:" >&2
+  echo "$matches" >&2
+  echo "Use a token (bg-primary, text-muted-foreground, ...), a scale step (text-body, shadow-1, rounded-card)" >&2
+  echo "or move the value into index.css. A genuine exception opts out with tokens-allow." >&2
+  exit 1
+fi
+
+echo "TOKENS CLEAN - every colour, size, shadow and radius comes from the token file"

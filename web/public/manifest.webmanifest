@@ -1,0 +1,17 @@
+{
+    "name": "İzin Yönetimi",
+    "short_name": "İzin",
+    "description": "Şirket içi izin yönetimi",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#fbfbfd",
+    "theme_color": "#215cd0",
+    "icons": [
+        {
+            "src": "/favicon.svg",
+            "type": "image/svg+xml",
+            "sizes": "any",
+            "purpose": "any"
+        }
+    ]
+}

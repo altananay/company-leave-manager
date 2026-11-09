@@ -1,5 +1,10 @@
-import { useRef, useState, type FormEvent } from 'react'
-import { useI18n } from '../../i18n/I18nProvider'
+import { useRef, useState, type FormEvent, type ReactNode } from 'react'
+
+import { useI18n } from '@/i18n/I18nProvider'
+import { Alert } from '@/ui/alert'
+import { Button } from '@/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/card'
+import { Field } from '@/ui/field'
 import { ApiError, authApi } from './authApi'
 
 type ErrorKey = 'passwordTooShort' | 'passwordMismatch' | 'invalidPassword' | 'genericError'
@@ -7,9 +12,11 @@ type ErrorKey = 'passwordTooShort' | 'passwordMismatch' | 'invalidPassword' | 'g
 export function PasswordChangePage({
   onChanged,
   onLogout,
+  languageSwitch,
 }: {
   onChanged: () => void
   onLogout: () => void
+  languageSwitch?: ReactNode
 }) {
   const { t } = useI18n()
   const [current, setCurrent] = useState('')
@@ -66,55 +73,79 @@ export function PasswordChangePage({
   }
 
   return (
-    <form className="card" onSubmit={submit}>
-      <h2>{t('passwordTitle')}</h2>
-      <label>
-        {t('currentPassword')}
-        <input
-          ref={currentRef}
-          type="password"
-          autoComplete="current-password"
-          value={current}
-          aria-invalid={error === 'invalidPassword'}
-          onChange={(event) => setCurrent(event.target.value)}
-          required
-        />
-      </label>
-      <label>
-        {t('newPassword')}
-        <input
-          ref={nextRef}
-          type="password"
-          autoComplete="new-password"
-          value={next}
-          aria-invalid={error === 'passwordTooShort'}
-          onChange={(event) => setNext(event.target.value)}
-          required
-        />
-      </label>
-      <label>
-        {t('confirmPassword')}
-        <input
-          ref={confirmRef}
-          type="password"
-          autoComplete="new-password"
-          value={confirm}
-          aria-invalid={error === 'passwordMismatch'}
-          onChange={(event) => setConfirm(event.target.value)}
-          required
-        />
-      </label>
-      {error && (
-        <p className="error" role="alert">
-          {t(error)}
-        </p>
-      )}
-      <button type="submit" disabled={busy}>
-        {t('savePassword')}
-      </button>
-      <button type="button" className="secondary" onClick={onLogout} disabled={busy}>
-        {t('logout')}
-      </button>
-    </form>
+    <div className="flex min-h-dvh flex-col bg-background">
+      <div className="flex items-center justify-between gap-3 px-4 py-5 sm:px-8">
+        <span className="flex items-center gap-2">
+          <span
+            aria-hidden="true"
+            className="brand-action grid size-8 place-items-center rounded-panel text-label font-bold text-primary-foreground"
+          >
+            İY
+          </span>
+          <span className="text-small font-semibold">{t('appTitle')}</span>
+        </span>
+        {languageSwitch}
+      </div>
+      <div className="flex flex-1 items-start justify-center px-4 pb-16 pt-4 sm:px-8">
+        <div className="w-full max-w-md">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('passwordTitle')}</CardTitle>
+              <CardDescription>{t('passwordSubtitle')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form className="flex flex-col gap-4" onSubmit={submit}>
+                <Field
+                  label={t('currentPassword')}
+                  inputRef={currentRef}
+                  type="password"
+                  autoComplete="current-password"
+                  value={current}
+                  invalid={error === 'invalidPassword'}
+                  describedBy={error ? 'password-error' : undefined}
+                  onChange={(event) => setCurrent(event.target.value)}
+                  required
+                />
+                <Field
+                  label={t('newPassword')}
+                  inputRef={nextRef}
+                  type="password"
+                  autoComplete="new-password"
+                  value={next}
+                  invalid={error === 'passwordTooShort'}
+                  describedBy={error ? 'password-error' : undefined}
+                  onChange={(event) => setNext(event.target.value)}
+                  required
+                />
+                <Field
+                  label={t('confirmPassword')}
+                  inputRef={confirmRef}
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirm}
+                  invalid={error === 'passwordMismatch'}
+                  describedBy={error ? 'password-error' : undefined}
+                  onChange={(event) => setConfirm(event.target.value)}
+                  required
+                />
+                {error && (
+                  <Alert variant="destructive" id="password-error">
+                    <p className="font-medium">{t(error)}</p>
+                  </Alert>
+                )}
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button type="submit" disabled={busy} className="sm:flex-1">
+                    {t('savePassword')}
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={onLogout} disabled={busy}>
+                    {t('logout')}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
   )
 }
