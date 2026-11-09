@@ -30,7 +30,16 @@ import { Input } from '@/ui/input'
 import { Label } from '@/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
 import { Skeleton } from '@/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  responsiveCell,
+} from '@/ui/table'
+import { formatDate } from '@/lib/date'
 
 type ErrorKey =
   | 'emailExists'
@@ -38,6 +47,7 @@ type ErrorKey =
   | 'validationFailed'
   | 'protectedAccountError'
   | 'selfAction'
+  | 'invalidManager'
   | 'genericError'
 
 /** How many rows one page holds. A thousand accounts are not a scroll, they are pages (AC-14). */
@@ -59,6 +69,8 @@ function errorKeyFor(failure: unknown): ErrorKey {
       return 'protectedAccountError'
     case 'SELF_ACTION_NOT_ALLOWED':
       return 'selfAction'
+    case 'INVALID_MANAGER':
+      return 'invalidManager'
     default:
       return 'genericError'
   }
@@ -66,11 +78,8 @@ function errorKeyFor(failure: unknown): ErrorKey {
 
 /**
  * Under md the table becomes a stack of cards: each cell prints its column name with `before:`.
- * The label never wraps and never shrinks, so a long value (an address) wraps instead of pushing
- * "E-POSTA" onto two lines.
+ * The rule lives in the design system so every table prints it the same way.
  */
-const CELL_LABEL =
-  'flex items-baseline justify-between gap-4 py-1 before:shrink-0 before:whitespace-nowrap before:text-label before:font-semibold before:uppercase before:tracking-wide before:text-muted-foreground before:content-[attr(data-label)] md:table-cell md:py-3 md:before:content-none'
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
@@ -90,6 +99,8 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
   const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [role, setRole] = useState('EMPLOYEE')
+  const [managerId, setManagerId] = useState('NONE')
+  const [hireDate, setHireDate] = useState('')
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState<User | null>(null)
   const [query, setQuery] = useState('')
@@ -151,9 +162,19 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
     setError(null)
     setBusy(true)
     try {
-      setCreated(await authApi.createUser(email, displayName, role))
+      setCreated(
+        await authApi.createUser(
+          email,
+          displayName,
+          role,
+          managerId === 'NONE' ? null : managerId,
+          hireDate || null,
+        ),
+      )
       setEmail('')
       setDisplayName('')
+      setManagerId('NONE')
+      setHireDate('')
       await load()
     } catch (failure) {
       const key = errorKeyFor(failure)
@@ -192,7 +213,17 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
 
   /** True when the error belongs to the create form, not to a row action. */
   const formError =
-    error === 'emailExists' || error === 'validationFailed' || error === 'roleNotAssignable'
+    error === 'emailExists' ||
+    error === 'validationFailed' ||
+    error === 'roleNotAssignable' ||
+    error === 'invalidManager'
+
+  // Only an active MANAGER can be assigned: BR-7 makes any other choice an approver who could never
+  // approve, and the server refuses it with INVALID_MANAGER.
+  const managerOptions = useMemo(
+    () => users.filter((user) => user.role === 'MANAGER' && user.active),
+    [users],
+  )
 
   const active = users.filter((user) => user.active).length
   const filtered = useMemo(() => {
@@ -271,7 +302,7 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
                 required
               />
             </div>
-            <div className="grid gap-4 sm:grid-cols-[12rem_auto] sm:items-end">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="role-trigger">{t('role')}</Label>
                 <Select value={role} onValueChange={setRole}>
@@ -284,6 +315,31 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="manager-trigger">{t('manager')}</Label>
+                <Select value={managerId} onValueChange={setManagerId}>
+                  <SelectTrigger id="manager-trigger">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">{t('managerNone')}</SelectItem>
+                    {managerOptions.map((manager) => (
+                      <SelectItem key={manager.id} value={manager.id}>
+                        {manager.displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-[12rem_auto] sm:items-end">
+              <Field
+                label={t('hireDate')}
+                type="date"
+                value={hireDate}
+                describedBy={formError ? 'users-error' : undefined}
+                onChange={(event) => setHireDate(event.target.value)}
+              />
               <Button type="submit" disabled={busy} className="sm:justify-self-start">
                 {t('create')}
               </Button>
@@ -360,9 +416,11 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
               <TableHeader className="hidden md:table-header-group">
                 <TableRow>
                   <TableHead>{t('displayName')}</TableHead>
-                  <TableHead className="md:w-24">{t('role')}</TableHead>
-                  <TableHead className="md:w-24">{t('active')}</TableHead>
-                  <TableHead className="md:w-56">
+                  <TableHead className="md:w-20">{t('role')}</TableHead>
+                  <TableHead className="md:w-36">{t('manager')}</TableHead>
+                  <TableHead className="md:w-24">{t('hireDate')}</TableHead>
+                  <TableHead className="md:w-20">{t('active')}</TableHead>
+                  <TableHead className="md:w-32">
                     <span className="sr-only">{t('actions')}</span>
                   </TableHead>
                 </TableRow>
@@ -370,7 +428,7 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
               <TableBody>
                 {visible.map((user) => (
                   <TableRow key={user.id} className="block py-4 md:table-row md:py-0">
-                    <TableCell data-label={t('displayName')} className={CELL_LABEL}>
+                    <TableCell data-label={t('displayName')} className={responsiveCell}>
                       <span className="flex min-w-0 items-center gap-2.5">
                         <Avatar name={user.displayName} className="md:size-8" />
                         <span className="flex min-w-0 flex-col">
@@ -383,10 +441,19 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
                         </span>
                       </span>
                     </TableCell>
-                    <TableCell data-label={t('role')} className={CELL_LABEL}>
+                    <TableCell data-label={t('role')} className={responsiveCell}>
                       <Badge variant="default">{t(roleKey(user.role))}</Badge>
                     </TableCell>
-                    <TableCell data-label={t('active')} className={CELL_LABEL}>
+                    <TableCell data-label={t('manager')} className={responsiveCell}>
+                      <span className="min-w-0 [overflow-wrap:anywhere] md:truncate">
+                        {users.find((candidate) => candidate.id === user.managerId)?.displayName ??
+                          '—'}
+                      </span>
+                    </TableCell>
+                    <TableCell data-label={t('hireDate')} className={responsiveCell}>
+                      {formatDate(user.hireDate)}
+                    </TableCell>
+                    <TableCell data-label={t('active')} className={responsiveCell}>
                       <Badge variant={user.active ? 'success' : 'muted'} className="gap-1.5">
                         {/* AC-15: the status is a dot and a word, never colour alone. */}
                         <span

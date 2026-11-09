@@ -1,4 +1,4 @@
-import { Home, Users } from 'lucide-react'
+import { CalendarDays, Home, Users } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { AppShell, type NavItem } from '@/app/AppShell'
@@ -8,6 +8,7 @@ import { PasswordChangePage } from '@/features/auth/PasswordChangePage'
 import { authApi, setUnauthorizedHandler, Unauthorized, type Me } from '@/features/auth/authApi'
 import { roleKey } from '@/features/auth/roles'
 import { HealthStatus } from '@/features/health/HealthStatus'
+import { LeaveRequestsPage } from '@/features/leave/LeaveRequestsPage'
 import { UsersPage } from '@/features/users/UsersPage'
 import { useI18n } from '@/i18n/I18nProvider'
 import { Avatar } from '@/ui/avatar'
@@ -15,7 +16,26 @@ import { Badge } from '@/ui/badge'
 import { Button } from '@/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/card'
 
-type View = 'loading' | 'login' | 'password' | 'home' | 'users' | 'forbidden'
+type View = 'loading' | 'login' | 'password' | 'home' | 'users' | 'leave' | 'forbidden'
+
+/** The views that have a URL: a nested route can be opened directly (spec 0004, AC-9). */
+type RouteView = 'home' | 'users' | 'leave'
+
+const ROUTES: Record<RouteView, string> = {
+  home: '/',
+  users: '/users',
+  leave: '/leave/requests',
+}
+
+function viewForPath(pathname: string): RouteView {
+  if (pathname.startsWith('/leave')) {
+    return 'leave'
+  }
+  if (pathname.startsWith('/users')) {
+    return 'users'
+  }
+  return 'home'
+}
 
 // Per-tab marker in sessionStorage (not memory) so the state survives a reload in this tab.
 // '1' = this tab had a session; 'expired' = a 401 ended it and the notice is still owed.
@@ -69,7 +89,7 @@ function App() {
         }
         rememberSession(HAD_SESSION)
         setMe(current)
-        setView(current.mustChangePassword ? 'password' : 'home')
+        setView(current.mustChangePassword ? 'password' : viewForPath(window.location.pathname))
       })
       .catch(() => {
         if (cancelled) {
@@ -117,8 +137,30 @@ function App() {
     rememberSession(HAD_SESSION)
     setSessionExpired(false)
     setMe(current)
-    setView(current.mustChangePassword ? 'password' : 'home')
+    setView(current.mustChangePassword ? 'password' : viewForPath(window.location.pathname))
   }
+
+  /**
+   * A navigation click changes both the screen and the URL, so a reload (or a shared link) opens the
+   * same screen. The server serves the shell for the route (SpaController); the view is client state.
+   */
+  function navigate(next: RouteView) {
+    setView(next)
+    const path = ROUTES[next]
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path)
+    }
+  }
+
+  // The browser's back and forward buttons change only the URL: the screen follows it.
+  useEffect(() => {
+    if (!me) {
+      return
+    }
+    const onPopState = () => setView(viewForPath(window.location.pathname))
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [me])
 
   async function handleLogout() {
     // A second click while the first request is in flight would race with it.
@@ -217,21 +259,32 @@ function App() {
       label: t('home'),
       icon: <Home />,
       current: view === 'home',
-      onSelect: () => setView('home'),
+      onSelect: () => navigate('home'),
+    },
+    {
+      key: 'leave',
+      label: t('leaveRequests'),
+      icon: <CalendarDays />,
+      current: view === 'leave',
+      onSelect: () => navigate('leave'),
     },
     {
       key: 'users',
       label: t('users'),
       icon: <Users />,
       current: view === 'users' || view === 'forbidden',
-      onSelect: () => setView('users'),
+      onSelect: () => navigate('users'),
     },
   ]
 
   // The 403 view is the users route's outcome, so "Kullanıcılar" stays the current crumb there too;
   // a breadcrumb that marks "Ana ekran" would contradict the sidebar (AC-11).
   const breadcrumb =
-    view === 'users' || view === 'forbidden' ? [t('home'), t('users')] : [t('home')]
+    view === 'leave'
+      ? [t('home'), t('leaveRequests')]
+      : view === 'users' || view === 'forbidden'
+        ? [t('home'), t('users')]
+        : [t('home')]
 
   return (
     <AppShell
@@ -277,6 +330,10 @@ function App() {
             <HealthStatus />
           </div>
         </div>
+      )}
+
+      {view === 'leave' && me && (
+        <LeaveRequestsPage me={me} onForbidden={() => setView('forbidden')} />
       )}
 
       {view === 'users' && <UsersPage onForbidden={() => setView('forbidden')} />}

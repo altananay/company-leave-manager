@@ -8,7 +8,13 @@ export type Me = {
   mustChangePassword: boolean
 }
 
-export type User = Me & { active: boolean }
+export type User = Me & {
+  active: boolean
+  /** The direct manager (spec 0004); null until HR connects the org tree. */
+  managerId: string | null
+  /** Null on every account created before spec 0004: the balance then uses its default. */
+  hireDate: string | null
+}
 
 export type CreatedUser = { user: User; temporaryPassword: string }
 
@@ -84,6 +90,11 @@ async function request<T>(
   return (await response.json()) as T
 }
 
+/** The one request helper: another feature's API module uses it instead of a second fetch layer. */
+export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return request<T>(path, init)
+}
+
 export const authApi = {
   me: () => request<Me>('/api/auth/me'),
   login: (email: string, password: string) =>
@@ -103,10 +114,16 @@ export const authApi = {
       body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
     }),
   users: () => request<User[]>('/api/users'),
-  createUser: (email: string, displayName: string, role: string) =>
+  createUser: (
+    email: string,
+    displayName: string,
+    role: string,
+    managerId: string | null = null,
+    hireDate: string | null = null,
+  ) =>
     request<CreatedUser>('/api/users', {
       method: 'POST',
-      body: JSON.stringify({ email, displayName, role }),
+      body: JSON.stringify({ email, displayName, role, managerId, hireDate }),
     }),
   deactivate: (id: string) => request<void>(`/api/users/${id}/deactivate`, { method: 'POST' }),
   resetPassword: (id: string) =>

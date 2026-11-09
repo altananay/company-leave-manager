@@ -89,6 +89,9 @@ function setBrowserLanguage(language: string) {
 beforeEach(() => {
   localStorage.clear()
   sessionStorage.clear()
+  // The screen follows the URL (spec 0004, AC-9): a test that navigated must not leave the next
+  // one on that route, so every test starts at the shell's home path.
+  window.history.replaceState({}, '', '/')
   setBrowserLanguage('tr-TR')
   document.documentElement.lang = 'tr'
 })
@@ -805,6 +808,57 @@ describe('users screen', () => {
   })
 })
 
+describe('leave requests route', () => {
+  const BALANCE = {
+    entitlement: 14,
+    carryover: 0,
+    adjustments: 0,
+    approved: 0,
+    pending: 0,
+    remaining: 14,
+    periodStart: '2026-03-15',
+    periodEnd: '2027-03-15',
+    hireDate: '2020-03-15',
+    entitlementDefaulted: false,
+    completedYears: 6,
+    hasManager: true,
+    managerName: 'Manager Person',
+  }
+  const EMPTY_PAGE = { items: [], page: 1, size: 10, total: 0, totalPages: 0 }
+
+  function leaveScreen() {
+    authenticated(HR, () => json(200, { status: 'UP' }), {
+      '/api/leave/balance': () => json(200, BALANCE),
+      '/api/leave/requests': () => json(200, EMPTY_PAGE),
+      '/api/users': () => json(200, []),
+    })
+  }
+
+  it('shouldOpenTheLeaveRequestsScreenFromTheNavigation', async () => {
+    leaveScreen()
+    const user = userEvent.setup()
+    renderApp()
+    await screen.findByText(/Giriş yapan:/)
+
+    await user.click(await navigationButton('İzin talepleri'))
+
+    expect(await screen.findByRole('heading', { name: 'İzin talepleri' })).toBeInTheDocument()
+    // The URL follows the screen, so a reload returns to the same route (AC-9).
+    expect(window.location.pathname).toBe('/leave/requests')
+    expect(await navigationButton('İzin talepleri')).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('shouldOpenTheLeaveRequestsScreenFromTheUrl', async () => {
+    // Opening the nested route directly: the server served the shell, the SPA picks the screen.
+    window.history.replaceState({}, '', '/leave/requests')
+    leaveScreen()
+    renderApp()
+
+    expect(await screen.findByRole('heading', { name: 'İzin talepleri' })).toBeInTheDocument()
+    expect(await screen.findByText('Henüz izin talebiniz yok.')).toBeInTheDocument()
+  })
+})
+
 describe('password change', () => {
   it('shouldReportAWrongCurrentPassword', async () => {
     authenticated({ ...EMPLOYEE, mustChangePassword: true }, () => json(200, { status: 'UP' }), {
@@ -1445,6 +1499,11 @@ describe('accessibility', () => {
     expect(screen.getByLabelText('Ad soyad')).toHaveFocus()
     await user.tab()
     expect(screen.getByRole('combobox', { name: 'Rol' })).toHaveFocus()
+    // The manager and hire-date fields join the form (spec 0004, AC-8) between the role and submit.
+    await user.tab()
+    expect(screen.getByRole('combobox', { name: 'Yönetici' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByLabelText('İşe giriş tarihi')).toHaveFocus()
     await user.tab()
     expect(screen.getByRole('button', { name: 'Oluştur' })).toHaveFocus()
 
