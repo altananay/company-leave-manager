@@ -30,17 +30,33 @@ public class AuditEvent {
     @Column
     private String details;
 
+    /** The state the record was in before the change, as a JSON object (backlog B-7, BR-13). */
+    @Column(name = "before_state")
+    private String beforeState;
+
+    /** The state the record is in after the change, as a JSON object (backlog B-7, BR-13). */
+    @Column(name = "after_state")
+    private String afterState;
+
     protected AuditEvent() {
         // for JPA
     }
 
-    public static AuditEvent of(String eventType, UUID actorUserId, UUID targetUserId, String details, Instant now) {
+    public static AuditEvent of(String eventType,
+                                UUID actorUserId,
+                                UUID targetUserId,
+                                String details,
+                                String beforeState,
+                                String afterState,
+                                Instant now) {
         AuditEvent event = new AuditEvent();
         event.id = UUID.randomUUID();
         event.eventType = eventType;
         event.actorUserId = actorUserId;
         event.targetUserId = targetUserId;
         event.details = details;
+        event.beforeState = beforeState;
+        event.afterState = afterState;
         event.occurredAt = now;
         return event;
     }
@@ -67,5 +83,13 @@ public class AuditEvent {
 
     public String getDetails() {
         return details;
+    }
+
+    public String getBeforeState() {
+        return beforeState;
+    }
+
+    public String getAfterState() {
+        return afterState;
     }
 }

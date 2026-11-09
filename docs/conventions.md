@@ -55,8 +55,14 @@ Upgrades keep `scripts/check` green; a major upgrade that changes behavior is it
   `PASSWORD_CHANGE_REQUIRED`, `ACCOUNT_LOCKED`, `INVALID_PASSWORD`, `PASSWORD_MISMATCH`,
   `WEAK_PASSWORD`, `VALIDATION_FAILED`, `INVALID_REQUEST`, `INVALID_PARAMETER`, `INVALID_ROLE`,
   `ROLE_NOT_ASSIGNABLE`, `PROTECTED_ACCOUNT`, `EMAIL_EXISTS`, `SELF_ACTION_NOT_ALLOWED`, `NOT_FOUND`,
-  `METHOD_NOT_ALLOWED`, `UNSUPPORTED_MEDIA_TYPE`, `CONFLICT`, `INTERNAL_ERROR`, and the leave
-  codes `LEAVE_BALANCE_INSUFFICIENT`, `LEAVE_OVERLAP`, `LEAVE_PAST_DATE`.
+  `METHOD_NOT_ALLOWED`, `UNSUPPORTED_MEDIA_TYPE`, `CONFLICT`, `INTERNAL_ERROR`, `INVALID_MANAGER`, and
+  the leave codes: `LEAVE_PAST_DATE`, `LEAVE_INVALID_RANGE`, `LEAVE_NO_WORKING_DAY`, `LEAVE_OVERLAP`,
+  `LEAVE_BALANCE_EXCEEDED`, `LEAVE_BALANCE_INSUFFICIENT`, `LEAVE_INVALID_ADJUSTMENT`,
+  `LEAVE_ADJUSTMENT_NOT_ALLOWED`, `LEAVE_NO_MANAGER`, `LEAVE_NOT_MANAGER`, `LEAVE_NOT_OWNER`,
+  `LEAVE_NOT_PENDING`, `LEAVE_NOT_APPROVED`, `LEAVE_ALREADY_STARTED`. The names come from the
+  approved plan (spec 0004, step 5); `LEAVE_BALANCE_INSUFFICIENT` was the earlier draft name and is
+  kept as a reserved synonym so an old client's mapping does not break, but the API emits
+  `LEAVE_BALANCE_EXCEEDED`.
 - 5xx never leaks internals or stack traces; the response carries `requestId` and the server logs
   the detail against the same `requestId`. 4xx never carries a stack trace either.
 - User-facing text comes from the UI catalogue (tr/en); the API returns a stable English `code` and

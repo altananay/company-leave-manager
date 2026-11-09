@@ -22,5 +22,3 @@ step 7). Nothing lands here without that decision; noise is rejected in the tria
 
 - **B-5** — Testcontainers 2.x'e geçiş: Boot 4.1.2 BOM'u `testcontainers-bom:2.0.5` import ediyor; proje eski `postgresql`/`junit-jupiter` koordinatlarında 1.21.4'e sabit. — Source: spec 0001, review round 1 (`pom.xml:25`) — Severity: low — Recommendation: `testcontainers-postgresql` / `testcontainers-junit-jupiter` 2.0.5 koordinatlarına geç, sürüm pinini kaldır. — Deferred by: altananay, 2026-11-07, ayrı ve izlenebilir bir bağımlılık değişikliği.
 
-- **B-7** — Denetim kaydında `before`/`after` alanı yok; `details` serbest metin ve `USER_CREATED` yalnız `role=…` yazıyor. — Source: spec 0002, review round 1 (`src/main/resources/db/migration/V2__identity_and_audit.sql:23`) — Severity: low — Recommendation: `before`/`after` (jsonb) eklenip değişen alanlar yazılsın; BR-13'ün "önce/sonra" beklentisi bu dilimde bilinçli daraltıldığı için spec'te de not edilsin. — Deferred by: altananay, 2026-11-07, kullanıcı güncelleme özelliği henüz yok; alan eklendiğinde anlamlı olur.
-
