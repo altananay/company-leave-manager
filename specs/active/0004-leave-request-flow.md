@@ -1,6 +1,7 @@
 # Spec 0004 — İzin talebi akışı
 
-- Status: In progress — **Faz A shipped (2026-11-09)**, Faz B (yarım gün + izinli günlerim) bekliyor
+- Status: In progress
+- Phase: **A shipped (2026-11-09)** · B bekliyor (yarım gün + izinli günlerim)
 - Mode: lite
 - Plan: `specs/plans/0004-plan.md`
 - Business rules: `docs/domain.md` (BR-1…BR-11) — bu spec onları **yeniden tanımlamaz**, uygular.
