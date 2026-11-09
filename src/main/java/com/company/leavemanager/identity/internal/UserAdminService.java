@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -17,7 +18,7 @@ import java.util.UUID;
 @Service
 public class UserAdminService {
 
-    public enum CreateOutcome { CREATED, INVALID_ROLE, ROLE_NOT_ASSIGNABLE, EMAIL_EXISTS }
+    public enum CreateOutcome { CREATED, INVALID_ROLE, ROLE_NOT_ASSIGNABLE, EMAIL_EXISTS, INVALID_MANAGER }
 
     public record CreateResult(CreateOutcome outcome, CreateUserResponse response) {
     }
@@ -50,7 +51,12 @@ public class UserAdminService {
     }
 
     @Transactional
-    public CreateResult create(UUID actorId, String email, String displayName, String roleName) {
+    public CreateResult create(UUID actorId,
+                               String email,
+                               String displayName,
+                               String roleName,
+                               UUID managerId,
+                               LocalDate hireDate) {
         Role role;
         try {
             role = Role.valueOf(roleName.toUpperCase(Locale.ROOT));
@@ -63,12 +69,31 @@ public class UserAdminService {
         if (users.existsByEmailIgnoreCase(email)) {
             return new CreateResult(CreateOutcome.EMAIL_EXISTS, null);
         }
+        if (!isAssignableManager(managerId)) {
+            return new CreateResult(CreateOutcome.INVALID_MANAGER, null);
+        }
         String temporaryPassword = TemporaryPassword.generate();
-        User user = User.create(email, displayName, role, encoder.encode(temporaryPassword), clock.instant());
+        User user = User.create(email, displayName, role, encoder.encode(temporaryPassword),
+                managerId, hireDate, clock.instant());
         users.save(user);
         audit.userCreated(actorId, user.getId(), role.name());
         return new CreateResult(CreateOutcome.CREATED,
                 new CreateUserResponse(UserResponse.of(user), temporaryPassword));
+    }
+
+    /**
+     * The direct manager decides leave (BR-7), so the link may only point at an active account that
+     * holds the MANAGER role: an HR/CEO "manager" could never approve the request it is attached to.
+     * A cycle is impossible on creation (the new account is not in the tree yet).
+     */
+    private boolean isAssignableManager(UUID managerId) {
+        if (managerId == null) {
+            return true;
+        }
+        return users.findById(managerId)
+                .filter(User::isActive)
+                .filter(manager -> manager.getRole() == Role.MANAGER)
+                .isPresent();
     }
 
     @Transactional

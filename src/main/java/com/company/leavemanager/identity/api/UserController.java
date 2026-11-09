@@ -36,8 +36,13 @@ public class UserController {
 
     @PostMapping
     public ResponseEntity<?> create(@Valid @RequestBody CreateUserRequest request, Authentication authentication) {
-        UserAdminService.CreateResult result =
-                admin.create(actor(authentication).id(), request.email(), request.displayName(), request.role());
+        UserAdminService.CreateResult result = admin.create(
+                actor(authentication).id(),
+                request.email(),
+                request.displayName(),
+                request.role(),
+                request.managerId(),
+                request.hireDate());
         return switch (result.outcome()) {
             case INVALID_ROLE -> ResponseEntity.badRequest()
                     .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_ROLE"));
@@ -45,6 +50,8 @@ public class UserController {
                     .body(ApiExceptionHandler.problem(HttpStatus.FORBIDDEN, "ROLE_NOT_ASSIGNABLE"));
             case EMAIL_EXISTS -> ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ApiExceptionHandler.problem(HttpStatus.CONFLICT, "EMAIL_EXISTS"));
+            case INVALID_MANAGER -> ResponseEntity.badRequest()
+                    .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_MANAGER"));
             case CREATED -> ResponseEntity.status(HttpStatus.CREATED).body(result.response());
         };
     }

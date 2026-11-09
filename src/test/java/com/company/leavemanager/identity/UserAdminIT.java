@@ -276,6 +276,64 @@ class UserAdminIT extends IdentityTestSupport {
         return "{\"email\":\"" + email + "\",\"displayName\":\"" + displayName + "\",\"role\":\"" + role + "\"}";
     }
 
+    @Test
+    void shouldStoreManagerAndHireDate() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> manager = session.post("/api/users",
+                body(unique("lead"), "Lead Person", "MANAGER"));
+        assertThat(manager.statusCode()).isEqualTo(201);
+        String managerId = extract(manager.body(), "id");
+        String email = unique("staff");
+
+        HttpResponse<String> created = session.post("/api/users",
+                "{\"email\":\"" + email + "\",\"displayName\":\"Staff Person\",\"role\":\"EMPLOYEE\","
+                        + "\"managerId\":\"" + managerId + "\",\"hireDate\":\"2020-02-03\"}");
+
+        assertThat(created.statusCode()).isEqualTo(201);
+        assertThat(extract(created.body(), "managerId")).isEqualTo(managerId);
+        assertThat(extract(created.body(), "hireDate")).isEqualTo("2020-02-03");
+
+        // The list carries both fields too: the screen resolves the manager's name from it.
+        String list = session.get("/api/users").body();
+        assertThat(list).contains("\"managerId\":\"" + managerId + "\"");
+        assertThat(list).contains("\"hireDate\":\"2020-02-03\"");
+    }
+
+    @Test
+    void shouldKeepManagerAndHireDateOptional() throws Exception {
+        // AC-8's backward compatibility: an account made without them keeps both fields null, and
+        // the response says so instead of inventing a value.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+
+        HttpResponse<String> created = session.post("/api/users", body(unique("plain"), "Plain Person", "EMPLOYEE"));
+
+        assertThat(created.statusCode()).isEqualTo(201);
+        assertThat(created.body()).contains("\"managerId\":null");
+        assertThat(created.body()).contains("\"hireDate\":null");
+    }
+
+    @Test
+    void shouldRejectAManagerWhoCouldNeverApprove() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+
+        // BR-7: an employee cannot be a request's approver, and HR/CEO never approve at all.
+        HttpResponse<String> employee = session.post("/api/users", body(unique("plain"), "Plain Person", "EMPLOYEE"));
+        String employeeId = extract(employee.body(), "id");
+        HttpResponse<String> reportToEmployee = session.post("/api/users",
+                "{\"email\":\"" + unique("report") + "\",\"displayName\":\"Report Person\","
+                        + "\"role\":\"EMPLOYEE\",\"managerId\":\"" + employeeId + "\"}");
+        assertThat(reportToEmployee.statusCode()).isEqualTo(400);
+        assertThat(reportToEmployee.body()).contains("INVALID_MANAGER");
+
+        User hr = seededRoleAccount(users, encoder, "hr-manager-" + System.nanoTime() + "@acme.test",
+                Role.HR, HR_PASSWORD);
+        HttpResponse<String> reportToHr = session.post("/api/users",
+                "{\"email\":\"" + unique("report") + "\",\"displayName\":\"Report Person\","
+                        + "\"role\":\"EMPLOYEE\",\"managerId\":\"" + hr.getId() + "\"}");
+        assertThat(reportToHr.statusCode()).isEqualTo(400);
+        assertThat(reportToHr.body()).contains("INVALID_MANAGER");
+    }
+
     private static String unique(String prefix) {
         return prefix + "-" + System.nanoTime() + "@acme.test";
     }
