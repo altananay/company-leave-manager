@@ -671,4 +671,221 @@ class UserAdminIT extends IdentityTestSupport {
         assertThat(jdbc.queryForObject("select hire_date from users where id = ?",
                 LocalDate.class, otherHr.getId())).isNull();
     }
+
+    // ------------------------------------- phase B2: birth date and school-age child (D17/D18)
+
+    @Test
+    void shouldStoreBirthDateAndSchoolAgeChild() throws Exception {
+        // D17: HR enters the two personal-data fields the BR-10 conditions need, and only HR's
+        // user endpoints show them back (D18).
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String email = unique("personal");
+
+        HttpResponse<String> created = session.post("/api/users",
+                "{\"email\":\"" + email + "\",\"displayName\":\"Personal Person\",\"role\":\"EMPLOYEE\","
+                        + "\"birthDate\":\"1990-05-01\",\"hasSchoolAgeChild\":true}");
+
+        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
+        assertThat(extract(created.body(), "birthDate")).isEqualTo("1990-05-01");
+        assertThat(created.body()).contains("\"hasSchoolAgeChild\":true");
+
+        String list = session.get("/api/users").body();
+        assertThat(list).contains("\"birthDate\":\"1990-05-01\"");
+        assertThat(list).contains("\"hasSchoolAgeChild\":true");
+        assertThat(jdbc.queryForObject("select birth_date from users where email = ?",
+                LocalDate.class, email)).isEqualTo(LocalDate.of(1990, 5, 1));
+        assertThat(jdbc.queryForObject("select has_school_age_child from users where email = ?",
+                Boolean.class, email)).isTrue();
+    }
+
+    @Test
+    void shouldEditBirthDateAndSchoolAgeChild() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> employee = session.post("/api/users",
+                body(unique("personal-edit"), "Personal Edit", "EMPLOYEE"));
+        String employeeId = extract(employee.body(), "id");
+        assertThat(employee.body()).contains("\"birthDate\":null");
+        assertThat(employee.body()).contains("\"hasSchoolAgeChild\":false");
+
+        HttpResponse<String> updated = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":null,\"hireDate\":\"2019-05-06\","
+                        + "\"birthDate\":\"1991-06-02\",\"hasSchoolAgeChild\":true}");
+
+        assertThat(updated.statusCode()).as(updated.body()).isEqualTo(200);
+        assertThat(extract(updated.body(), "birthDate")).isEqualTo("1991-06-02");
+        assertThat(updated.body()).contains("\"hasSchoolAgeChild\":true");
+        String list = session.get("/api/users").body();
+        assertThat(list).contains("\"id\":\"" + employeeId + "\"");
+        assertThat(list).contains("\"birthDate\":\"1991-06-02\"");
+        assertThat(list).contains("\"hasSchoolAgeChild\":true");
+
+        // The edit replaces the whole set: null clears the date, false clears the flag.
+        HttpResponse<String> cleared = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":null,\"hireDate\":\"2019-05-06\","
+                        + "\"birthDate\":null,\"hasSchoolAgeChild\":false}");
+
+        assertThat(cleared.statusCode()).as(cleared.body()).isEqualTo(200);
+        assertThat(cleared.body()).contains("\"birthDate\":null");
+        assertThat(cleared.body()).contains("\"hasSchoolAgeChild\":false");
+        assertThat(jdbc.queryForObject("select birth_date from users where id = ?",
+                LocalDate.class, UUID.fromString(employeeId))).isNull();
+        assertThat(jdbc.queryForObject("select has_school_age_child from users where id = ?",
+                Boolean.class, UUID.fromString(employeeId))).isFalse();
+    }
+
+    @Test
+    void shouldRejectAnInsaneBirthDate() throws Exception {
+        // D17: 1900-01-01 is the lower bound (inclusive), today the upper one (inclusive). A typo
+        // outside either is a data-entry error with its own code on create and edit alike.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+
+        String ancientEmail = unique("birth-ancient");
+        HttpResponse<String> ancient = session.post("/api/users",
+                "{\"email\":\"" + ancientEmail + "\",\"displayName\":\"Birth Ancient\","
+                        + "\"role\":\"EMPLOYEE\",\"birthDate\":\"1899-12-31\"}");
+        assertThat(ancient.statusCode()).as(ancient.body()).isEqualTo(400);
+        assertThat(ancient.body()).contains("INVALID_BIRTH_DATE");
+
+        String futureEmail = unique("birth-future");
+        HttpResponse<String> future = session.post("/api/users",
+                "{\"email\":\"" + futureEmail + "\",\"displayName\":\"Birth Future\","
+                        + "\"role\":\"EMPLOYEE\",\"birthDate\":\"" + today().plusDays(1) + "\"}");
+        assertThat(future.statusCode()).as(future.body()).isEqualTo(400);
+        assertThat(future.body()).contains("INVALID_BIRTH_DATE");
+
+        String list = session.get("/api/users").body();
+        assertThat(list).doesNotContain(ancientEmail);
+        assertThat(list).doesNotContain(futureEmail);
+
+        // The bound is inclusive on both ends: 1900-01-01 and today are accepted.
+        HttpResponse<String> oldest = session.post("/api/users",
+                "{\"email\":\"" + unique("birth-oldest") + "\",\"displayName\":\"Birth Oldest\","
+                        + "\"role\":\"EMPLOYEE\",\"birthDate\":\"1900-01-01\"}");
+        assertThat(oldest.statusCode()).as(oldest.body()).isEqualTo(201);
+        assertThat(extract(oldest.body(), "birthDate")).isEqualTo("1900-01-01");
+        HttpResponse<String> currentDay = session.post("/api/users",
+                "{\"email\":\"" + unique("birth-today") + "\",\"displayName\":\"Birth Today\","
+                        + "\"role\":\"EMPLOYEE\",\"birthDate\":\"" + today() + "\"}");
+        assertThat(currentDay.statusCode()).as(currentDay.body()).isEqualTo(201);
+        assertThat(extract(currentDay.body(), "birthDate")).isEqualTo(today().toString());
+
+        // The edit answers with the same code and leaves the row untouched.
+        String employeeId = extract(oldest.body(), "id");
+        HttpResponse<String> refused = session.patch("/api/users/" + employeeId,
+                "{\"managerId\":null,\"hireDate\":null,\"birthDate\":\"" + today().plusDays(1)
+                        + "\",\"hasSchoolAgeChild\":false}");
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(400);
+        assertThat(refused.body()).contains("INVALID_BIRTH_DATE");
+        assertThat(jdbc.queryForObject("select birth_date from users where id = ?",
+                LocalDate.class, UUID.fromString(employeeId))).isEqualTo(LocalDate.of(1900, 1, 1));
+    }
+
+    @Test
+    void shouldAuditThePersonalDataEdit() throws Exception {
+        // D18: both sides of the USER_UPDATED event carry the manager, the hire date, the birth date
+        // and the school-age flag.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> manager = session.post("/api/users", body(unique("personal-lead"), "Personal Lead", "MANAGER"));
+        String managerId = extract(manager.body(), "id");
+        HttpResponse<String> employee = session.post("/api/users", body(unique("personal-audit"), "Personal Audit", "EMPLOYEE"));
+        String employeeId = extract(employee.body(), "id");
+
+        assertThat(session.patch("/api/users/" + employeeId,
+                "{\"managerId\":\"" + managerId + "\",\"hireDate\":\"2020-02-03\","
+                        + "\"birthDate\":\"1990-05-01\",\"hasSchoolAgeChild\":true}").statusCode())
+                .isEqualTo(200);
+
+        UUID target = UUID.fromString(employeeId);
+        assertThat(jdbc.queryForObject(
+                "select count(*) from audit_event where event_type = 'USER_UPDATED' and target_user_id = ?",
+                Integer.class, target)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "select after_state->>'managerId' from audit_event where event_type = 'USER_UPDATED' "
+                        + "and target_user_id = ?", String.class, target)).isEqualTo(managerId);
+        assertThat(jdbc.queryForObject(
+                "select after_state->>'hireDate' from audit_event where event_type = 'USER_UPDATED' "
+                        + "and target_user_id = ?", String.class, target)).isEqualTo("2020-02-03");
+        assertThat(jdbc.queryForObject(
+                "select after_state->>'birthDate' from audit_event where event_type = 'USER_UPDATED' "
+                        + "and target_user_id = ?", String.class, target)).isEqualTo("1990-05-01");
+        assertThat(jdbc.queryForObject(
+                "select after_state->>'hasSchoolAgeChild' from audit_event where event_type = 'USER_UPDATED' "
+                        + "and target_user_id = ?", String.class, target)).isEqualTo("true");
+        assertThat(jdbc.queryForObject(
+                "select before_state->>'birthDate' from audit_event where event_type = 'USER_UPDATED' "
+                        + "and target_user_id = ?", String.class, target)).isNull();
+        assertThat(jdbc.queryForObject(
+                "select before_state->>'hasSchoolAgeChild' from audit_event where event_type = 'USER_UPDATED' "
+                        + "and target_user_id = ?", String.class, target)).isEqualTo("false");
+    }
+
+    @Test
+    void shouldNotExposePersonalDataInMeLeaveOrBalanceResponses() throws Exception {
+        // D18: the birth date and the flag live in the HR user endpoints only — not in /me, the
+        // balance or any leave response, even for the employee they describe.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        HttpResponse<String> manager = session.post("/api/users", body(unique("visible-lead"), "Visible Lead", "MANAGER"));
+        String managerId = extract(manager.body(), "id");
+        String email = unique("visible");
+        HttpResponse<String> created = session.post("/api/users",
+                "{\"email\":\"" + email + "\",\"displayName\":\"Visible Person\",\"role\":\"EMPLOYEE\","
+                        + "\"managerId\":\"" + managerId + "\",\"hireDate\":\"" + today().minusYears(2)
+                        + "\",\"birthDate\":\"1990-05-01\",\"hasSchoolAgeChild\":true}");
+        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
+        String temporaryPassword = extract(created.body(), "temporaryPassword");
+
+        Session member = new Session();
+        assertThat(member.login(email, temporaryPassword).statusCode()).isEqualTo(200);
+        assertThat(member.post("/api/auth/password",
+                "{\"currentPassword\":\"" + temporaryPassword + "\","
+                        + "\"newPassword\":\"member-password-123\",\"confirmPassword\":\"member-password-123\"}")
+                .statusCode()).isEqualTo(204);
+
+        LocalDate monday = nextMonday();
+        HttpResponse<String> leave = member.post("/api/leave/requests",
+                "{\"type\":\"ANNUAL\",\"startDate\":\"" + monday + "\",\"endDate\":\"" + monday
+                        + "\",\"reason\":\"izin\"}");
+        assertThat(leave.statusCode()).as(leave.body()).isEqualTo(201);
+
+        for (String path : java.util.List.of("/api/auth/me", "/api/leave/balance", "/api/leave/requests")) {
+            HttpResponse<String> response = member.get(path);
+            assertThat(response.statusCode()).as(path).isEqualTo(200);
+            assertThat(response.body()).as(path)
+                    .doesNotContain("birthDate")
+                    .doesNotContain("hasSchoolAgeChild");
+        }
+        assertThat(leave.body()).doesNotContain("birthDate").doesNotContain("hasSchoolAgeChild");
+
+        // The same values are still visible where D18 allows them: HR's user list.
+        assertThat(session.get("/api/users").body()).contains("\"birthDate\":\"1990-05-01\"");
+    }
+
+    @Test
+    void shouldRejectANonHrPersonalDataEdit() throws Exception {
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String managerEmail = unique("personal-mgr");
+        HttpResponse<String> manager = session.post("/api/users", body(managerEmail, "Personal Manager", "MANAGER"));
+        String temporaryPassword = extract(manager.body(), "temporaryPassword");
+        HttpResponse<String> employee = session.post("/api/users", body(unique("personal-target"), "Personal Target", "EMPLOYEE"));
+        String employeeId = extract(employee.body(), "id");
+
+        Session managerSession = new Session();
+        assertThat(managerSession.login(managerEmail, temporaryPassword).statusCode()).isEqualTo(200);
+        assertThat(managerSession.post("/api/auth/password",
+                "{\"currentPassword\":\"" + temporaryPassword + "\","
+                        + "\"newPassword\":\"manager-pass-123\",\"confirmPassword\":\"manager-pass-123\"}")
+                .statusCode()).isEqualTo(204);
+
+        HttpResponse<String> forbidden = managerSession.patch("/api/users/" + employeeId,
+                "{\"managerId\":null,\"hireDate\":null,"
+                        + "\"birthDate\":\"1990-05-01\",\"hasSchoolAgeChild\":true}");
+
+        assertThat(forbidden.statusCode()).as(forbidden.body()).isEqualTo(403);
+        assertThat(forbidden.body()).contains("NOT_AUTHORIZED");
+        // The refusal left both personal-data columns alone.
+        assertThat(jdbc.queryForObject("select birth_date from users where id = ?",
+                LocalDate.class, UUID.fromString(employeeId))).isNull();
+        assertThat(jdbc.queryForObject("select has_school_age_child from users where id = ?",
+                Boolean.class, UUID.fromString(employeeId))).isFalse();
+    }
 }

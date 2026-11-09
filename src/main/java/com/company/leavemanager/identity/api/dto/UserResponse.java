@@ -13,7 +13,9 @@ public record UserResponse(
         boolean active,
         boolean mustChangePassword,
         UUID managerId,
-        LocalDate hireDate) {
+        LocalDate hireDate,
+        LocalDate birthDate,
+        boolean hasSchoolAgeChild) {
 
     public static UserResponse of(User user) {
         return new UserResponse(
@@ -24,6 +26,8 @@ public record UserResponse(
                 user.isActive(),
                 user.isMustChangePassword(),
                 user.getManagerId(),
-                user.getHireDate());
+                user.getHireDate(),
+                user.getBirthDate(),
+                user.hasSchoolAgeChild());
     }
 }

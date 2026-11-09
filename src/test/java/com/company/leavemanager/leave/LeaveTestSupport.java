@@ -44,6 +44,19 @@ abstract class LeaveTestSupport extends IdentityTestSupport {
     }
 
     protected Account createAccount(String role, UUID managerId, LocalDate hireDate) throws Exception {
+        return createAccount(role, managerId, hireDate, null, false);
+    }
+
+    /**
+     * The same account with BR-10's personal-data fields (D17): the birth date for the birthday
+     * window and the school-age-child flag for the two school types. A null/false field is left out
+     * of the body, exactly like the HR form does, so the column default applies.
+     */
+    protected Account createAccount(String role,
+                                    UUID managerId,
+                                    LocalDate hireDate,
+                                    LocalDate birthDate,
+                                    boolean hasSchoolAgeChild) throws Exception {
         String stamp = Long.toString(System.nanoTime());
         String email = role.toLowerCase(Locale.ROOT) + "-" + stamp + "@acme.test";
         String displayName = "Leave " + role + " " + stamp;
@@ -56,6 +69,12 @@ abstract class LeaveTestSupport extends IdentityTestSupport {
         }
         if (hireDate != null) {
             body.append(",\"hireDate\":\"").append(hireDate).append('"');
+        }
+        if (birthDate != null) {
+            body.append(",\"birthDate\":\"").append(birthDate).append('"');
+        }
+        if (hasSchoolAgeChild) {
+            body.append(",\"hasSchoolAgeChild\":true");
         }
         body.append('}');
         HttpResponse<String> created = session.post("/api/users", body.toString());
@@ -103,6 +122,27 @@ abstract class LeaveTestSupport extends IdentityTestSupport {
                 + "\",\"endDate\":\"" + end
                 + "\",\"halfDay\":\"" + halfDay
                 + "\",\"reason\":\"" + reason + "\"}");
+    }
+
+    /**
+     * A BR-10 special request (D17/D19): {@code kinship} is sent only when it is non-null, so the
+     * bereavement case carries it and the other five types really omit it.
+     */
+    protected HttpResponse<String> createSpecialLeave(Session member,
+                                                      String type,
+                                                      LocalDate start,
+                                                      LocalDate end,
+                                                      String kinship,
+                                                      String reason) throws Exception {
+        StringBuilder body = new StringBuilder()
+                .append("{\"type\":\"").append(type)
+                .append("\",\"startDate\":\"").append(start)
+                .append("\",\"endDate\":\"").append(end).append('"');
+        if (kinship != null) {
+            body.append(",\"kinship\":\"").append(kinship).append('"');
+        }
+        body.append(",\"reason\":\"").append(reason).append("\"}");
+        return member.post("/api/leave/requests", body.toString());
     }
 
     /** HR records a request on behalf of an employee (BR-11's exception path). */

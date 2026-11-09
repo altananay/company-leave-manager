@@ -105,6 +105,7 @@ public class LeaveService {
                                                     LocalDate startDate,
                                                     LocalDate endDate,
                                                     HalfDay halfDay,
+                                                    Kinship kinship,
                                                     String reason) {
         LocalDate today = today();
         Optional<EmployeeView> actor = employees.find(actorId);
@@ -203,6 +204,14 @@ public class LeaveService {
         }
 
         List<LeaveRequest> active = activeRequests(locked.id());
+        // BR-10/D19's type rules run before the overlap and balance gates (the plan's fixed error
+        // precedence): their own codes name what the request got wrong, and the quota needs the
+        // active requests anyway. ANNUAL and EXCUSE pass through every call.
+        Optional<LeaveError> special = specialLeaveRefusal(
+                type, startDate, endDate, businessDays, kinship, locked, active);
+        if (special.isPresent()) {
+            return LeaveResult.error(special.get());
+        }
         if (active.stream().anyMatch(request -> request.overlaps(startDate, endDate))) {
             return LeaveResult.error(LeaveError.OVERLAP);     // BR-6
         }
@@ -214,7 +223,7 @@ public class LeaveService {
         }
 
         LeaveRequest request = LeaveRequest.create(
-                locked.id(), type, startDate, endDate, effectiveHalfDay, businessDays, reason,
+                locked.id(), type, startDate, endDate, effectiveHalfDay, businessDays, kinship, reason,
                 retroactive, clock.instant());
         requests.save(request);
         if (retroactive) {
@@ -285,13 +294,23 @@ public class LeaveService {
             if (request.getStartDate().isBefore(today()) && !request.isRetroactive()) {
                 return LeaveResult.error(LeaveError.PAST_DATE);
             }
+            List<LeaveRequest> active = activeRequests(locked.id());
             // BR-6 at approval time: state can change between the request and the decision. The
             // request itself is pending and overlaps its own range, so it is excluded by id.
-            boolean overlaps = activeRequests(locked.id()).stream()
+            boolean overlaps = active.stream()
                     .filter(other -> !other.getId().equals(request.getId()))
                     .anyMatch(other -> other.overlaps(request.getStartDate(), request.getEndDate()));
             if (overlaps) {
                 return LeaveResult.error(LeaveError.OVERLAP);
+            }
+            // D19 at approval time: another request of the same type may have taken the quota while
+            // this one waited. The request under approval is excluded, so its own days do not count
+            // twice; rejection stays free of this gate.
+            Optional<LeaveError> quota = SpecialLeavePolicy.checkQuota(
+                    request.getType(), request.getStartDate(), request.getBusinessDays(),
+                    locked.birthDate(), active, request.getId());
+            if (quota.isPresent()) {
+                return LeaveResult.error(quota.get());
             }
         }
         if (request.getType().consumesBalance()) {
@@ -596,6 +615,8 @@ public class LeaveService {
                 employee.role(),
                 employee.managerId(),
                 hireDate,
+                employee.birthDate(),
+                employee.hasSchoolAgeChild(),
                 employee.active());
     }
 
@@ -696,6 +717,7 @@ public class LeaveService {
                 request.getEmployeeId(),
                 employeeName,
                 request.getType().name(),
+                request.getKinship() == null ? null : request.getKinship().name(),
                 request.getStartDate(),
                 request.getEndDate(),
                 request.getHalfDay(),
@@ -752,5 +774,30 @@ public class LeaveService {
 
     private static boolean blank(String value) {
         return value == null || value.isBlank();
+    }
+
+    /**
+     * BR-10/D19's type rules in the plan's fixed order: duration/one-day, kinship, school-age child,
+     * birth date, birthday window, quota. Each step answers only for its own types, so the six
+     * special types and the phase A pair share one path.
+     */
+    private static Optional<LeaveError> specialLeaveRefusal(LeaveType type,
+                                                            LocalDate startDate,
+                                                            LocalDate endDate,
+                                                            BigDecimal businessDays,
+                                                            Kinship kinship,
+                                                            EmployeeView employee,
+                                                            List<LeaveRequest> active) {
+        if (type == null) {
+            return Optional.empty();
+        }
+        return SpecialLeavePolicy.checkOneDay(type, startDate, endDate, businessDays)
+                .or(() -> SpecialLeavePolicy.checkDuration(type, businessDays))
+                .or(() -> SpecialLeavePolicy.checkKinship(type, kinship))
+                .or(() -> SpecialLeavePolicy.checkSchoolAgeChild(type, employee.hasSchoolAgeChild()))
+                .or(() -> SpecialLeavePolicy.checkBirthDate(type, employee.birthDate()))
+                .or(() -> SpecialLeavePolicy.checkBirthdayWindow(type, employee.birthDate(), startDate))
+                .or(() -> SpecialLeavePolicy.checkQuota(
+                        type, startDate, businessDays, employee.birthDate(), active, null));
     }
 }

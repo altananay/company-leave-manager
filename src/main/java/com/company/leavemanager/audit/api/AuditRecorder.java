@@ -24,13 +24,16 @@ public class AuditRecorder {
 
     /**
      * What a before/after state says about an audited row. The key names are the documented ones
-     * (status, remaining, managerId, hireDate); a test parses the stored JSON back to check them.
+     * (status, remaining, managerId, hireDate, birthDate, hasSchoolAgeChild); a test parses the
+     * stored JSON back to check them.
      */
     private static final String STATUS = "status";
     private static final String REMAINING = "remaining";
     private static final String BUSINESS_DAYS = "businessDays";
     private static final String MANAGER_ID = "managerId";
     private static final String HIRE_DATE = "hireDate";
+    private static final String BIRTH_DATE = "birthDate";
+    private static final String HAS_SCHOOL_AGE_CHILD = "hasSchoolAgeChild";
 
     private final AuditRepository repository;
     private final Clock clock;
@@ -78,17 +81,26 @@ public class AuditRecorder {
         record("USER_DEACTIVATED", actor, target, null);
     }
 
-    /** HR set (or cleared) the manager link and the hire date; the record carries both sides. */
+    /**
+     * HR set (or cleared) the manager link, the hire date and — since phase B2 — the birth date and
+     * the school-age-child flag; the record carries both sides of all four (BR-13, D18). The free-text
+     * details stay free of the birth date: the structured before/after state is where the personal
+     * value belongs, queryable without being quoted into a log-like field.
+     */
     public void userUpdated(UUID actor,
                             UUID target,
                             UUID beforeManager,
                             java.time.LocalDate beforeHireDate,
+                            java.time.LocalDate beforeBirthDate,
+                            boolean beforeSchoolAgeChild,
                             UUID afterManager,
-                            java.time.LocalDate afterHireDate) {
+                            java.time.LocalDate afterHireDate,
+                            java.time.LocalDate afterBirthDate,
+                            boolean afterSchoolAgeChild) {
         record("USER_UPDATED", actor, target,
                 "managerId=" + afterManager + "; hireDate=" + afterHireDate,
-                employeeState(beforeManager, beforeHireDate),
-                employeeState(afterManager, afterHireDate));
+                employeeState(beforeManager, beforeHireDate, beforeBirthDate, beforeSchoolAgeChild),
+                employeeState(afterManager, afterHireDate, afterBirthDate, afterSchoolAgeChild));
     }
 
     public void passwordReset(UUID actor, UUID target) {
@@ -172,10 +184,15 @@ public class AuditRecorder {
         return state;
     }
 
-    private static Map<String, Object> employeeState(UUID managerId, java.time.LocalDate hireDate) {
+    private static Map<String, Object> employeeState(UUID managerId,
+                                                     java.time.LocalDate hireDate,
+                                                     java.time.LocalDate birthDate,
+                                                     boolean hasSchoolAgeChild) {
         Map<String, Object> state = new LinkedHashMap<>();
         state.put(MANAGER_ID, managerId == null ? null : managerId.toString());
         state.put(HIRE_DATE, hireDate == null ? null : hireDate.toString());
+        state.put(BIRTH_DATE, birthDate == null ? null : birthDate.toString());
+        state.put(HAS_SCHOOL_AGE_CHILD, hasSchoolAgeChild);
         return state;
     }
 }

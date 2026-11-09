@@ -345,6 +345,7 @@ test('shouldFitTheLeaveScreenAtEveryWidth', async ({ page, browser }) => {
   const employeeContext = await browser.newContext()
   const employeePage = await employeeContext.newPage()
   await signInAs(employeePage, created.email, created.password, EMPLOYEE_PASSWORD)
+  const day = await nextBusinessMonday(employeePage)
 
   for (const width of [360, 768, 1440]) {
     await employeePage.setViewportSize({ width, height: 900 })
@@ -356,9 +357,21 @@ test('shouldFitTheLeaveScreenAtEveryWidth', async ({ page, browser }) => {
 
     // The request dialog is the tightest layout on a phone.
     await employeePage.getByRole('button', { name: 'Yeni talep' }).click()
-    await expect(employeePage.getByRole('dialog')).toBeVisible()
+    const dialog = employeePage.getByRole('dialog')
+    await expect(dialog).toBeVisible()
     expect(await horizontalOverflow(employeePage), `request dialog at ${width}px`).toBe(0)
     await expectTouchTargets(employeePage, `request dialog at ${width}px`)
+
+    // B2 (AC-14/AC-16): the special-type form's new controls at this width — the bereavement
+    // kinship and the five-day hint — measured while they are on screen.
+    await dialog.getByLabel('Başlangıç').fill(day)
+    await dialog.getByLabel('Bitiş').fill(day)
+    await dialog.getByRole('combobox', { name: 'İzin türü' }).click()
+    await employeePage.getByRole('option', { name: 'Vefat izni' }).click()
+    await expect(dialog.getByRole('combobox', { name: 'Yakınlık' })).toBeVisible()
+    expect(await horizontalOverflow(employeePage), `bereavement dialog at ${width}px`).toBe(0)
+    await expectTouchTargets(employeePage, `bereavement dialog at ${width}px`)
+
     await employeePage.keyboard.press('Escape')
     await expect(employeePage.getByRole('dialog')).toHaveCount(0)
   }

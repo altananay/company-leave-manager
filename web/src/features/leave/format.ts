@@ -1,6 +1,13 @@
 import { ApiError } from '@/features/auth/authApi'
 import type { Lang, MessageKey } from '@/i18n/messages'
-import type { HalfDay, LeaveStatus, LeaveType } from './leaveApi'
+import type { HalfDay, Kinship, LeaveStatus, LeaveType } from './leaveApi'
+
+/** The types that are exactly one working day, so the form has no end date to ask for (D19). */
+const ONE_DAY_TYPES: readonly LeaveType[] = ['SCHOOL_REPORT', 'BIRTHDAY', 'FIRST_SCHOOL_DAY']
+
+export function isOneDayType(type: LeaveType): boolean {
+  return ONE_DAY_TYPES.includes(type)
+}
 
 /**
  * The server's stable code becomes the catalogue's message; the SPA never writes prose itself.
@@ -27,6 +34,20 @@ export function leaveErrorKey(failure: unknown): MessageKey {
       return 'leaveReasonRequired'
     case 'LEAVE_EXCUSE_TOO_LONG':
       return 'leaveExcuseTooLong'
+    case 'LEAVE_SPECIAL_TOO_LONG':
+      return 'leaveSpecialTooLong'
+    case 'LEAVE_SPECIAL_ONE_DAY':
+      return 'leaveSpecialOneDay'
+    case 'LEAVE_KINSHIP_REQUIRED':
+      return 'leaveKinshipRequired'
+    case 'LEAVE_NO_SCHOOL_AGE_CHILD':
+      return 'leaveNoSchoolAgeChild'
+    case 'LEAVE_NO_BIRTH_DATE':
+      return 'leaveNoBirthDate'
+    case 'LEAVE_BIRTHDAY_WINDOW':
+      return 'leaveBirthdayWindow'
+    case 'LEAVE_SPECIAL_QUOTA_USED':
+      return 'leaveSpecialQuotaUsed'
     case 'LEAVE_RETROACTIVE_REASON_REQUIRED':
       return 'leaveRetroactiveReasonRequired'
     case 'LEAVE_NO_HIRE_DATE':
@@ -58,7 +79,57 @@ export function leaveErrorKey(failure: unknown): MessageKey {
 }
 
 export function leaveTypeKey(type: LeaveType): MessageKey {
-  return type === 'ANNUAL' ? 'leaveTypeAnnual' : 'leaveTypeExcuse'
+  switch (type) {
+    case 'ANNUAL':
+      return 'leaveTypeAnnual'
+    case 'EXCUSE':
+      return 'leaveTypeExcuse'
+    case 'MARRIAGE':
+      return 'leaveTypeMarriage'
+    case 'BEREAVEMENT':
+      return 'leaveTypeBereavement'
+    case 'SPOUSE_BIRTH':
+      return 'leaveTypeSpouseBirth'
+    case 'SCHOOL_REPORT':
+      return 'leaveTypeSchoolReport'
+    case 'BIRTHDAY':
+      return 'leaveTypeBirthday'
+    case 'FIRST_SCHOOL_DAY':
+      return 'leaveTypeFirstSchoolDay'
+  }
+}
+
+/**
+ * The form says what the selected type allows before the request is sent. The sentences live in
+ * the catalogue; this only decides which ones apply.
+ */
+export function leaveTypeHints(type: LeaveType): MessageKey[] {
+  switch (type) {
+    case 'MARRIAGE':
+    case 'BEREAVEMENT':
+    case 'SPOUSE_BIRTH':
+      return ['leaveHintFiveDays']
+    case 'SCHOOL_REPORT':
+    case 'FIRST_SCHOOL_DAY':
+      return ['leaveHintOneDay', 'leaveHintSchoolAgeChild']
+    case 'BIRTHDAY':
+      return ['leaveHintOneDay', 'leaveHintBirthday']
+    default:
+      return []
+  }
+}
+
+export function kinshipKey(kinship: Kinship): MessageKey {
+  switch (kinship) {
+    case 'SPOUSE':
+      return 'kinshipSpouse'
+    case 'CHILD':
+      return 'kinshipChild'
+    case 'PARENT':
+      return 'kinshipParent'
+    case 'SIBLING':
+      return 'kinshipSibling'
+  }
 }
 
 export function halfDayKey(halfDay: HalfDay): MessageKey {

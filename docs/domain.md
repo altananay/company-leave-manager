@@ -56,6 +56,13 @@
   | Doğum günü | 1 | Doğum gününde hak kazanılır; **180 gün** içinde kullanılmalı, sonunda düşer |
   | Okulun ilk günü | 1 | İzni alan çalışanın okul çağında çocuğu olması; yılda 1 gün toplam |
 
+  "Süre" sütunu bir **üst sınırdır** (D19): evlilik, vefat ve eş doğumunda **en çok 5 iş günü**;
+  karne, doğum günü ve okulun ilk gününde **tam 1 iş günü** (tek gün). Karne ve okulun ilk günü
+  kotası **takvim yılında 1 gün**, doğum günü hakkı **en son doğum gününden itibaren 180 gün**
+  içinde kullanılır ve o pencere başına 1 gündür. Kota **onaylı ve bekleyen** talepleri sayar; onay
+  anında talebin kendisi dışındakilerle yeniden kontrol edilir. 29 Şubat doğumlularda doğum günü,
+  29 Şubat'ı olmayan yılda 28 Şubat'a denk gelir. Altı tür de bakiyesizdir (BR-9).
+
 - **BR-11** Başlangıcı geçmişte kalan talep açılamaz; istisna yalnızca İK'nın gerekçeli kaydıdır.
 - **BR-12** Görünürlük: çalışan yalnızca kendi taleplerini, yönetici kendi alt ağacını, İK ve CEO
   şirket genelini görür. Onay yetkisi yalnızca doğrudan yöneticidedir.

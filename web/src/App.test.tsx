@@ -752,8 +752,219 @@ describe('users screen', () => {
     })
     await user.click(within(dialog).getByRole('button', { name: 'Kaydet' }))
 
-    await waitFor(() => expect(patched).toEqual({ managerId: 'u-lead', hireDate: '2021-04-05' }))
+    await waitFor(() =>
+      expect(patched).toEqual({
+        managerId: 'u-lead',
+        hireDate: '2021-04-05',
+        birthDate: null,
+        hasSchoolAgeChild: false,
+      }),
+    )
     expect(await screen.findByText('Kullanıcı güncellendi.')).toBeInTheDocument()
+  })
+
+  it('shouldCreateAUserWithTheBirthDateAndTheSchoolAgeFlag', async () => {
+    // D17/D18: the create form carries the two HR-only personal fields in its body.
+    const created = {
+      ...EMPLOYEE,
+      id: 'u-new',
+      email: 'new@acme.test',
+      displayName: 'New Person',
+      active: true,
+      managerId: null,
+      hireDate: null,
+      birthDate: '1990-05-17',
+      hasSchoolAgeChild: true,
+    }
+    let posted: unknown = null
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(json(200, HR))
+        }
+        if (url.includes('/api/health')) {
+          return Promise.resolve(json(200, { status: 'UP' }))
+        }
+        if (url.includes('/api/users') && init?.method === 'POST') {
+          posted = JSON.parse(String(init.body))
+          return Promise.resolve(
+            json(201, { user: created, temporaryPassword: 'temp-pass-123456' }),
+          )
+        }
+        if (url.includes('/api/users')) {
+          return Promise.resolve(json(200, [created]))
+        }
+        return Promise.resolve(json(404, null))
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await navigationButton('Kullanıcılar'))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+
+    await user.type(await screen.findByLabelText('E-posta'), 'new@acme.test')
+    await user.type(screen.getByLabelText('Ad soyad'), 'New Person')
+    fireEvent.change(screen.getByLabelText('Doğum tarihi'), {
+      target: { value: '1990-05-17' },
+    })
+    await user.click(screen.getByRole('checkbox', { name: 'Okul çağında çocuğu var' }))
+    await user.click(screen.getByRole('button', { name: 'Oluştur' }))
+
+    await waitFor(() => expect(posted).not.toBeNull())
+    expect(posted).toEqual({
+      email: 'new@acme.test',
+      displayName: 'New Person',
+      role: 'EMPLOYEE',
+      managerId: null,
+      hireDate: null,
+      birthDate: '1990-05-17',
+      hasSchoolAgeChild: true,
+    })
+  })
+
+  it('shouldEditTheBirthDateAndTheSchoolAgeFlag', async () => {
+    // The edit dialog prefills both fields from the response and sends them back; the refreshed row
+    // proves the two fields round-trip through the server's answer.
+    const target = {
+      id: 'u-edit',
+      email: 'edit@acme.test',
+      displayName: 'Edit Person',
+      role: 'EMPLOYEE',
+      mustChangePassword: false,
+      active: true,
+      managerId: null,
+      hireDate: null,
+      birthDate: '1990-05-17',
+      hasSchoolAgeChild: true,
+    }
+    let rows = [target]
+    let patched: unknown = null
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(json(200, HR))
+        }
+        if (url.includes('/api/health')) {
+          return Promise.resolve(json(200, { status: 'UP' }))
+        }
+        if (url.includes('/api/users') && init?.method === 'PATCH') {
+          patched = JSON.parse(String(init.body))
+          rows = [{ ...target, birthDate: '1991-06-18', hasSchoolAgeChild: false }]
+          return Promise.resolve(json(200, rows[0]))
+        }
+        if (url.includes('/api/users')) {
+          return Promise.resolve(json(200, rows))
+        }
+        return Promise.resolve(json(404, null))
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await navigationButton('Kullanıcılar'))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+    await screen.findByRole('table')
+
+    await user.click(screen.getAllByRole('button', { name: 'İşlemler' })[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'Düzenle' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText('Doğum tarihi')).toHaveValue('1990-05-17')
+    const checkbox = within(dialog).getByRole('checkbox', { name: 'Okul çağında çocuğu var' })
+    expect(checkbox).toBeChecked()
+
+    fireEvent.change(within(dialog).getByLabelText('Doğum tarihi'), {
+      target: { value: '1991-06-18' },
+    })
+    await user.click(checkbox)
+    expect(checkbox).not.toBeChecked()
+    await user.click(within(dialog).getByRole('button', { name: 'Kaydet' }))
+
+    await waitFor(() =>
+      expect(patched).toEqual({
+        managerId: null,
+        hireDate: null,
+        birthDate: '1991-06-18',
+        hasSchoolAgeChild: false,
+      }),
+    )
+    expect(await screen.findByText('Kullanıcı güncellendi.')).toBeInTheDocument()
+
+    await user.click(screen.getAllByRole('button', { name: 'İşlemler' })[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'Düzenle' }))
+    const reopened = await screen.findByRole('dialog')
+    expect(within(reopened).getByLabelText('Doğum tarihi')).toHaveValue('1991-06-18')
+    expect(
+      within(reopened).getByRole('checkbox', { name: 'Okul çağında çocuğu var' }),
+    ).not.toBeChecked()
+  })
+
+  it('shouldMarkTheBirthDateFieldWhenTheServerRejectsIt', async () => {
+    // INVALID_BIRTH_DATE belongs to the birth date, not to the hire date beside it (M-13).
+    const target = {
+      id: 'u-edit',
+      email: 'edit@acme.test',
+      displayName: 'Edit Person',
+      role: 'EMPLOYEE',
+      mustChangePassword: false,
+      active: true,
+      managerId: null,
+      hireDate: null,
+      birthDate: '1990-05-17',
+      hasSchoolAgeChild: false,
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(json(200, HR))
+        }
+        if (url.includes('/api/health')) {
+          return Promise.resolve(json(200, { status: 'UP' }))
+        }
+        if (url.includes('/api/users') && init?.method === 'PATCH') {
+          return Promise.resolve(json(400, { status: 400, code: 'INVALID_BIRTH_DATE' }))
+        }
+        if (url.includes('/api/users')) {
+          return Promise.resolve(json(200, [target]))
+        }
+        return Promise.resolve(json(404, null))
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await navigationButton('Kullanıcılar'))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+    await screen.findByRole('table')
+
+    await user.click(screen.getAllByRole('button', { name: 'İşlemler' })[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'Düzenle' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Doğum tarihi'), {
+      target: { value: '1899-12-31' },
+    })
+    await user.click(within(dialog).getByRole('button', { name: 'Kaydet' }))
+
+    expect(
+      await within(dialog).findByText('Doğum tarihi 1900 ile bugün arasında olmalı.'),
+    ).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Doğum tarihi')).toHaveAttribute('aria-invalid', 'true')
+    expect(within(dialog).getByLabelText('İşe giriş tarihi')).not.toHaveAttribute('aria-invalid')
   })
 
   it('shouldMarkOnlyTheFieldTheEditRefusalIsAbout', async () => {
@@ -1700,6 +1911,11 @@ describe('accessibility', () => {
     expect(screen.getByRole('combobox', { name: 'Yönetici' })).toHaveFocus()
     await user.tab()
     expect(screen.getByLabelText('İşe giriş tarihi')).toHaveFocus()
+    // The personal fields (D17) sit between the org data and the submit.
+    await user.tab()
+    expect(screen.getByLabelText('Doğum tarihi')).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('checkbox', { name: 'Okul çağında çocuğu var' })).toHaveFocus()
     await user.tab()
     expect(screen.getByRole('button', { name: 'Oluştur' })).toHaveFocus()
 

@@ -16,8 +16,36 @@ import {
 import { Field } from '@/ui/field'
 import { Label } from '@/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
-import { formatDays, leaveErrorKey } from './format'
-import { leaveApi, type HalfDay, type LeaveRequest, type LeaveType, type Preview } from './leaveApi'
+import {
+  formatDays,
+  isOneDayType,
+  kinshipKey,
+  leaveErrorKey,
+  leaveTypeHints,
+  leaveTypeKey,
+} from './format'
+import {
+  leaveApi,
+  type HalfDay,
+  type Kinship,
+  type LeaveRequest,
+  type LeaveType,
+  type Preview,
+} from './leaveApi'
+
+/** The type selector is a flat list (B2 plan risk note): no grouping primitive is introduced. */
+const LEAVE_TYPES: readonly LeaveType[] = [
+  'ANNUAL',
+  'EXCUSE',
+  'MARRIAGE',
+  'BEREAVEMENT',
+  'SPOUSE_BIRTH',
+  'SCHOOL_REPORT',
+  'BIRTHDAY',
+  'FIRST_SCHOOL_DAY',
+]
+
+const KINSHIPS: readonly Kinship[] = ['SPOUSE', 'CHILD', 'PARENT', 'SIBLING']
 
 /**
  * The request dialog (AC-1): type, date range and reason, with the working-day summary shown before
@@ -40,24 +68,31 @@ function LeaveRequestForm({
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [halfDay, setHalfDay] = useState<HalfDay>('NONE')
+  const [kinship, setKinship] = useState<Kinship | ''>('')
   const [reason, setReason] = useState('')
   const [preview, setPreview] = useState<Preview | null>(null)
   const [error, setError] = useState<MessageKey | null>(null)
   const [busy, setBusy] = useState(false)
 
+  // D19: the three one-day types have no end date of their own; it is the start date.
+  const oneDay = isOneDayType(type)
+  const end = oneDay ? startDate : endDate
+  // D17/D19: the kinship belongs to a bereavement request and to nothing else.
+  const kinshipRequired = type === 'BEREAVEMENT'
+
   // D15: a half day is one day long, and only annual/excuse leave knows the concept at all. On a
   // range (or before both dates are chosen) the control is absent and the request carries NONE.
   const halfDayAvailable =
-    (type === 'ANNUAL' || type === 'EXCUSE') && startDate !== '' && startDate === endDate
+    (type === 'ANNUAL' || type === 'EXCUSE') && startDate !== '' && startDate === end
   const effectiveHalfDay: HalfDay = halfDayAvailable ? halfDay : 'NONE'
 
   useEffect(() => {
-    if (!open || !startDate || !endDate) {
+    if (!open || !startDate || !end) {
       return
     }
     let cancelled = false
     leaveApi
-      .preview(startDate, endDate, type, effectiveHalfDay)
+      .preview(startDate, end, type, effectiveHalfDay)
       .then((result) => {
         if (!cancelled) {
           setPreview(result)
@@ -71,12 +106,13 @@ function LeaveRequestForm({
     return () => {
       cancelled = true
     }
-  }, [open, startDate, endDate, type, effectiveHalfDay])
+  }, [open, startDate, end, type, effectiveHalfDay])
 
   function close() {
     setStartDate('')
     setEndDate('')
     setHalfDay('NONE')
+    setKinship('')
     setReason('')
     setPreview(null)
     setError(null)
@@ -88,7 +124,14 @@ function LeaveRequestForm({
     setError(null)
     setBusy(true)
     try {
-      const created = await leaveApi.create(type, startDate, endDate, effectiveHalfDay, reason)
+      const created = await leaveApi.create(
+        type,
+        startDate,
+        end,
+        effectiveHalfDay,
+        reason,
+        kinshipRequired ? kinship || null : null,
+      )
       setType('ANNUAL')
       close()
       onCreated(created)
@@ -131,21 +174,38 @@ function LeaveRequestForm({
             <Select
               value={type}
               onValueChange={(value) => {
-                setType(value as LeaveType)
+                const next = value as LeaveType
+                setType(next)
                 setPreview(null)
+                setError(null)
+                if (next !== 'BEREAVEMENT') {
+                  setKinship('')
+                }
+                // A one-day type has no end of its own; a stale range must not survive the switch.
+                if (isOneDayType(next)) {
+                  setEndDate('')
+                }
               }}
             >
               <SelectTrigger id="leave-type-trigger">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ANNUAL">{t('leaveTypeAnnual')}</SelectItem>
-                <SelectItem value="EXCUSE">{t('leaveTypeExcuse')}</SelectItem>
+                {LEAVE_TYPES.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {t(leaveTypeKey(option))}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            <div className="flex flex-col gap-0.5 text-small text-muted-foreground">
+              {leaveTypeHints(type).map((hint) => (
+                <p key={hint}>{t(hint)}</p>
+              ))}
+            </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className={oneDay ? 'flex flex-col gap-4' : 'grid gap-4 sm:grid-cols-2'}>
             <Field
               label={t('leaveStartDate')}
               type="date"
@@ -157,29 +217,59 @@ function LeaveRequestForm({
                 setPreview(null)
                 setError(null)
                 // A half day belongs to one day; a range resets the choice (the control disappears).
-                if (event.target.value !== endDate) {
+                if (event.target.value !== end) {
                   setHalfDay('NONE')
                 }
               }}
               required
             />
-            <Field
-              label={t('leaveEndDate')}
-              type="date"
-              value={endDate}
-              invalid={dateInvalid}
-              describedBy={error ? 'leave-form-error' : undefined}
-              onChange={(event) => {
-                setEndDate(event.target.value)
-                setPreview(null)
-                setError(null)
-                if (event.target.value !== startDate) {
-                  setHalfDay('NONE')
-                }
-              }}
-              required
-            />
+            {!oneDay && (
+              <Field
+                label={t('leaveEndDate')}
+                type="date"
+                value={endDate}
+                invalid={dateInvalid}
+                describedBy={error ? 'leave-form-error' : undefined}
+                onChange={(event) => {
+                  setEndDate(event.target.value)
+                  setPreview(null)
+                  setError(null)
+                  if (event.target.value !== startDate) {
+                    setHalfDay('NONE')
+                  }
+                }}
+                required
+              />
+            )}
           </div>
+
+          {kinshipRequired && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="leave-kinship-trigger">{t('kinship')}</Label>
+              <Select
+                value={kinship}
+                onValueChange={(value) => {
+                  setKinship(value as Kinship)
+                  setError(null)
+                }}
+              >
+                <SelectTrigger
+                  id="leave-kinship-trigger"
+                  aria-invalid={error === 'leaveKinshipRequired' || undefined}
+                  aria-describedby={error ? 'leave-form-error' : undefined}
+                >
+                  <SelectValue placeholder={t('kinshipPlaceholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {KINSHIPS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {t(kinshipKey(option))}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {halfDayAvailable && (
             <div className="flex flex-col gap-1.5">
@@ -244,7 +334,11 @@ function LeaveRequestForm({
             <Button
               type="submit"
               disabled={
-                busy || !startDate || !endDate || (reasonRequired && reason.trim().length === 0)
+                busy ||
+                !startDate ||
+                (!oneDay && !endDate) ||
+                (reasonRequired && reason.trim().length === 0) ||
+                (kinshipRequired && kinship === '')
               }
             >
               {busy ? t('leaveSending') : t('leaveSubmit')}

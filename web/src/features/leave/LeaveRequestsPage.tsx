@@ -35,6 +35,7 @@ import { BalanceCard } from './BalanceCard'
 import {
   formatDays,
   halfDayKey,
+  kinshipKey,
   leaveErrorKey,
   leaveStatusKey,
   leaveStatusVariant,
@@ -596,6 +597,12 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
                 <div className="flex items-baseline justify-between gap-4">
                   <dt className="text-small text-muted-foreground">{t('leaveHalfDay')}</dt>
                   <dd>{t(halfDayKey(detail.halfDay))}</dd>
+                </div>
+              )}
+              {detail.kinship && (
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt className="text-small text-muted-foreground">{t('kinship')}</dt>
+                  <dd>{t(kinshipKey(detail.kinship))}</dd>
                 </div>
               )}
               <div className="flex items-baseline justify-between gap-4">

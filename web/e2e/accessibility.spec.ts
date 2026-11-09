@@ -216,6 +216,18 @@ async function expectFocusTrappedInDialog(page: Page, label: string) {
  * handled where it can be measured, and the overlay's own text is never excused.
  */
 async function expectNoViolations(page: Page, label: string) {
+  // Measure the settled state, never a frame in the middle of a transition: a running animation can
+  // make the final colours unresolvable to axe (the users screen's short stat values were the first
+  // surface to show it as `shortTextContent`). Infinite loops (the skeleton's pulse) are skipped, so
+  // a loading state cannot hang the scan; under `reducedMotion: 'reduce'` the list is empty or
+  // instant, so this costs nothing in the normal run.
+  await page.evaluate(async () => {
+    const finite = document.getAnimations().filter((animation) => {
+      const timing = animation.effect?.getComputedTiming()
+      return timing !== undefined && timing.iterations !== Infinity
+    })
+    await Promise.all(finite.map((animation) => animation.finished.catch(() => {})))
+  })
   const builder = new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
   const results = await builder.analyze()
 
@@ -477,6 +489,10 @@ test('shouldHaveNoAccessibilityViolationsOnEveryScreen', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
   // The heading renders before the request answers: scan the list, not the loading state.
   await expect(page.getByRole('table')).toBeVisible()
+  // The summary cards sit at the 720 px fold: a two-pixel sliver of a one-character value is what axe
+  // reports as `shortTextContent` (it cannot resolve the contrast of a clipped glyph). Bring the
+  // surface into view before measuring it — the fold is not a contrast state.
+  await page.locator('[data-slot="users-stats"]').scrollIntoViewIfNeeded()
   await expectNoViolations(page, 'users')
 
   await page.getByRole('button', { name: 'İşlemler' }).first().click()
@@ -660,6 +676,24 @@ test('shouldHaveNoAccessibilityViolationsOnTheLeaveScreen', async ({ page }) => 
   await employeePage.getByRole('option', { name: 'Öğleden sonra' }).click()
   await expect(employeePage.getByText(/0,5 iş günü/)).toBeVisible()
   await expectNoViolations(employeePage, 'leave request dialog with a half day')
+
+  // B2 (AC-14/AC-16): the six special types are their own form. Bereavement shows the required
+  // kinship, and a one-day type hides the end date; each state is scanned while it is the surface.
+  await employeePage.getByRole('combobox', { name: 'İzin türü' }).click()
+  await employeePage.getByRole('option', { name: 'Vefat izni' }).click()
+  await expect(employeePage.getByRole('combobox', { name: 'Yakınlık' })).toBeVisible()
+  await expect(employeePage.getByText('En çok 5 iş günü.')).toBeVisible()
+  await expectNoViolations(employeePage, 'leave request dialog with bereavement')
+
+  await employeePage.getByRole('combobox', { name: 'Yakınlık' }).click()
+  await employeePage.getByRole('option', { name: 'Eş', exact: true }).click()
+  await expectNoViolations(employeePage, 'leave request dialog with the kinship chosen')
+
+  await employeePage.getByRole('combobox', { name: 'İzin türü' }).click()
+  await employeePage.getByRole('option', { name: 'Karne izni' }).click()
+  await expect(employeePage.getByLabel('Bitiş')).toHaveCount(0)
+  await expect(employeePage.getByText('1 iş günü.')).toBeVisible()
+  await expectNoViolations(employeePage, 'leave request dialog with a one-day type')
 
   await employeeContext.close()
 })

@@ -20,7 +20,7 @@ import java.util.UUID;
 @Service
 public class UserAdminService {
 
-    public enum CreateOutcome { CREATED, INVALID_ROLE, ROLE_NOT_ASSIGNABLE, EMAIL_EXISTS, INVALID_MANAGER, INVALID_HIRE_DATE }
+    public enum CreateOutcome { CREATED, INVALID_ROLE, ROLE_NOT_ASSIGNABLE, EMAIL_EXISTS, INVALID_MANAGER, INVALID_HIRE_DATE, INVALID_BIRTH_DATE }
 
     public record CreateResult(CreateOutcome outcome, CreateUserResponse response) {
     }
@@ -37,7 +37,9 @@ public class UserAdminService {
         /** M-01: the edit would push the annual balance below zero — the invariant forbids it. */
         WOULD_GO_NEGATIVE,
         /** M-01/N-03: a hire date outside {@link HireDatePolicy} (before 1950 or in the future). */
-        INVALID_HIRE_DATE
+        INVALID_HIRE_DATE,
+        /** B2/D17: a birth date outside {@link BirthDatePolicy} (before 1900 or in the future). */
+        INVALID_BIRTH_DATE
     }
 
     public record AdminResult(AdminOutcome outcome, CreateUserResponse response) {
@@ -78,7 +80,9 @@ public class UserAdminService {
                                String displayName,
                                String roleName,
                                UUID managerId,
-                               LocalDate hireDate) {
+                               LocalDate hireDate,
+                               LocalDate birthDate,
+                               boolean hasSchoolAgeChild) {
         Role role;
         try {
             role = Role.valueOf(roleName.toUpperCase(Locale.ROOT));
@@ -99,9 +103,13 @@ public class UserAdminService {
             // 1900-01-01 typo would arrive with ~3,168 business days of entitlement.
             return new CreateResult(CreateOutcome.INVALID_HIRE_DATE, null);
         }
+        if (!BirthDatePolicy.isSane(birthDate, clock)) {
+            // B2: the birth date is HR-entered on both paths, so it has one validator and one code.
+            return new CreateResult(CreateOutcome.INVALID_BIRTH_DATE, null);
+        }
         String temporaryPassword = TemporaryPassword.generate();
         User user = User.create(email, displayName, role, encoder.encode(temporaryPassword),
-                managerId, hireDate, clock.instant());
+                managerId, hireDate, birthDate, hasSchoolAgeChild, clock.instant());
         users.save(user);
         audit.userCreated(actorId, user.getId(), role.name());
         return new CreateResult(CreateOutcome.CREATED,
@@ -149,9 +157,10 @@ public class UserAdminService {
     }
 
     /**
-     * HR backfills the org data of an existing account (L-04): the manager link and the hire date.
-     * There is no bulk migration — a V2-era account is edited one by one by HR, and until its hire
-     * date is set its annual entitlement is zero (L-05) rather than a guess.
+     * HR backfills the org data of an existing account (L-04): the manager link, the hire date, and
+     * (phase B2) the birth date and school-age-child flag BR-10 needs. There is no bulk migration — a
+     * V2-era account is edited one by one by HR, and until its hire date is set its annual
+     * entitlement is zero (L-05) rather than a guess.
      *
      * <p>The manager must be an active MANAGER and may not be the account itself or one of its own
      * reports (a cycle), so BR-7's "direct manager decides" stays true after every edit.
@@ -176,9 +185,17 @@ public class UserAdminService {
      *       leave begin before the employment did;</li>
      *   <li>N-03: the 1950…today bound is the same {@link HireDatePolicy} creation uses.</li>
      * </ul>
+     *
+     * <p>Phase B2 adds the birth-date bound ({@link BirthDatePolicy}); the two personal-data fields
+     * and both org fields then appear on both sides of the {@code USER_UPDATED} audit event (D18).
      */
     @Transactional
-    public UpdateResult update(UUID actorId, UUID targetId, UUID managerId, LocalDate hireDate) {
+    public UpdateResult update(UUID actorId,
+                               UUID targetId,
+                               UUID managerId,
+                               LocalDate hireDate,
+                               LocalDate birthDate,
+                               boolean hasSchoolAgeChild) {
         if (actorId.equals(targetId)) {
             return new UpdateResult(AdminOutcome.SELF_ACTION, null);
         }
@@ -197,6 +214,9 @@ public class UserAdminService {
         }
         if (!HireDatePolicy.isSane(hireDate, clock)) {
             return new UpdateResult(AdminOutcome.INVALID_HIRE_DATE, null);
+        }
+        if (!BirthDatePolicy.isSane(birthDate, clock)) {
+            return new UpdateResult(AdminOutcome.INVALID_BIRTH_DATE, null);
         }
         if (hireDate != null && leaveFacts.hasActiveLeaveStartingBefore(targetId, hireDate)) {
             // N-01: docs/domain.md's "izin işe girişten önce başlayamaz" after an edit too. This is
@@ -219,9 +239,13 @@ public class UserAdminService {
         }
         UUID beforeManager = user.getManagerId();
         LocalDate beforeHireDate = user.getHireDate();
-        user.updateOrg(managerId, hireDate, clock.instant());
+        LocalDate beforeBirthDate = user.getBirthDate();
+        boolean beforeSchoolAgeChild = user.hasSchoolAgeChild();
+        user.updateOrg(managerId, hireDate, birthDate, hasSchoolAgeChild, clock.instant());
         users.save(user);
-        audit.userUpdated(actorId, user.getId(), beforeManager, beforeHireDate, managerId, hireDate);
+        audit.userUpdated(actorId, user.getId(),
+                beforeManager, beforeHireDate, beforeBirthDate, beforeSchoolAgeChild,
+                managerId, hireDate, birthDate, hasSchoolAgeChild);
         return new UpdateResult(AdminOutcome.DONE, UserResponse.of(user));
     }
 

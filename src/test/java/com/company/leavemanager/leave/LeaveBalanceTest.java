@@ -74,7 +74,7 @@ class LeaveBalanceTest {
         // carried over, and it is not offered a second time.
         LeaveRequest earlier = LeaveRequest.create(UUID.randomUUID(), LeaveType.ANNUAL,
                 LocalDate.of(2025, 6, 2), LocalDate.of(2025, 6, 2), HalfDay.AM,
-                new BigDecimal("0.5"), null, Instant.now());
+                new BigDecimal("0.5"), null, null, Instant.now());
         earlier.approve(UUID.randomUUID(), null, Instant.now());
 
         LeaveBalance balance = LeaveBalance.of(ENTITLEMENT, BigDecimal.ZERO, List.of(earlier));
@@ -139,7 +139,7 @@ class LeaveBalanceTest {
         // in 2025. The net carryover is 71, and the day is not offered a second time.
         LeaveRequest earlier = LeaveRequest.create(UUID.randomUUID(), LeaveType.ANNUAL,
                 LocalDate.of(2025, 6, 2), LocalDate.of(2025, 6, 6), HalfDay.NONE,
-                new BigDecimal("5"), null, Instant.now());
+                new BigDecimal("5"), null, null, Instant.now());
         earlier.approve(UUID.randomUUID(), null, Instant.now());
 
         LeaveBalance balance = LeaveBalance.of(ENTITLEMENT, BigDecimal.ZERO, List.of(earlier));
@@ -156,7 +156,7 @@ class LeaveBalanceTest {
         // free a second one, so the net carryover reserves it now.
         LeaveRequest earlierPending = LeaveRequest.create(UUID.randomUUID(), LeaveType.ANNUAL,
                 LocalDate.of(2025, 6, 2), LocalDate.of(2025, 6, 3), HalfDay.NONE,
-                new BigDecimal("2"), null, Instant.now());
+                new BigDecimal("2"), null, null, Instant.now());
 
         LeaveBalance balance = LeaveBalance.of(ENTITLEMENT, BigDecimal.ZERO, List.of(earlierPending));
 
@@ -183,6 +183,6 @@ class LeaveBalanceTest {
     private static LeaveRequest request(LeaveType type, String businessDays, HalfDay halfDay) {
         // The balance only reads the start date; the end date is irrelevant to these assertions.
         return LeaveRequest.create(UUID.randomUUID(), type, START, START, halfDay,
-                new BigDecimal(businessDays), null, Instant.now());
+                new BigDecimal(businessDays), null, null, Instant.now());
     }
 }

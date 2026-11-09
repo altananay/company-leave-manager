@@ -24,6 +24,27 @@
   row validated before any write, and the whole import is one transaction.
 - Request and response bodies are never logged (they carry personal data).
 
+## Personal data (KVKK)
+
+- **Minimal set (spec 0004, D17).** The six BR-10 leave types are verified with exactly three
+  fields: `users.birth_date` (the birthday window), `users.has_school_age_child` (school report and
+  first school day) and `leave_request.kinship` (bereavement only: `SPOUSE`, `CHILD`, `PARENT`,
+  `SIBLING`). A child's name, birth date and school, and a relative's identity, are **never
+  collected**: a flag and an enum answer the same question with far less data.
+- **Purpose.** Only to verify the leave entitlement BR-10 grants; the fields are not used for
+  profiling, reporting or any second purpose.
+- **Visibility (D18).** The birth date and the school-age flag are readable and writable only
+  through HR's user endpoints (`GET/POST/PATCH /api/users`). They are deliberately absent from
+  `/api/auth/me`, the balance, the leave lists and every other response, so a manager or a peer
+  cannot learn them. The employee cannot edit either field. `kinship` stays on its request row and
+  is visible only through the existing request scopes — the employee, the direct manager and HR.
+- **Auditing.** An HR edit of either field writes `USER_UPDATED` with the before/after values
+  (BR-13), so the change is attributable.
+- **Retention.** Personal data is kept for the employment period plus the statutory retention
+  period. Deactivated accounts are not deleted, so the leave history and its audit trail stay
+  complete (`docs/domain.md`, `docs/conventions.md`). Request and response bodies are never logged,
+  so these values do not reach the application logs.
+
 ## AuthN / AuthZ
 
 - **AuthN (V1):** corporate e-mail + password, BCrypt hashing. No self-service sign-up; İK creates

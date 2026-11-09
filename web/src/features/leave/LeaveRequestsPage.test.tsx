@@ -58,6 +58,7 @@ const PENDING_REQUEST = {
   halfDay: 'NONE',
   status: 'PENDING',
   reason: 'aile ziyareti',
+  kinship: null,
   decidedBy: null,
   decidedByName: null,
   decidedAt: null,
@@ -141,6 +142,27 @@ function renderPage(me: Me, onForbidden = vi.fn()) {
       </I18nProvider>,
     ),
   }
+}
+
+type UserEventApi = ReturnType<typeof userEvent.setup>
+
+/** Opens the type selector and picks a type by its Turkish catalogue label. */
+async function chooseLeaveType(user: UserEventApi, dialog: HTMLElement, label: string) {
+  await user.click(within(dialog).getByRole('combobox', { name: 'İzin türü' }))
+  await user.click(await screen.findByRole('option', { name: label }))
+}
+
+/** Opens the kinship selector of a bereavement request and picks a relative. */
+async function chooseKinship(user: UserEventApi, dialog: HTMLElement, label: string) {
+  await user.click(within(dialog).getByRole('combobox', { name: 'Yakınlık' }))
+  await user.click(await screen.findByRole('option', { name: label }))
+}
+
+function setRange(dialog: HTMLElement, startDate: string, endDate: string) {
+  fireEvent.change(within(dialog).getByLabelText('Başlangıç'), {
+    target: { value: startDate },
+  })
+  fireEvent.change(within(dialog).getByLabelText('Bitiş'), { target: { value: endDate } })
 }
 
 beforeEach(() => {
@@ -337,6 +359,27 @@ describe('request list', () => {
     expect(within(dialog).getByText('0,5')).toBeInTheDocument()
   })
 
+  it('shouldShowTheKinshipOfABereavementRequestInTheDetail', async () => {
+    // D18: the kinship is part of the request's own record and the detail names it.
+    const bereavement = {
+      ...DECIDED_REQUEST,
+      id: 'r-ber-detail',
+      type: 'BEREAVEMENT',
+      kinship: 'CHILD',
+    }
+    stubApi(leaveRoutes({ 'GET /api/leave/requests': () => page([bereavement]) }))
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Ayrıntı' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Yakınlık')).toBeInTheDocument()
+    expect(within(dialog).getByText('Çocuk')).toBeInTheDocument()
+  })
+
   it('shouldShowWhoCancelledWithoutLosingTheDecision', async () => {
     // L-17: the withdrawal has its own actor and moment; the decision stays on screen too.
     const cancelled = {
@@ -431,6 +474,222 @@ describe('request dialog', () => {
     // The "my days" card refreshes once the request exists (mount + one bump).
     await waitFor(() => expect(days).toHaveBeenCalledTimes(2))
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('shouldOfferTheEightLeaveTypes', async () => {
+    // AC-14: BR-10's six special types join annual and excuse leave in one flat list.
+    stubApi(leaveRoutes())
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Yeni talep' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('combobox', { name: 'İzin türü' }))
+
+    const options = await screen.findAllByRole('option')
+    expect(options.map((option) => option.textContent)).toEqual([
+      'Yıllık izin',
+      'Mazeret izni',
+      'Evlilik izni',
+      'Vefat izni',
+      'Eş doğumu izni',
+      'Karne izni',
+      'Doğum günü izni',
+      'Okulun ilk günü izni',
+    ])
+  })
+
+  it('shouldShowTheHintOfTheSelectedType', async () => {
+    // D19: the form names the bound and the condition before the server has to refuse anything.
+    stubApi(leaveRoutes())
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Yeni talep' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByText('En çok 5 iş günü.')).toBeNull()
+
+    await chooseLeaveType(user, dialog, 'Evlilik izni')
+    expect(within(dialog).getByText('En çok 5 iş günü.')).toBeInTheDocument()
+
+    await chooseLeaveType(user, dialog, 'Karne izni')
+    expect(within(dialog).getByText('1 iş günü.')).toBeInTheDocument()
+    expect(
+      within(dialog).getByText('Okul çağında çocuğunuz olmalı; yılda 1 gün.'),
+    ).toBeInTheDocument()
+
+    await chooseLeaveType(user, dialog, 'Doğum günü izni')
+    expect(
+      within(dialog).getByText('Doğum gününüzden itibaren 180 gün içinde 1 gün.'),
+    ).toBeInTheDocument()
+    expect(within(dialog).queryByText('Okul çağında çocuğunuz olmalı; yılda 1 gün.')).toBeNull()
+  })
+
+  it('shouldRequireTheKinshipOnlyForABereavementLeave', async () => {
+    // D17/D19: the kinship select exists for a bereavement request and blocks the submit until set.
+    stubApi(leaveRoutes())
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Yeni talep' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByRole('combobox', { name: 'Yakınlık' })).toBeNull()
+
+    await chooseLeaveType(user, dialog, 'Vefat izni')
+    expect(within(dialog).getByRole('combobox', { name: 'Yakınlık' })).toBeInTheDocument()
+    setRange(dialog, '2026-11-30', '2026-12-02')
+    const submit = within(dialog).getByRole('button', { name: 'Talebi gönder' })
+    expect(submit).toBeDisabled()
+
+    await chooseKinship(user, dialog, 'Kardeş')
+    expect(submit).toBeEnabled()
+
+    await chooseLeaveType(user, dialog, 'Yıllık izin')
+    expect(within(dialog).queryByRole('combobox', { name: 'Yakınlık' })).toBeNull()
+  })
+
+  it('shouldSendTheKinshipOfABereavementRequest', async () => {
+    // The kinship travels in the create body for BEREAVEMENT (the frozen contract).
+    const create = vi.fn((_init?: RequestInit) =>
+      json(201, {
+        ...PENDING_REQUEST,
+        id: 'r-ber',
+        type: 'BEREAVEMENT',
+        kinship: 'SPOUSE',
+      }),
+    )
+    stubApi(leaveRoutes({ 'POST /api/leave/requests': create }))
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Yeni talep' }))
+    const dialog = await screen.findByRole('dialog')
+    await chooseLeaveType(user, dialog, 'Vefat izni')
+    setRange(dialog, '2026-11-30', '2026-11-30')
+    // D15: a special type is whole-day even on a single day, so the half-day control is absent.
+    expect(within(dialog).queryByRole('combobox', { name: 'Yarım gün' })).toBeNull()
+    await chooseKinship(user, dialog, 'Eş')
+    await user.click(within(dialog).getByRole('button', { name: 'Talebi gönder' }))
+
+    await waitFor(() => expect(create).toHaveBeenCalled())
+    expect(JSON.parse(String(create.mock.calls[0]?.[0]?.body))).toEqual({
+      type: 'BEREAVEMENT',
+      startDate: '2026-11-30',
+      endDate: '2026-11-30',
+      halfDay: 'NONE',
+      reason: null,
+      kinship: 'SPOUSE',
+    })
+    expect(await screen.findByText('İzin talebi oluşturuldu.')).toBeInTheDocument()
+  })
+
+  it('shouldHideTheEndDateAndSendTheSameDayForAOneDayType', async () => {
+    // D19: the one-day types have no end date; the start is sent as both ends.
+    const create = vi.fn((_init?: RequestInit) =>
+      json(201, {
+        ...PENDING_REQUEST,
+        id: 'r-birthday',
+        type: 'BIRTHDAY',
+        startDate: '2026-11-30',
+        endDate: '2026-11-30',
+        businessDays: 1,
+      }),
+    )
+    const fetchMock = stubApi(leaveRoutes({ 'POST /api/leave/requests': create }))
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Yeni talep' }))
+    const dialog = await screen.findByRole('dialog')
+    await chooseLeaveType(user, dialog, 'Doğum günü izni')
+    expect(within(dialog).getByLabelText('Başlangıç')).toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('Bitiş')).toBeNull()
+
+    fireEvent.change(within(dialog).getByLabelText('Başlangıç'), {
+      target: { value: '2026-11-30' },
+    })
+
+    const previewUrls = () =>
+      fetchMock.mock.calls
+        .map((call) => String(call[0]))
+        .filter((url) => url.includes('/api/leave/preview'))
+    await waitFor(() => expect(previewUrls().at(-1)).toContain('endDate=2026-11-30'))
+
+    await user.click(within(dialog).getByRole('button', { name: 'Talebi gönder' }))
+
+    await waitFor(() => expect(create).toHaveBeenCalled())
+    expect(JSON.parse(String(create.mock.calls[0]?.[0]?.body))).toEqual({
+      type: 'BIRTHDAY',
+      startDate: '2026-11-30',
+      endDate: '2026-11-30',
+      halfDay: 'NONE',
+      reason: null,
+    })
+  })
+
+  it('shouldMapTheKinshipRefusalToItsOwnMessage', async () => {
+    stubApi(
+      leaveRoutes({
+        'POST /api/leave/requests': () =>
+          json(400, { status: 400, code: 'LEAVE_KINSHIP_REQUIRED' }),
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Yeni talep' }))
+    const dialog = await screen.findByRole('dialog')
+    await chooseLeaveType(user, dialog, 'Vefat izni')
+    setRange(dialog, '2026-11-30', '2026-12-02')
+    await chooseKinship(user, dialog, 'Çocuk')
+    await user.click(within(dialog).getByRole('button', { name: 'Talebi gönder' }))
+
+    expect(
+      await within(dialog).findByText('Vefat izni için yakınlık derecesi zorunludur.'),
+    ).toBeInTheDocument()
+    expect(
+      within(dialog).queryByText('İzin işlemi tamamlanamadı. Lütfen tekrar deneyin.'),
+    ).toBeNull()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('shouldMapTheBirthdayWindowRefusalToItsOwnMessage', async () => {
+    stubApi(
+      leaveRoutes({
+        'POST /api/leave/requests': () => json(400, { status: 400, code: 'LEAVE_BIRTHDAY_WINDOW' }),
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Yeni talep' }))
+    const dialog = await screen.findByRole('dialog')
+    await chooseLeaveType(user, dialog, 'Doğum günü izni')
+    fireEvent.change(within(dialog).getByLabelText('Başlangıç'), {
+      target: { value: '2026-11-30' },
+    })
+    await user.click(within(dialog).getByRole('button', { name: 'Talebi gönder' }))
+
+    expect(
+      await within(dialog).findByText(
+        'Doğum günü izni en son doğum gününüzden itibaren 180 gün içinde kullanılmalıdır.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
   it('shouldOfferHalfDayOnlyForASingleDay', async () => {
@@ -773,6 +1032,22 @@ describe('manager queue', () => {
     expect(screen.getByText('Report Person')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Onayla' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Reddet' })).toBeInTheDocument()
+  })
+
+  it('shouldShowTheKinshipInTheQueue', async () => {
+    // D18: the direct manager sees the kinship of a bereavement request before deciding.
+    const bereavement = {
+      ...TEAM_REQUEST,
+      id: 'r-team-ber',
+      type: 'BEREAVEMENT',
+      kinship: 'SIBLING',
+    }
+    stubApi(leaveRoutes({ 'GET /api/leave/queue': () => json(200, [bereavement]) }))
+
+    renderPage(MANAGER)
+
+    expect(await screen.findByText('Report Person')).toBeInTheDocument()
+    expect(screen.getByText('Yakınlık: Kardeş')).toBeInTheDocument()
   })
 
   it('shouldShowTheEmptyQueue', async () => {

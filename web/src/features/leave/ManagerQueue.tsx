@@ -18,7 +18,7 @@ import {
 } from '@/ui/dialog'
 import { Field } from '@/ui/field'
 import { Skeleton } from '@/ui/skeleton'
-import { formatDays, halfDayKey, leaveErrorKey, leaveTypeKey } from './format'
+import { formatDays, halfDayKey, kinshipKey, leaveErrorKey, leaveTypeKey } from './format'
 import { leaveApi, type LeaveRequest } from './leaveApi'
 
 type Decision = { request: LeaveRequest; approve: boolean }
@@ -122,6 +122,11 @@ function ManagerQueue({
                   {request.reason && (
                     <p className="text-small [overflow-wrap:anywhere]">{request.reason}</p>
                   )}
+                  {request.kinship && (
+                    <p className="text-small text-muted-foreground">
+                      {t('kinship')}: {t(kinshipKey(request.kinship))}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2 lg:ml-auto">
                   <Button
@@ -184,6 +189,11 @@ function ManagerQueue({
               </p>
               {decision.request.reason && (
                 <p className="text-small [overflow-wrap:anywhere]">{decision.request.reason}</p>
+              )}
+              {decision.request.kinship && (
+                <p className="text-small text-muted-foreground">
+                  {t('kinship')}: {t(kinshipKey(decision.request.kinship))}
+                </p>
               )}
             </div>
           )}

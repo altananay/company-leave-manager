@@ -83,7 +83,7 @@ class LeaveRequestTest {
     void shouldCarryTheRetroactiveMarker() {
         LeaveRequest ordinary = request();
         LeaveRequest retroactive = LeaveRequest.create(UUID.randomUUID(), LeaveType.ANNUAL, START,
-                START.plusDays(2), HalfDay.NONE, new BigDecimal("3"), "geçmiş kayıt", true, Instant.now());
+                START.plusDays(2), HalfDay.NONE, new BigDecimal("3"), null, "geçmiş kayıt", true, Instant.now());
 
         assertThat(ordinary.isRetroactive()).isFalse();
         assertThat(retroactive.isRetroactive()).isTrue();
@@ -125,6 +125,6 @@ class LeaveRequestTest {
 
     private static LeaveRequest request() {
         return LeaveRequest.create(UUID.randomUUID(), LeaveType.ANNUAL, START, START.plusDays(2),
-                HalfDay.NONE, new BigDecimal("3"), "aile ziyareti", Instant.parse("2026-11-08T08:00:00Z"));
+                HalfDay.NONE, new BigDecimal("3"), null, "aile ziyareti", Instant.parse("2026-11-08T08:00:00Z"));
     }
 }

@@ -47,6 +47,14 @@ public class LeaveRequest {
     @Column(name = "business_days", nullable = false, precision = 6, scale = 1)
     private BigDecimal businessDays;
 
+    /**
+     * BR-10's bereavement kinship (D17): set only on a {@code BEREAVEMENT} request, null everywhere
+     * else. The database's three checks enforce the same rule.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    private Kinship kinship;
+
     @Column
     private String reason;
 
@@ -87,15 +95,17 @@ public class LeaveRequest {
                                       LocalDate endDate,
                                       HalfDay halfDay,
                                       BigDecimal businessDays,
+                                      Kinship kinship,
                                       String reason,
                                       Instant now) {
-        return create(employeeId, type, startDate, endDate, halfDay, businessDays, reason, false, now);
+        return create(employeeId, type, startDate, endDate, halfDay, businessDays, kinship, reason, false, now);
     }
 
     /**
      * A new request. The half-day selection and the frozen working-day count arrive together
      * (D15/D16): a half day is {@code 0.5}, and the number is stored at one decimal place so the
-     * unit is the same everywhere (the API, the balance, the audit trail).
+     * unit is the same everywhere (the API, the balance, the audit trail). {@code kinship} is
+     * BR-10's bereavement detail (D17) and stays null for every other type.
      */
     public static LeaveRequest create(UUID employeeId,
                                       LeaveType type,
@@ -103,6 +113,7 @@ public class LeaveRequest {
                                       LocalDate endDate,
                                       HalfDay halfDay,
                                       BigDecimal businessDays,
+                                      Kinship kinship,
                                       String reason,
                                       boolean retroactive,
                                       Instant now) {
@@ -114,6 +125,7 @@ public class LeaveRequest {
         request.endDate = endDate;
         request.halfDay = halfDay == null ? HalfDay.NONE : halfDay;
         request.businessDays = businessDays.setScale(LeaveBalance.SCALE, RoundingMode.UNNECESSARY);
+        request.kinship = kinship;
         request.reason = reason;
         request.status = LeaveRequestStatus.PENDING;
         request.createdAt = now;
@@ -191,6 +203,10 @@ public class LeaveRequest {
 
     public BigDecimal getBusinessDays() {
         return businessDays;
+    }
+
+    public Kinship getKinship() {
+        return kinship;
     }
 
     public String getReason() {

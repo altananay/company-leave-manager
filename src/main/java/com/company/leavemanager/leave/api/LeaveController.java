@@ -60,7 +60,7 @@ public class LeaveController {
                                     Authentication authentication) {
         LeaveResult<LeaveRequestResponse> result = leave.create(
                 actorId(authentication), body.employeeId(), body.type(),
-                body.startDate(), body.endDate(), body.halfDay(), body.reason());
+                body.startDate(), body.endDate(), body.halfDay(), body.kinship(), body.reason());
         if (result.failed()) {
             return respond(result);
         }
