@@ -1,7 +1,8 @@
 package com.company.leavemanager.identity.api;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.OptionalInt;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -19,9 +20,11 @@ public interface EmployeeLeaveFacts {
     /**
      * The annual balance the employee would have if {@code hireDate} were their hire date, or empty
      * when the account does not exist. The balance is the domain's own computation (BR-1…BR-3, BR-5),
-     * never a second implementation: "bakiye negatif olamaz" has one owner.
+     * never a second implementation: "bakiye negatif olamaz" has one owner. It is the decimal day
+     * unit (D16), because a half day can leave a fractional remainder that an {@code int} cannot
+     * carry.
      */
-    OptionalInt remainingIfHiredOn(UUID employeeId, LocalDate hireDate);
+    Optional<BigDecimal> remainingIfHiredOn(UUID employeeId, LocalDate hireDate);
 
     /**
      * Whether the account has at least one {@code PENDING} request. Only the current direct manager

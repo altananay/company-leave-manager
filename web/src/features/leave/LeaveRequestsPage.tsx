@@ -32,10 +32,18 @@ import {
   responsiveCell,
 } from '@/ui/table'
 import { BalanceCard } from './BalanceCard'
-import { leaveErrorKey, leaveStatusKey, leaveStatusVariant, leaveTypeKey } from './format'
+import {
+  formatDays,
+  halfDayKey,
+  leaveErrorKey,
+  leaveStatusKey,
+  leaveStatusVariant,
+  leaveTypeKey,
+} from './format'
 import { LeaveRequestForm } from './LeaveRequestForm'
 import { leaveApi, type Balance, type LeaveRequest } from './leaveApi'
 import { ManagerQueue } from './ManagerQueue'
+import { MyLeaveDays } from './MyLeaveDays'
 
 const PAGE_SIZE = 10
 const STATUS_FILTERS = ['ALL', 'PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'] as const
@@ -51,7 +59,7 @@ function statusFilterKey(filter: StatusFilter): MessageKey {
  * see; this screen renders what the API answered.
  */
 function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => void }) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const isManager = me.role === 'MANAGER'
   const isHr = me.role === 'HR'
 
@@ -78,6 +86,7 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
   const [adjustBusy, setAdjustBusy] = useState(false)
   const [adjustError, setAdjustError] = useState<MessageKey | null>(null)
   const [adjusted, setAdjusted] = useState<Balance | null>(null)
+  const [daysKey, setDaysKey] = useState(0)
 
   const newRequestTrigger = useRef<HTMLButtonElement>(null)
   const detailTrigger = useRef<HTMLElement | null>(null)
@@ -206,6 +215,8 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
     void loadBalance()
     void loadList()
     void loadQueue()
+    // The approved-days card changes with every create/cancel (and every decision) too.
+    setDaysKey((key) => key + 1)
   }
 
   function created() {
@@ -243,7 +254,15 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
     setAdjustError(null)
     setAdjusted(null)
     const days = Number(adjustDays)
-    if (!Number.isInteger(days) || days === 0 || !adjustEmployee) {
+    // D16: corrections move in half-day steps; zero and any other fraction are refused before the
+    // request leaves the browser (the server still owns the ±365 range and the balance gate).
+    if (
+      adjustDays.trim() === '' ||
+      !Number.isFinite(days) ||
+      days === 0 ||
+      !Number.isInteger(days * 2) ||
+      !adjustEmployee
+    ) {
       setAdjustError('validationFailed')
       return
     }
@@ -296,6 +315,8 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
         error={balanceStatus === 'error'}
       />
 
+      <MyLeaveDays refreshKey={daysKey} />
+
       {isManager && (
         <ManagerQueue
           requests={queue}
@@ -335,6 +356,7 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
                 <Field
                   label={t('adjustmentDays')}
                   type="number"
+                  step="0.5"
                   value={adjustDays}
                   invalid={adjustError !== null}
                   describedBy={adjustError ? 'adjustment-error' : undefined}
@@ -365,7 +387,8 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
               {adjusted && (
                 <Alert variant="success">
                   <p className="text-small">
-                    {t('adjustmentNewRemaining')}: {adjusted.remaining} {t('leaveDaysUnit')}
+                    {t('adjustmentNewRemaining')}: {formatDays(adjusted.remaining, lang)}{' '}
+                    {t('leaveDaysUnit')}
                   </p>
                 </Alert>
               )}
@@ -457,7 +480,7 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
                       {formatDate(request.startDate)} – {formatDate(request.endDate)}
                     </TableCell>
                     <TableCell data-label={t('leaveBusinessDays')} className={responsiveCell}>
-                      {request.businessDays}
+                      {formatDays(request.businessDays, lang)}
                     </TableCell>
                     <TableCell data-label={t('statusFilterLabel')} className={responsiveCell}>
                       <Badge variant={leaveStatusVariant(request.status)}>
@@ -567,8 +590,14 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
               </div>
               <div className="flex items-baseline justify-between gap-4">
                 <dt className="text-small text-muted-foreground">{t('leaveBusinessDays')}</dt>
-                <dd>{detail.businessDays}</dd>
+                <dd>{formatDays(detail.businessDays, lang)}</dd>
               </div>
+              {detail.halfDay !== 'NONE' && (
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt className="text-small text-muted-foreground">{t('leaveHalfDay')}</dt>
+                  <dd>{t(halfDayKey(detail.halfDay))}</dd>
+                </div>
+              )}
               <div className="flex items-baseline justify-between gap-4">
                 <dt className="text-small text-muted-foreground">{t('statusFilterLabel')}</dt>
                 <dd>

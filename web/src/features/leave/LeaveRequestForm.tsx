@@ -16,8 +16,8 @@ import {
 import { Field } from '@/ui/field'
 import { Label } from '@/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select'
-import { leaveErrorKey } from './format'
-import { leaveApi, type LeaveRequest, type LeaveType, type Preview } from './leaveApi'
+import { formatDays, leaveErrorKey } from './format'
+import { leaveApi, type HalfDay, type LeaveRequest, type LeaveType, type Preview } from './leaveApi'
 
 /**
  * The request dialog (AC-1): type, date range and reason, with the working-day summary shown before
@@ -35,14 +35,21 @@ function LeaveRequestForm({
   onCreated: (request: LeaveRequest) => void
   returnFocusTo: RefObject<HTMLElement | null>
 }) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [type, setType] = useState<LeaveType>('ANNUAL')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [halfDay, setHalfDay] = useState<HalfDay>('NONE')
   const [reason, setReason] = useState('')
   const [preview, setPreview] = useState<Preview | null>(null)
   const [error, setError] = useState<MessageKey | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // D15: a half day is one day long, and only annual/excuse leave knows the concept at all. On a
+  // range (or before both dates are chosen) the control is absent and the request carries NONE.
+  const halfDayAvailable =
+    (type === 'ANNUAL' || type === 'EXCUSE') && startDate !== '' && startDate === endDate
+  const effectiveHalfDay: HalfDay = halfDayAvailable ? halfDay : 'NONE'
 
   useEffect(() => {
     if (!open || !startDate || !endDate) {
@@ -50,7 +57,7 @@ function LeaveRequestForm({
     }
     let cancelled = false
     leaveApi
-      .preview(startDate, endDate, type)
+      .preview(startDate, endDate, type, effectiveHalfDay)
       .then((result) => {
         if (!cancelled) {
           setPreview(result)
@@ -64,11 +71,12 @@ function LeaveRequestForm({
     return () => {
       cancelled = true
     }
-  }, [open, startDate, endDate, type])
+  }, [open, startDate, endDate, type, effectiveHalfDay])
 
   function close() {
     setStartDate('')
     setEndDate('')
+    setHalfDay('NONE')
     setReason('')
     setPreview(null)
     setError(null)
@@ -80,7 +88,7 @@ function LeaveRequestForm({
     setError(null)
     setBusy(true)
     try {
-      const created = await leaveApi.create(type, startDate, endDate, reason)
+      const created = await leaveApi.create(type, startDate, endDate, effectiveHalfDay, reason)
       setType('ANNUAL')
       close()
       onCreated(created)
@@ -148,6 +156,10 @@ function LeaveRequestForm({
                 setStartDate(event.target.value)
                 setPreview(null)
                 setError(null)
+                // A half day belongs to one day; a range resets the choice (the control disappears).
+                if (event.target.value !== endDate) {
+                  setHalfDay('NONE')
+                }
               }}
               required
             />
@@ -161,10 +173,35 @@ function LeaveRequestForm({
                 setEndDate(event.target.value)
                 setPreview(null)
                 setError(null)
+                if (event.target.value !== startDate) {
+                  setHalfDay('NONE')
+                }
               }}
               required
             />
           </div>
+
+          {halfDayAvailable && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="leave-half-day-trigger">{t('leaveHalfDay')}</Label>
+              <Select
+                value={halfDay}
+                onValueChange={(value) => {
+                  setHalfDay(value as HalfDay)
+                  setPreview(null)
+                }}
+              >
+                <SelectTrigger id="leave-half-day-trigger">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">{t('halfDayNone')}</SelectItem>
+                  <SelectItem value="AM">{t('halfDayAm')}</SelectItem>
+                  <SelectItem value="PM">{t('halfDayPm')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <Field
             label={t('leaveReason')}
@@ -185,8 +222,9 @@ function LeaveRequestForm({
           {preview && (
             <div className="rounded-panel border border-border bg-muted px-4 py-3">
               <p className="text-small">
-                {preview.businessDays} {t('leaveWorkingDays')} · {t('leaveRemainingAfter')}:{' '}
-                {preview.remainingAfter} {t('leaveDaysUnit')}
+                {formatDays(preview.businessDays, lang)} {t('leaveWorkingDays')} ·{' '}
+                {t('leaveRemainingAfter')}: {formatDays(preview.remainingAfter, lang)}{' '}
+                {t('leaveDaysUnit')}
               </p>
             </div>
           )}

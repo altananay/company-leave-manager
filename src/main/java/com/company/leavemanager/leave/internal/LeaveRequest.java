@@ -7,6 +7,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -42,8 +44,8 @@ public class LeaveRequest {
     private HalfDay halfDay;
 
     /** Working days fixed at creation (BR-4): later holiday edits never rewrite this row. */
-    @Column(name = "business_days", nullable = false)
-    private int businessDays;
+    @Column(name = "business_days", nullable = false, precision = 6, scale = 1)
+    private BigDecimal businessDays;
 
     @Column
     private String reason;
@@ -83,17 +85,24 @@ public class LeaveRequest {
                                       LeaveType type,
                                       LocalDate startDate,
                                       LocalDate endDate,
-                                      int businessDays,
+                                      HalfDay halfDay,
+                                      BigDecimal businessDays,
                                       String reason,
                                       Instant now) {
-        return create(employeeId, type, startDate, endDate, businessDays, reason, false, now);
+        return create(employeeId, type, startDate, endDate, halfDay, businessDays, reason, false, now);
     }
 
+    /**
+     * A new request. The half-day selection and the frozen working-day count arrive together
+     * (D15/D16): a half day is {@code 0.5}, and the number is stored at one decimal place so the
+     * unit is the same everywhere (the API, the balance, the audit trail).
+     */
     public static LeaveRequest create(UUID employeeId,
                                       LeaveType type,
                                       LocalDate startDate,
                                       LocalDate endDate,
-                                      int businessDays,
+                                      HalfDay halfDay,
+                                      BigDecimal businessDays,
                                       String reason,
                                       boolean retroactive,
                                       Instant now) {
@@ -103,8 +112,8 @@ public class LeaveRequest {
         request.type = type;
         request.startDate = startDate;
         request.endDate = endDate;
-        request.halfDay = HalfDay.NONE;
-        request.businessDays = businessDays;
+        request.halfDay = halfDay == null ? HalfDay.NONE : halfDay;
+        request.businessDays = businessDays.setScale(LeaveBalance.SCALE, RoundingMode.UNNECESSARY);
         request.reason = reason;
         request.status = LeaveRequestStatus.PENDING;
         request.createdAt = now;
@@ -180,7 +189,7 @@ public class LeaveRequest {
         return halfDay;
     }
 
-    public int getBusinessDays() {
+    public BigDecimal getBusinessDays() {
         return businessDays;
     }
 

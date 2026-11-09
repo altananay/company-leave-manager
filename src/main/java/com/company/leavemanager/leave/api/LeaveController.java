@@ -7,6 +7,7 @@ import com.company.leavemanager.leave.api.dto.ApproveLeaveRequestRequest;
 import com.company.leavemanager.leave.api.dto.CreateLeaveRequestRequest;
 import com.company.leavemanager.leave.api.dto.LeaveRequestResponse;
 import com.company.leavemanager.leave.api.dto.RejectLeaveRequestRequest;
+import com.company.leavemanager.leave.internal.HalfDay;
 import com.company.leavemanager.leave.internal.LeaveError;
 import com.company.leavemanager.leave.internal.LeaveResult;
 import com.company.leavemanager.leave.internal.LeaveService;
@@ -59,7 +60,7 @@ public class LeaveController {
                                     Authentication authentication) {
         LeaveResult<LeaveRequestResponse> result = leave.create(
                 actorId(authentication), body.employeeId(), body.type(),
-                body.startDate(), body.endDate(), body.reason());
+                body.startDate(), body.endDate(), body.halfDay(), body.reason());
         if (result.failed()) {
             return respond(result);
         }
@@ -102,8 +103,22 @@ public class LeaveController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam(required = false) LeaveType type,
+            @RequestParam(required = false) HalfDay halfDay,
             Authentication authentication) {
-        return respond(leave.preview(actorId(authentication), type, startDate, endDate));
+        return respond(leave.preview(actorId(authentication), type, startDate, endDate, halfDay));
+    }
+
+    /**
+     * The caller's own approved leave days (D20, "izinli günlerim"). There is deliberately no
+     * {@code employeeId}: the session decides whose days these are, so the endpoint has no way to
+     * read somebody else's list.
+     */
+    @GetMapping("/days")
+    public ResponseEntity<?> days(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            Authentication authentication) {
+        return respond(leave.days(actorId(authentication), from, to));
     }
 
     @PostMapping("/adjustments")

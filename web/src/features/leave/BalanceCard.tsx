@@ -3,9 +3,10 @@ import { useI18n } from '@/i18n/I18nProvider'
 import { Alert } from '@/ui/alert'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/card'
 import { Skeleton } from '@/ui/skeleton'
+import { formatDays } from './format'
 import type { Balance } from './leaveApi'
 
-function Metric({ label, value }: { label: string; value: number }) {
+function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-panel border border-border bg-card p-3">
       <p className="text-label uppercase text-muted-foreground">{label}</p>
@@ -28,7 +29,7 @@ function BalanceCard({
   loading: boolean
   error: boolean
 }) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
 
   return (
     <Card>
@@ -50,11 +51,17 @@ function BalanceCard({
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <Metric label={t('balanceEntitlement')} value={balance.entitlement} />
-              <Metric label={t('balanceCarryover')} value={balance.carryover} />
-              <Metric label={t('balanceAdjustments')} value={balance.adjustments} />
-              <Metric label={t('balanceApproved')} value={balance.approved} />
-              <Metric label={t('balancePending')} value={balance.pending} />
+              <Metric
+                label={t('balanceEntitlement')}
+                value={formatDays(balance.entitlement, lang)}
+              />
+              <Metric label={t('balanceCarryover')} value={formatDays(balance.carryover, lang)} />
+              <Metric
+                label={t('balanceAdjustments')}
+                value={formatDays(balance.adjustments, lang)}
+              />
+              <Metric label={t('balanceApproved')} value={formatDays(balance.approved, lang)} />
+              <Metric label={t('balancePending')} value={formatDays(balance.pending, lang)} />
               <div className="rounded-panel border border-control bg-accent p-3">
                 <p className="text-label uppercase text-accent-foreground">
                   {t('balanceRemaining')}
@@ -63,7 +70,7 @@ function BalanceCard({
                   data-slot="balance-remaining"
                   className="mt-1 text-display text-accent-foreground"
                 >
-                  {balance.remaining}
+                  {formatDays(balance.remaining, lang)}
                 </p>
               </div>
             </div>

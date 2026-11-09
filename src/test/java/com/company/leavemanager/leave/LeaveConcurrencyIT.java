@@ -43,8 +43,12 @@ class LeaveConcurrencyIT extends LeaveTestSupport {
         Session first = signIn(employee);
         assertThat(first.get("/api/leave/balance").statusCode()).isEqualTo(200);
 
-        // Six signed-in browsers of the same employee, six non-overlapping ranges of eight business
-        // days each: the 14-day entitlement can fund exactly one of them.
+        // Six signed-in browsers of the same employee, six non-overlapping ranges of eighteen calendar
+        // days each (fourteen weekdays; a public holiday can shorten one to nine). Any two ranges
+        // exceed the 14-day entitlement, so exactly one can be funded — whatever the calendar. The
+        // earlier ten-day ranges assumed eight business days each; when one crossed a holiday it fell
+        // to five, and 8 + 5 = 13 fitted the balance, so two winners were correct (C-1, CI run
+        // 42698046151).
         List<Session> sessions = new ArrayList<>();
         sessions.add(first);
         for (int index = 1; index < THREADS; index++) {
@@ -55,9 +59,9 @@ class LeaveConcurrencyIT extends LeaveTestSupport {
         LocalDate monday = nextMonday();
 
         List<Outcome> outcomes = runConcurrently(THREADS, index -> () -> {
-            LocalDate start = monday.plusWeeks(2L * index);
+            LocalDate start = monday.plusWeeks(3L * index);
             HttpResponse<String> response = createLeave(sessions.get(index), "ANNUAL",
-                    start, start.plusDays(9), "yarış " + index);
+                    start, start.plusDays(17), "yarış " + index);
             return new Outcome(response.statusCode(),
                     response.statusCode() == 201 ? number(response.body(), "businessDays") : 0);
         });
@@ -66,9 +70,10 @@ class LeaveConcurrencyIT extends LeaveTestSupport {
         assertThat(winners).hasSize(1);
         assertThat(outcomes.stream().filter(outcome -> outcome.status() == 409)).hasSize(THREADS - 1);
         // The invariant the lock protects: exactly one range took its days, whatever that range was
-        // (a range can cross a public holiday, so its length is read from the winner's answer).
+        // (a range can cross a public holiday, so its length is read from the winner's answer; an
+        // eighteen-day range has fourteen weekdays and at least nine business days).
         int wonDays = winners.getFirst().businessDays();
-        assertThat(wonDays).isBetween(5, 8);
+        assertThat(wonDays).isBetween(9, 14);
         String balance = first.get("/api/leave/balance").body();
         assertThat(number(balance, "pending")).isEqualTo(wonDays);
         assertThat(number(balance, "remaining")).isEqualTo(14 - wonDays);

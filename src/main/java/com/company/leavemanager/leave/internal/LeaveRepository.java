@@ -34,6 +34,13 @@ public interface LeaveRepository extends JpaRepository<LeaveRequest, UUID> {
     List<LeaveRequest> findByEmployeeIdInAndStatusOrderByStartDateAsc(
             Collection<UUID> employeeIds, LeaveRequestStatus status);
 
+    /**
+     * The caller's own approved requests that touch {@code [from, to]}: the "izinli günlerim"
+     * expansion (D20). Only the owner's id is passed — the endpoint has no employee parameter.
+     */
+    List<LeaveRequest> findByEmployeeIdAndStatusAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateAsc(
+            UUID employeeId, LeaveRequestStatus status, LocalDate to, LocalDate from);
+
     /** Whether the account still has a request only its current manager could decide (M-02). */
     boolean existsByEmployeeIdAndStatus(UUID employeeId, LeaveRequestStatus status);
 

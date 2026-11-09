@@ -33,7 +33,10 @@
   üst sınır yok. Örnek: 14 gün haktan 4 gün kullanıldıysa 10 gün devreder. Devir **nettir**: önceki
   dönemlerin hakkından o dönemlerde kullanılan günler düşülür, kullanılmış bir gün sonraki dönemde
   ikinci kez teklif edilmez.
-- **BR-4** İzin süresi **iş günü** olarak hesaplanır; hafta sonu ve resmî tatiller düşülür.
+- **BR-4** İzin süresi **iş günü** olarak hesaplanır; hafta sonu ve resmî tatiller düşülür. Yarım gün
+  (`AM`/`PM`) yalnızca **tek günlük** `ANNUAL`/`EXCUSE` talebinde seçilebilir ve o gün iş günüyse
+  **0,5 iş günü** sayılır; birden çok güne, başka bir türe veya iş günü olmayan bir güne yarım gün
+  geçersizdir.
 - **BR-5** Talep kalan bakiyeyi aşamaz; kontrol hem talep anında hem onay anında yapılır.
 - **BR-6** Aynı çalışanın tarih aralıkları çakışan iki aktif talebi olamaz.
 - **BR-7** Onayı yalnızca **doğrudan yönetici** verir; İK ve CEO onaylayamaz, çalışan kendi

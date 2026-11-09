@@ -4,6 +4,7 @@ import com.company.leavemanager.audit.api.AuditRecorder;
 import com.company.leavemanager.identity.api.EmployeeDirectory;
 import com.company.leavemanager.identity.api.EmployeeDirectory.EmployeeView;
 import com.company.leavemanager.leave.api.dto.BalanceResponse;
+import com.company.leavemanager.leave.api.dto.LeaveDayResponse;
 import com.company.leavemanager.leave.api.dto.LeaveRequestResponse;
 import com.company.leavemanager.leave.api.dto.PageResponse;
 import com.company.leavemanager.leave.api.dto.PreviewResponse;
@@ -13,11 +14,14 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -25,7 +29,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 
@@ -55,6 +58,18 @@ public class LeaveService {
 
     /** BR-10's excuse leave is bounded in phase A: five business days at most (L-02). */
     static final int EXCUSE_MAX_BUSINESS_DAYS = 5;
+
+    /** D15: a half day is exactly half of a working day, stored in the decimal day unit. */
+    static final BigDecimal HALF_DAY_DAYS = new BigDecimal("0.5");
+
+    /** D16: HR may correct a balance by half days, no further than ±365 days in one row. */
+    static final BigDecimal MAX_ADJUSTMENT_DAYS = BigDecimal.valueOf(365);
+
+    /** D16: the adjustment step is half a day, so a finer correction is a data-entry error. */
+    static final BigDecimal ADJUSTMENT_STEP = new BigDecimal("0.5");
+
+    /** D20: "izinli günlerim" opens on the next 90 days when the caller gives no range. */
+    static final int DEFAULT_DAYS_WINDOW = 90;
 
     private final LeaveRepository requests;
     private final LeaveAdjustmentRepository adjustments;
@@ -89,6 +104,7 @@ public class LeaveService {
                                                     LeaveType type,
                                                     LocalDate startDate,
                                                     LocalDate endDate,
+                                                    HalfDay halfDay,
                                                     String reason) {
         LocalDate today = today();
         Optional<EmployeeView> actor = employees.find(actorId);
@@ -136,21 +152,6 @@ public class LeaveService {
             retroactive = true;
         }
 
-        int businessDays = calendar().workingDays(startDate, endDate);
-        if (businessDays == 0) {
-            return LeaveResult.error(LeaveError.NO_WORKING_DAY);
-        }
-        if (type == LeaveType.EXCUSE) {
-            // L-02: phase A carries no special-leave durations; the excuse type is bounded so it
-            // cannot stand in for a second annual entitlement. Phase B opens BR-10's six types.
-            if (blank(reason)) {
-                return LeaveResult.error(LeaveError.REASON_REQUIRED);
-            }
-            if (businessDays > EXCUSE_MAX_BUSINESS_DAYS) {
-                return LeaveResult.error(LeaveError.EXCUSE_TOO_LONG);
-            }
-        }
-
         // From here on the employee row is ours: a concurrent create/cancel/decide waits for it.
         // M-03: the view above was read before the lock, so every rule that depends on the org data
         // is decided again on the row the lock returned — a hire-date edit that committed while this
@@ -178,20 +179,43 @@ public class LeaveService {
             // L-05: without a hire date the seniority is unknown, and the rule is not to guess 14.
             return LeaveResult.error(LeaveError.NO_HIRE_DATE);
         }
+
+        // D15: a half day is one working day of ANNUAL or EXCUSE. A range or another type cannot
+        // carry one; the count is 0,5 when the single day is a working day and zero otherwise.
+        HalfDay effectiveHalfDay = halfDay == null ? HalfDay.NONE : halfDay;
+        if (effectiveHalfDay != HalfDay.NONE
+                && (!startDate.equals(endDate) || !type.allowsHalfDay())) {
+            return LeaveResult.error(LeaveError.HALF_DAY_INVALID);
+        }
+        BigDecimal businessDays = businessDaysOf(startDate, endDate, effectiveHalfDay);
+        if (businessDays.signum() == 0) {
+            return LeaveResult.error(LeaveError.NO_WORKING_DAY);
+        }
+        if (type == LeaveType.EXCUSE) {
+            // L-02: phase A carries no special-leave durations; the excuse type is bounded so it
+            // cannot stand in for a second annual entitlement. Phase B opens BR-10's six types.
+            if (blank(reason)) {
+                return LeaveResult.error(LeaveError.REASON_REQUIRED);
+            }
+            if (businessDays.compareTo(BigDecimal.valueOf(EXCUSE_MAX_BUSINESS_DAYS)) > 0) {
+                return LeaveResult.error(LeaveError.EXCUSE_TOO_LONG);
+            }
+        }
+
         List<LeaveRequest> active = activeRequests(locked.id());
         if (active.stream().anyMatch(request -> request.overlaps(startDate, endDate))) {
             return LeaveResult.error(LeaveError.OVERLAP);     // BR-6
         }
         if (type.consumesBalance()) {
             LeaveBalance balance = balanceOf(locked, active);
-            if (balance.remaining() < businessDays) {
+            if (balance.remaining().compareTo(businessDays) < 0) {
                 return LeaveResult.error(LeaveError.BALANCE_EXCEEDED);  // BR-5 at request time
             }
         }
 
         LeaveRequest request = LeaveRequest.create(
-                locked.id(), type, startDate, endDate, businessDays, reason, retroactive,
-                clock.instant());
+                locked.id(), type, startDate, endDate, effectiveHalfDay, businessDays, reason,
+                retroactive, clock.instant());
         requests.save(request);
         if (retroactive) {
             audit.leaveRetroactiveRequested(actorId, locked.id(), request.getId(),
@@ -274,7 +298,7 @@ public class LeaveService {
             // BR-5 at approval time: the pending request already counts against the balance, so
             // "remaining < 0" means the approval itself would leave the employee below zero.
             LeaveBalance balance = balanceOf(locked, activeRequests(locked.id()));
-            if (balance.remaining() < 0) {
+            if (balance.remaining().signum() < 0) {
                 return LeaveResult.error(LeaveError.BALANCE_EXCEEDED);
             }
         }
@@ -344,7 +368,7 @@ public class LeaveService {
     }
 
     @Transactional
-    public LeaveResult<BalanceResponse> adjust(UUID actorId, UUID employeeId, int days, String reason) {
+    public LeaveResult<BalanceResponse> adjust(UUID actorId, UUID employeeId, BigDecimal days, String reason) {
         Optional<EmployeeView> operator = employees.find(actorId);
         if (operator.isEmpty()) {
             return LeaveResult.error(LeaveError.NOT_FOUND);
@@ -356,22 +380,28 @@ public class LeaveService {
         if (found.isEmpty()) {
             return LeaveResult.error(LeaveError.NOT_FOUND);
         }
-        if (days == 0 || blank(reason)) {
+        if (days == null || days.signum() == 0 || blank(reason)
+                || !isHalfDayStep(days)
+                || days.abs().compareTo(MAX_ADJUSTMENT_DAYS) > 0) {
+            // D16: the correction is a nonzero multiple of 0,5 within ±365 days; anything finer or
+            // larger is a data-entry error, not a balance move.
             return LeaveResult.error(LeaveError.INVALID_ADJUSTMENT);
         }
+        BigDecimal correction = days.setScale(1, RoundingMode.UNNECESSARY);
         // The row under the lock (M-03): the balance this adjustment is judged by reads the hire
         // date, so it must be the one the lock returned, not the snapshot taken before it.
         EmployeeView employee = employees.lock(employeeId).orElse(found.get());
         LeaveBalance before = balanceOf(employee);
         LeaveBalance after = new LeaveBalance(
-                before.entitlement(), before.carryover(), before.adjustments() + days,
+                before.entitlement(), before.carryover(), before.adjustments().add(correction),
                 before.approved(), before.pending());
-        if (after.remaining() < 0) {
+        if (after.remaining().signum() < 0) {
             // The domain invariant: a balance is never negative (docs/domain.md).
             return LeaveResult.error(LeaveError.ADJUSTMENT_NOT_ALLOWED);
         }
-        adjustments.save(LeaveAdjustment.of(employeeId, days, reason, actorId, clock.instant()));
-        audit.leaveBalanceAdjusted(actorId, employeeId, days, before.remaining(), after.remaining(), reason);
+        adjustments.save(LeaveAdjustment.of(employeeId, correction, reason, actorId, clock.instant()));
+        audit.leaveBalanceAdjusted(actorId, employeeId, correction,
+                before.remaining(), after.remaining(), reason);
         return LeaveResult.ok(balanceResponse(employee, after));
     }
 
@@ -441,7 +471,11 @@ public class LeaveService {
     // --------------------------------------------------------------- preview
 
     /** The working-day count and the balance left after it, for the form's summary before sending. */
-    public LeaveResult<PreviewResponse> preview(UUID actorId, LeaveType type, LocalDate startDate, LocalDate endDate) {
+    public LeaveResult<PreviewResponse> preview(UUID actorId,
+                                                LeaveType type,
+                                                LocalDate startDate,
+                                                LocalDate endDate,
+                                                HalfDay halfDay) {
         Optional<EmployeeView> employee = employees.find(actorId);
         if (employee.isEmpty()) {
             return LeaveResult.error(LeaveError.NOT_FOUND);
@@ -456,10 +490,69 @@ public class LeaveService {
         if (startDate.plusDays(BusinessCalendar.MAX_RANGE_DAYS - 1L).isBefore(endDate)) {
             return LeaveResult.error(LeaveError.RANGE_TOO_LONG);
         }
-        int businessDays = calendar().workingDays(startDate, endDate);
+        // D15: the preview applies the same half-day rule as create, so the form's "0,5 gün" is the
+        // number the request will store, not a second calculation.
+        HalfDay effectiveHalfDay = halfDay == null ? HalfDay.NONE : halfDay;
+        if (effectiveHalfDay != HalfDay.NONE
+                && (!startDate.equals(endDate) || type == null || !type.allowsHalfDay())) {
+            return LeaveResult.error(LeaveError.HALF_DAY_INVALID);
+        }
+        BigDecimal businessDays = businessDaysOf(startDate, endDate, effectiveHalfDay);
         LeaveBalance balance = balanceOf(employee.get());
-        int consumed = type != null && type.consumesBalance() ? businessDays : 0;
-        return LeaveResult.ok(new PreviewResponse(businessDays, balance.remaining() - consumed));
+        BigDecimal consumed = type != null && type.consumesBalance()
+                ? businessDays
+                : LeaveBalance.zero();
+        return LeaveResult.ok(new PreviewResponse(businessDays, balance.remaining().subtract(consumed)));
+    }
+
+    // ------------------------------------------------------------ mine days
+
+    /**
+     * "İzinli günlerim" (D20): the caller's own <strong>approved</strong> leave days inside
+     * {@code [from, to]}, expanded against the <em>current</em> holiday calendar.
+     *
+     * <p>The endpoint takes no employee id: the answer is always derived from the session, so a
+     * manager or HR cannot read somebody else's day list through it. Pending and cancelled requests
+     * are not days off — they stay on the request list. Defaults: today … today + 90 days; the same
+     * 366-calendar-day cap as create/preview, applied before any expansion.
+     */
+    public LeaveResult<List<LeaveDayResponse>> days(UUID actorId, LocalDate from, LocalDate to) {
+        Optional<EmployeeView> employee = employees.find(actorId);
+        if (employee.isEmpty()) {
+            return LeaveResult.error(LeaveError.NOT_FOUND);
+        }
+        LocalDate effectiveFrom = from == null ? today() : from;
+        if (!BusinessCalendar.isSupported(effectiveFrom)) {
+            return LeaveResult.error(LeaveError.INVALID_RANGE);
+        }
+        LocalDate effectiveTo = to == null ? effectiveFrom.plusDays(DEFAULT_DAYS_WINDOW) : to;
+        if (!BusinessCalendar.isSupported(effectiveTo) || effectiveTo.isBefore(effectiveFrom)) {
+            return LeaveResult.error(LeaveError.INVALID_RANGE);
+        }
+        if (effectiveFrom.plusDays(BusinessCalendar.MAX_RANGE_DAYS - 1L).isBefore(effectiveTo)) {
+            return LeaveResult.error(LeaveError.RANGE_TOO_LONG);
+        }
+        BusinessCalendar calendar = calendar();
+        List<LeaveDayResponse> days = new ArrayList<>();
+        for (LeaveRequest request : requests
+                .findByEmployeeIdAndStatusAndStartDateLessThanEqualAndEndDateGreaterThanEqualOrderByStartDateAsc(
+                        employee.get().id(), LeaveRequestStatus.APPROVED, effectiveTo, effectiveFrom)) {
+            LocalDate day = request.getStartDate().isBefore(effectiveFrom)
+                    ? effectiveFrom
+                    : request.getStartDate();
+            LocalDate last = request.getEndDate().isAfter(effectiveTo)
+                    ? effectiveTo
+                    : request.getEndDate();
+            for (; !day.isAfter(last); day = day.plusDays(1)) {
+                if (calendar.isWorkingDay(day)) {
+                    days.add(new LeaveDayResponse(day, request.getType().name(),
+                            request.getHalfDay(), request.getId()));
+                }
+            }
+        }
+        days.sort(Comparator.comparing(LeaveDayResponse::date)
+                .thenComparing(LeaveDayResponse::requestId));
+        return LeaveResult.ok(days);
     }
 
     // ------------------------------------------------------------ org-edit facts
@@ -467,14 +560,16 @@ public class LeaveService {
     /**
      * The balance this employee would have with {@code hireDate} (spec 0004 review round 2, M-01):
      * the identity module asks before it commits an org-data edit, so HR cannot shrink a hire date
-     * into a negative balance. Empty when the account does not exist.
+     * into a negative balance. Empty when the account does not exist. The remainder is the decimal
+     * day unit (D16): a half day can leave {@code 0.5}, which the old {@code OptionalInt} could not
+     * represent.
      */
-    public OptionalInt remainingIfHiredOn(UUID employeeId, LocalDate hireDate) {
+    public Optional<BigDecimal> remainingIfHiredOn(UUID employeeId, LocalDate hireDate) {
         Optional<EmployeeView> employee = employees.find(employeeId);
         if (employee.isEmpty()) {
-            return OptionalInt.empty();
+            return Optional.empty();
         }
-        return OptionalInt.of(balanceOf(withHireDate(employee.get(), hireDate)).remaining());
+        return Optional.of(balanceOf(withHireDate(employee.get(), hireDate)).remaining());
     }
 
     /** Whether the account still has a pending request its current manager must decide (M-02). */
@@ -512,9 +607,9 @@ public class LeaveService {
 
     private LeaveBalance balanceOf(EmployeeView employee, Collection<LeaveRequest> active) {
         LeaveEntitlement entitlement = LeaveEntitlement.of(employee.hireDate(), today());
-        int adjustmentDays = adjustments.findByEmployeeId(employee.id()).stream()
-                .mapToInt(LeaveAdjustment::getDays)
-                .sum();
+        BigDecimal adjustmentDays = adjustments.findByEmployeeId(employee.id()).stream()
+                .map(LeaveAdjustment::getDays)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         return LeaveBalance.of(entitlement, adjustmentDays, new ArrayList<>(active), entitlement.periodStart());
     }
 
@@ -603,6 +698,7 @@ public class LeaveService {
                 request.getType().name(),
                 request.getStartDate(),
                 request.getEndDate(),
+                request.getHalfDay(),
                 request.getBusinessDays(),
                 request.getStatus().name(),
                 request.getReason(),
@@ -620,6 +716,27 @@ public class LeaveService {
 
     private BusinessCalendar calendar() {
         return new BusinessCalendar(holidays.findAll().stream().map(PublicHoliday::getDay).toList());
+    }
+
+    /**
+     * The frozen working-day count (BR-4, D15): a Decimal at one place. A half day on its single
+     * working day is {@code 0.5}; a range with no working day is {@code 0} and the caller answers
+     * {@link LeaveError#NO_WORKING_DAY}.
+     */
+    private BigDecimal businessDaysOf(LocalDate startDate, LocalDate endDate, HalfDay halfDay) {
+        int workingDays = calendar().workingDays(startDate, endDate);
+        if (workingDays == 0) {
+            return LeaveBalance.zero();
+        }
+        if (halfDay != HalfDay.NONE) {
+            return HALF_DAY_DAYS;
+        }
+        return BigDecimal.valueOf(workingDays).setScale(LeaveBalance.SCALE, RoundingMode.UNNECESSARY);
+    }
+
+    /** D16: a correction is a nonzero multiple of 0,5 — no finer unit exists. */
+    private static boolean isHalfDayStep(BigDecimal days) {
+        return days.remainder(ADJUSTMENT_STEP).signum() == 0;
     }
 
     private LocalDate today() {

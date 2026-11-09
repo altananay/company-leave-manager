@@ -1,5 +1,7 @@
 package com.company.leavemanager.leave.internal;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -16,31 +18,47 @@ import java.util.List;
  * (BR-3). "Used" is dated by the request's start date; a request that spans the period boundary
  * belongs to the period it starts in, which is how the leave was taken.
  *
+ * <p>Every amount is a {@link BigDecimal} at <strong>one decimal place</strong> (D16, phase B1): a
+ * half day is {@code 0.5}, and the arithmetic is exact — no floating point, no rounding in the
+ * middle. The entitlement itself stays an integer (BR-1's 14/20/26 tiers); it is converted to the
+ * decimal unit here, at the balance boundary, so there is still exactly one unit everywhere.
+ *
  * <p>{@code approved} and {@code pending} are the current period's days: the earlier period's usage
  * is already reflected in the net carryover, so counting it again here would subtract it twice.
  */
 public record LeaveBalance(
-        int entitlement,
-        int carryover,
-        int adjustments,
-        int approved,
-        int pending) {
+        BigDecimal entitlement,
+        BigDecimal carryover,
+        BigDecimal adjustments,
+        BigDecimal approved,
+        BigDecimal pending) {
 
-    public int remaining() {
-        return entitlement + carryover + adjustments - approved - pending;
+    /** The one decimal place every day amount carries (D16). */
+    static final int SCALE = 1;
+
+    public LeaveBalance {
+        entitlement = scale(entitlement);
+        carryover = scale(carryover);
+        adjustments = scale(adjustments);
+        approved = scale(approved);
+        pending = scale(pending);
     }
 
-    public static LeaveBalance of(LeaveEntitlement entitlement, int adjustments, List<LeaveRequest> requests) {
+    public BigDecimal remaining() {
+        return entitlement.add(carryover).add(adjustments).subtract(approved).subtract(pending);
+    }
+
+    public static LeaveBalance of(LeaveEntitlement entitlement, BigDecimal adjustments, List<LeaveRequest> requests) {
         return of(entitlement, adjustments, requests, entitlement.periodStart());
     }
 
     public static LeaveBalance of(LeaveEntitlement entitlement,
-                                  int adjustments,
+                                  BigDecimal adjustments,
                                   List<LeaveRequest> requests,
                                   LocalDate periodStart) {
-        int approved = 0;
-        int pending = 0;
-        int usedBefore = 0;
+        BigDecimal approved = zero();
+        BigDecimal pending = zero();
+        BigDecimal usedBefore = zero();
         for (LeaveRequest request : requests) {
             if (!request.getType().consumesBalance()) {
                 continue;
@@ -49,16 +67,16 @@ public record LeaveBalance(
             switch (request.getStatus()) {
                 case APPROVED -> {
                     if (beforePeriod) {
-                        usedBefore += request.getBusinessDays();
+                        usedBefore = usedBefore.add(request.getBusinessDays());
                     } else {
-                        approved += request.getBusinessDays();
+                        approved = approved.add(request.getBusinessDays());
                     }
                 }
                 case PENDING -> {
                     if (beforePeriod) {
-                        usedBefore += request.getBusinessDays();
+                        usedBefore = usedBefore.add(request.getBusinessDays());
                     } else {
-                        pending += request.getBusinessDays();
+                        pending = pending.add(request.getBusinessDays());
                     }
                 }
                 default -> {
@@ -67,10 +85,19 @@ public record LeaveBalance(
             }
         }
         return new LeaveBalance(
-                entitlement.currentPeriodDays(),
-                entitlement.carryoverDays() - usedBefore,
+                BigDecimal.valueOf(entitlement.currentPeriodDays()),
+                BigDecimal.valueOf(entitlement.carryoverDays()).subtract(usedBefore),
                 adjustments,
                 approved,
                 pending);
+    }
+
+    static BigDecimal zero() {
+        return BigDecimal.ZERO.setScale(SCALE);
+    }
+
+    /** The exact decimal day unit: a whole number becomes {@code n.0}, a half day stays {@code 0.5}. */
+    static BigDecimal scale(BigDecimal days) {
+        return days.setScale(SCALE, RoundingMode.UNNECESSARY);
     }
 }

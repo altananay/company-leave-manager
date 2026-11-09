@@ -54,8 +54,14 @@ async function signInAs(page: Page, email: string, temporaryPassword: string, ne
 /** The remaining days as the balance card shows them; the server computed the number. */
 async function remaining(page: Page): Promise<number> {
   const value = page.locator('[data-slot="balance-remaining"]')
-  await expect(value).toHaveText(/\d+/)
-  return Number(await value.textContent())
+  await expect(value).toHaveText(/^\d+([.,]\d+)?$/)
+  const text = (await value.textContent()) ?? ''
+  return Number(text.trim().replace(',', '.'))
+}
+
+/** The balance card's own formatting, so an assertion compares like with like (0,5 in Turkish). */
+function dayText(value: number): string {
+  return new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 1 }).format(value)
 }
 
 /** HR creates one account through the users screen and returns its temporary password. */
@@ -186,6 +192,125 @@ test('shouldRequestApproveAndCancelLeave', async ({ page }) => {
     results.violations.map((rule) => `${rule.id}: ${rule.nodes.length} node(s)`),
     'the leave screen has accessibility violations',
   ).toEqual([])
+})
+
+test('shouldShowAnApprovedHalfDayInMyLeaveDays', async ({ page, browser }) => {
+  // AC-13 (D20), browser-only part: an approved half day arrives from the server and the card renders
+  // date, type and half-day in one row, with the 0,5 balance. Create/approve/cancel are proven at the
+  // IT layer; the e2e journey budget stays at two (docs/testing.md, review T-1). The balance is read
+  // before the request because the entitlement is cumulative and a fixed expectation would age.
+  await signIn(page, HR_EMAIL, HR_PASSWORD)
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+  const stamp = Date.now()
+  const fixture = await page.evaluate(async (suffix) => {
+    const token = (await (await fetch('/api/auth/csrf')).json()).token
+    const post = (path: string, body: unknown) =>
+      fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+        body: JSON.stringify(body),
+      }).then((response) => response.json())
+    const manager = await post('/api/users', {
+      email: `half-lead-${suffix}@acme.test`,
+      displayName: `Half Lead ${suffix}`,
+      role: 'MANAGER',
+    })
+    const employee = await post('/api/users', {
+      email: `half-${suffix}@acme.test`,
+      displayName: `Half Employee ${suffix}`,
+      role: 'EMPLOYEE',
+      managerId: manager.user.id,
+      hireDate: '2024-01-15',
+    })
+    return {
+      employeeEmail: employee.user.email,
+      employeePassword: employee.temporaryPassword,
+      managerEmail: manager.user.email,
+      managerPassword: manager.temporaryPassword,
+    }
+  }, stamp)
+  await logOut(page)
+
+  const employeeContext = await browser.newContext()
+  const employeePage = await employeeContext.newPage()
+  await signInAs(employeePage, fixture.employeeEmail, fixture.employeePassword, EMPLOYEE_PASSWORD)
+  await goToLeave(employeePage)
+  const before = await remaining(employeePage)
+  const day = await nextBusinessMonday(employeePage)
+  const created = await employeePage.evaluate(async (startDate) => {
+    const token = (await (await fetch('/api/auth/csrf')).json()).token
+    const response = await fetch('/api/leave/requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+      body: JSON.stringify({
+        type: 'ANNUAL',
+        startDate,
+        endDate: startDate,
+        halfDay: 'PM',
+        reason: 'yarım gün',
+      }),
+    })
+    return { status: response.status, body: (await response.json()) as { id?: string } }
+  }, day)
+  expect(created.status, 'the employee records a half day').toBe(201)
+
+  // The manager approves the request through the API (no second UI journey).
+  const managerContext = await browser.newContext()
+  const managerPage = await managerContext.newPage()
+  await signInAs(managerPage, fixture.managerEmail, fixture.managerPassword, MANAGER_PASSWORD)
+  const approved = await managerPage.evaluate(async (requestId) => {
+    const token = (await (await fetch('/api/auth/csrf')).json()).token
+    const response = await fetch(`/api/leave/requests/${requestId}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+      body: '{}',
+    })
+    return response.status
+  }, created.body.id)
+  expect(approved, 'the half day is approved').toBe(200)
+  await managerContext.close()
+
+  await employeePage.reload()
+  await expect(employeePage.getByRole('heading', { name: 'İzin talepleri' })).toBeVisible()
+  await expect(employeePage.locator('[data-slot="balance-remaining"]')).toHaveText(
+    dayText(before - 0.5),
+  )
+  expect(await remaining(employeePage), 'the balance carries the half day').toBe(before - 0.5)
+
+  const rows = employeePage.locator('[data-slot="my-leave-day"]')
+  await expect(rows).toHaveCount(1)
+  await expect(rows.first()).toContainText(day.split('-').reverse().join('.'))
+  await expect(rows.first()).toContainText('Öğleden sonra')
+
+  // T-2: the row is on the page while axe measures it, and the new row/control are measured at the
+  // three widths, not only the list and the empty dialog.
+  const results = await new AxeBuilder({ page: employeePage })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze()
+  expect(
+    results.violations.map((rule) => `${rule.id}: ${rule.nodes.length} node(s)`),
+    'the leave screen with an approved half day has accessibility violations',
+  ).toEqual([])
+
+  for (const width of [360, 768, 1440]) {
+    await employeePage.setViewportSize({ width, height: 900 })
+    await goToLeave(employeePage)
+    await expect(rows.first()).toBeVisible()
+    expect(await horizontalOverflow(employeePage), `my leave days at ${width}px`).toBe(0)
+    await expectTouchTargets(employeePage, `my leave days at ${width}px`)
+
+    await employeePage.getByRole('button', { name: 'Yeni talep' }).click()
+    const dialog = employeePage.getByRole('dialog')
+    await dialog.getByLabel('Başlangıç').fill(day)
+    await dialog.getByLabel('Bitiş').fill(day)
+    await expect(dialog.getByRole('combobox', { name: 'Yarım gün' })).toBeVisible()
+    expect(await horizontalOverflow(employeePage), `half-day dialog at ${width}px`).toBe(0)
+    await expectTouchTargets(employeePage, `half-day dialog at ${width}px`)
+    await employeePage.keyboard.press('Escape')
+    await expect(employeePage.getByRole('dialog')).toHaveCount(0)
+  }
+
+  await employeeContext.close()
 })
 
 test('shouldFitTheLeaveScreenAtEveryWidth', async ({ page, browser }) => {

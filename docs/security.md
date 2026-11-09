@@ -74,6 +74,10 @@
   that does not exist, so the endpoint never confirms that the row is real. Role and self gates
   that need no object (HR/CEO never decide, an employee never approves) answer **403** without
   loading anything — AC-4 names those codes.
+- **`GET /api/leave/days` ("izinli günlerim") is self-only:** the endpoint takes no employee or
+  request identifier, and the days are always the session's own approved leave. A manager and HR
+  therefore read their own list here, never a report's or another employee's (D20); the
+  read-anyone scopes live on `/api/leave/requests` and `/api/leave/balance`.
 
 | Role | Scope | May write |
 |---|---|---|

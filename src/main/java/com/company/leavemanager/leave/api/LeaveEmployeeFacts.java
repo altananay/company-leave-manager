@@ -4,8 +4,9 @@ import com.company.leavemanager.identity.api.EmployeeLeaveFacts;
 import com.company.leavemanager.leave.internal.LeaveService;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.OptionalInt;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -24,7 +25,7 @@ public class LeaveEmployeeFacts implements EmployeeLeaveFacts {
     }
 
     @Override
-    public OptionalInt remainingIfHiredOn(UUID employeeId, LocalDate hireDate) {
+    public Optional<BigDecimal> remainingIfHiredOn(UUID employeeId, LocalDate hireDate) {
         return leave.remainingIfHiredOn(employeeId, hireDate);
     }
 

@@ -12,4 +12,12 @@ public enum LeaveType {
     public boolean consumesBalance() {
         return this == ANNUAL;
     }
+
+    /**
+     * Whether the type can be taken as a half day (D15): only annual leave and excuse leave, and only
+     * on a single working day. Every type phase B's BR-10 adds is a full-day type.
+     */
+    public boolean allowsHalfDay() {
+        return this == ANNUAL || this == EXCUSE;
+    }
 }

@@ -4,6 +4,7 @@ import com.company.leavemanager.audit.internal.AuditEvent;
 import com.company.leavemanager.audit.internal.AuditRepository;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -27,6 +28,7 @@ public class AuditRecorder {
      */
     private static final String STATUS = "status";
     private static final String REMAINING = "remaining";
+    private static final String BUSINESS_DAYS = "businessDays";
     private static final String MANAGER_ID = "managerId";
     private static final String HIRE_DATE = "hireDate";
 
@@ -97,11 +99,15 @@ public class AuditRecorder {
         record("PASSWORD_CHANGED", userId, userId, null);
     }
 
-    /** A leave request was created; the state it enters is PENDING (AC-7). */
-    public void leaveRequested(UUID actor, UUID target, UUID requestId, String type, int businessDays) {
+    /**
+     * A leave request was created; the state it enters is PENDING (AC-7). The frozen business-day
+     * count is a <strong>JSON number</strong> in the after state as well as in the human-readable
+     * details, so a half day ({@code 0.5}) is queryable without parsing text (D16).
+     */
+    public void leaveRequested(UUID actor, UUID target, UUID requestId, String type, BigDecimal businessDays) {
         record("LEAVE_REQUESTED", actor, target,
                 "requestId=" + requestId + "; type=" + type + "; businessDays=" + businessDays,
-                null, leaveState("PENDING"));
+                null, leaveState("PENDING", businessDays));
     }
 
     /**
@@ -112,12 +118,12 @@ public class AuditRecorder {
                                           UUID target,
                                           UUID requestId,
                                           String type,
-                                          int businessDays,
+                                          BigDecimal businessDays,
                                           String reason) {
         record("LEAVE_RETROACTIVE_REQUESTED", actor, target,
                 "requestId=" + requestId + "; type=" + type + "; businessDays=" + businessDays
                         + "; reason=" + reason,
-                null, leaveState("PENDING"));
+                null, leaveState("PENDING", businessDays));
     }
 
     /** A manager decided: the record says PENDING → APPROVED, or PENDING → REJECTED (B-7). */
@@ -131,8 +137,16 @@ public class AuditRecorder {
                 leaveState(from), leaveState("CANCELLED"));
     }
 
-    /** HR corrected an annual-leave balance; before/after are the remaining days (AC-7). */
-    public void leaveBalanceAdjusted(UUID actor, UUID target, int days, int before, int after, String reason) {
+    /**
+     * HR corrected an annual-leave balance; before/after are the remaining days as JSON numbers
+     * (AC-7). The amount is the decimal day unit, so a half-day correction is {@code 0.5} (D16).
+     */
+    public void leaveBalanceAdjusted(UUID actor,
+                                     UUID target,
+                                     BigDecimal days,
+                                     BigDecimal before,
+                                     BigDecimal after,
+                                     String reason) {
         record("LEAVE_BALANCE_ADJUSTED", actor, target,
                 "days=" + days + "; reason=" + reason,
                 remainingState(before),
@@ -145,7 +159,14 @@ public class AuditRecorder {
         return state;
     }
 
-    private static Map<String, Object> remainingState(int remaining) {
+    /** The state a new request enters: PENDING and the frozen decimal day count (D16). */
+    private static Map<String, Object> leaveState(String status, BigDecimal businessDays) {
+        Map<String, Object> state = leaveState(status);
+        state.put(BUSINESS_DAYS, businessDays);
+        return state;
+    }
+
+    private static Map<String, Object> remainingState(BigDecimal remaining) {
         Map<String, Object> state = new LinkedHashMap<>();
         state.put(REMAINING, remaining);
         return state;

@@ -18,7 +18,7 @@ import {
 } from '@/ui/dialog'
 import { Field } from '@/ui/field'
 import { Skeleton } from '@/ui/skeleton'
-import { leaveErrorKey, leaveTypeKey } from './format'
+import { formatDays, halfDayKey, leaveErrorKey, leaveTypeKey } from './format'
 import { leaveApi, type LeaveRequest } from './leaveApi'
 
 type Decision = { request: LeaveRequest; approve: boolean }
@@ -39,7 +39,7 @@ function ManagerQueue({
   error: boolean
   onDecided: () => void
 }) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [decision, setDecision] = useState<Decision | null>(null)
   const [note, setNote] = useState('')
   const [failure, setFailure] = useState<MessageKey | null>(null)
@@ -116,7 +116,8 @@ function ManagerQueue({
                   </p>
                   <p className="text-small text-muted-foreground">
                     {formatDate(request.startDate)} – {formatDate(request.endDate)} ·{' '}
-                    {request.businessDays} {t('leaveWorkingDays')}
+                    {formatDays(request.businessDays, lang)} {t('leaveWorkingDays')}
+                    {request.halfDay !== 'NONE' && <> · {t(halfDayKey(request.halfDay))}</>}
                   </p>
                   {request.reason && (
                     <p className="text-small [overflow-wrap:anywhere]">{request.reason}</p>
@@ -175,8 +176,11 @@ function ManagerQueue({
               <p className="font-medium">{decision.request.employeeName}</p>
               <p className="text-small text-muted-foreground">
                 {t(leaveTypeKey(decision.request.type))} · {formatDate(decision.request.startDate)}{' '}
-                – {formatDate(decision.request.endDate)} · {decision.request.businessDays}{' '}
-                {t('leaveWorkingDays')}
+                – {formatDate(decision.request.endDate)} ·{' '}
+                {formatDays(decision.request.businessDays, lang)} {t('leaveWorkingDays')}
+                {decision.request.halfDay !== 'NONE' && (
+                  <> · {t(halfDayKey(decision.request.halfDay))}</>
+                )}
               </p>
               {decision.request.reason && (
                 <p className="text-small [overflow-wrap:anywhere]">{decision.request.reason}</p>

@@ -55,6 +55,7 @@ const PENDING_REQUEST = {
   startDate: '2026-11-30',
   endDate: '2026-12-02',
   businessDays: 3,
+  halfDay: 'NONE',
   status: 'PENDING',
   reason: 'aile ziyareti',
   decidedBy: null,
@@ -124,6 +125,7 @@ function leaveRoutes(overrides: Record<string, Route> = {}) {
     'GET /api/leave/balance': () => json(200, BALANCE),
     'GET /api/leave/requests': () => page([PENDING_REQUEST]),
     'GET /api/leave/queue': () => json(200, []),
+    'GET /api/leave/days': () => json(200, []),
     'GET /api/users': () => json(200, []),
     'GET /api/leave/preview': () => json(200, { businessDays: 3, remainingAfter: 8 }),
     ...overrides,
@@ -311,6 +313,30 @@ describe('request list', () => {
     expect(within(dialog).getByText(/Karar notu: uygun/)).toBeInTheDocument()
   })
 
+  it('shouldShowTheHalfDayInTheRequestDetail', async () => {
+    // AC-1/AC-12: the detail carries the half-day label next to the fractional duration.
+    const halfDayRequest = {
+      ...DECIDED_REQUEST,
+      id: 'r-half-detail',
+      startDate: '2026-11-30',
+      endDate: '2026-11-30',
+      businessDays: 0.5,
+      halfDay: 'PM',
+    }
+    stubApi(leaveRoutes({ 'GET /api/leave/requests': () => page([halfDayRequest]) }))
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Ayrıntı' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Yarım gün')).toBeInTheDocument()
+    expect(within(dialog).getByText('Öğleden sonra')).toBeInTheDocument()
+    expect(within(dialog).getByText('0,5')).toBeInTheDocument()
+  })
+
   it('shouldShowWhoCancelledWithoutLosingTheDecision', async () => {
     // L-17: the withdrawal has its own actor and moment; the decision stays on screen too.
     const cancelled = {
@@ -339,9 +365,11 @@ describe('request list', () => {
     const cancel = vi.fn((_init?: RequestInit) =>
       json(200, { ...DECIDED_REQUEST, status: 'CANCELLED', cancellable: false }),
     )
+    const days = vi.fn(() => json(200, []))
     stubApi(
       leaveRoutes({
         'GET /api/leave/requests': () => page([DECIDED_REQUEST]),
+        'GET /api/leave/days': days,
         'POST /api/leave/requests/r-2/cancel': cancel,
       }),
     )
@@ -356,16 +384,19 @@ describe('request list', () => {
 
     await waitFor(() => expect(cancel).toHaveBeenCalled())
     expect(await screen.findByText('Talep iptal edildi; bakiye geri yüklendi.')).toBeInTheDocument()
+    await waitFor(() => expect(days).toHaveBeenCalledTimes(2))
   })
 })
 
 describe('request dialog', () => {
   it('shouldCreateARequestAndShowTheServerSummary', async () => {
     const create = vi.fn((_init?: RequestInit) => json(201, { ...PENDING_REQUEST, id: 'r-new' }))
+    const days = vi.fn(() => json(200, []))
     stubApi(
       leaveRoutes({
         'POST /api/leave/requests': create,
         'GET /api/leave/requests': () => page([PENDING_REQUEST]),
+        'GET /api/leave/days': days,
       }),
     )
 
@@ -393,10 +424,146 @@ describe('request dialog', () => {
       type: 'ANNUAL',
       startDate: '2026-11-30',
       endDate: '2026-12-02',
+      halfDay: 'NONE',
       reason: 'aile ziyareti',
     })
     expect(await screen.findByText('İzin talebi oluşturuldu.')).toBeInTheDocument()
+    // The "my days" card refreshes once the request exists (mount + one bump).
+    await waitFor(() => expect(days).toHaveBeenCalledTimes(2))
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('shouldOfferHalfDayOnlyForASingleDay', async () => {
+    // D15: the control exists for a one-day annual/excuse request, disappears on a range, and the
+    // reset value is what the preview asks the server about.
+    const fetchMock = stubApi(leaveRoutes())
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Yeni talep' }))
+    const dialog = await screen.findByRole('dialog')
+    // Before both dates are chosen there is no single day to halve.
+    expect(within(dialog).queryByRole('combobox', { name: 'Yarım gün' })).toBeNull()
+
+    fireEvent.change(within(dialog).getByLabelText('Başlangıç'), {
+      target: { value: '2026-11-30' },
+    })
+    fireEvent.change(within(dialog).getByLabelText('Bitiş'), { target: { value: '2026-11-30' } })
+    expect(within(dialog).getByRole('combobox', { name: 'Yarım gün' })).toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('combobox', { name: 'Yarım gün' }))
+    await user.click(await screen.findByRole('option', { name: 'Öğleden önce' }))
+
+    const previewUrls = () =>
+      fetchMock.mock.calls
+        .map((call) => String(call[0]))
+        .filter((url) => url.includes('/api/leave/preview'))
+    await waitFor(() => expect(previewUrls().at(-1)).toContain('halfDay=AM'))
+
+    // A range has no half day: the control disappears and the choice resets to NONE.
+    fireEvent.change(within(dialog).getByLabelText('Bitiş'), { target: { value: '2026-12-02' } })
+    expect(within(dialog).queryByRole('combobox', { name: 'Yarım gün' })).toBeNull()
+    await waitFor(() => expect(previewUrls().at(-1)).toContain('halfDay=NONE'))
+
+    // An excuse leave on a single day keeps the choice too.
+    await user.click(within(dialog).getByRole('combobox', { name: 'İzin türü' }))
+    await user.click(await screen.findByRole('option', { name: 'Mazeret izni' }))
+    fireEvent.change(within(dialog).getByLabelText('Bitiş'), { target: { value: '2026-11-30' } })
+    expect(within(dialog).getByRole('combobox', { name: 'Yarım gün' })).toBeInTheDocument()
+  })
+
+  it('shouldSendTheHalfDayAndShowTheFractionalSummary', async () => {
+    // AC-1/AC-12: the server's 0.5 is shown as "0,5" and travels back in the POST body.
+    const create = vi.fn((_init?: RequestInit) =>
+      json(201, {
+        ...PENDING_REQUEST,
+        id: 'r-half',
+        startDate: '2026-11-30',
+        endDate: '2026-11-30',
+        businessDays: 0.5,
+        halfDay: 'AM',
+      }),
+    )
+    const fetchMock = stubApi(
+      leaveRoutes({
+        'GET /api/leave/preview': () => json(200, { businessDays: 0.5, remainingAfter: 7.5 }),
+        'POST /api/leave/requests': create,
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Yeni talep' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Başlangıç'), {
+      target: { value: '2026-11-30' },
+    })
+    fireEvent.change(within(dialog).getByLabelText('Bitiş'), { target: { value: '2026-11-30' } })
+
+    await user.click(within(dialog).getByRole('combobox', { name: 'Yarım gün' }))
+    await user.click(await screen.findByRole('option', { name: 'Öğleden önce' }))
+
+    expect(
+      await within(dialog).findByText(/0,5 iş günü · Talepten sonra kalan: 7,5 gün/),
+    ).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          (call) =>
+            String(call[0]).includes('/api/leave/preview') &&
+            String(call[0]).includes('halfDay=AM'),
+        ),
+      ).toBe(true),
+    )
+
+    await user.click(within(dialog).getByRole('button', { name: 'Talebi gönder' }))
+
+    await waitFor(() => expect(create).toHaveBeenCalled())
+    expect(JSON.parse(String(create.mock.calls[0]?.[0]?.body))).toEqual({
+      type: 'ANNUAL',
+      startDate: '2026-11-30',
+      endDate: '2026-11-30',
+      halfDay: 'AM',
+      reason: null,
+    })
+    expect(await screen.findByText('İzin talebi oluşturuldu.')).toBeInTheDocument()
+  })
+
+  it('shouldMapAHalfDayRefusalToItsOwnMessage', async () => {
+    stubApi(
+      leaveRoutes({
+        'POST /api/leave/requests': () =>
+          json(400, { status: 400, code: 'LEAVE_HALF_DAY_INVALID' }),
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Yeni talep' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Başlangıç'), {
+      target: { value: '2026-11-30' },
+    })
+    fireEvent.change(within(dialog).getByLabelText('Bitiş'), { target: { value: '2026-11-30' } })
+    await user.click(within(dialog).getByRole('combobox', { name: 'Yarım gün' }))
+    await user.click(await screen.findByRole('option', { name: 'Öğleden sonra' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Talebi gönder' }))
+
+    expect(
+      await within(dialog).findByText(
+        'Yarım gün yalnızca tek günlük yıllık veya mazeret izninde seçilebilir.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(dialog).queryByText('İzin işlemi tamamlanamadı. Lütfen tekrar deneyin.'),
+    ).toBeNull()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
   it('shouldMapAServerRefusalToItsMessageAndKeepTheDialogOpen', async () => {
@@ -520,6 +687,72 @@ describe('request dialog', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(trigger).toHaveFocus()
+  })
+})
+
+describe('my leave days', () => {
+  it('shouldListOwnApprovedDaysWithTheirHalfDay', async () => {
+    stubApi(
+      leaveRoutes({
+        'GET /api/leave/days': () =>
+          json(200, [{ date: '2026-11-30', type: 'ANNUAL', halfDay: 'AM', requestId: 'r-1' }]),
+      }),
+    )
+
+    renderPage(EMPLOYEE)
+
+    expect(await screen.findByRole('heading', { name: 'İzinli günlerim' })).toBeInTheDocument()
+    expect(document.querySelector('[data-my-leave-days]')).not.toBeNull()
+    const row = await waitFor(() => {
+      const found = document.querySelector('[data-slot="my-leave-day"]')
+      expect(found).not.toBeNull()
+      return found as HTMLElement
+    })
+    // One row carries date, type and half-day together; none of it is colour-only.
+    expect(within(row).getByText('30.11.2026')).toBeInTheDocument()
+    expect(row.querySelector('time')).toHaveAttribute('datetime', '2026-11-30')
+    expect(within(row).getByText('Yıllık izin')).toBeInTheDocument()
+    expect(within(row).getByText('Öğleden önce')).toBeInTheDocument()
+  })
+
+  it('shouldShowTheEmptyMyLeaveDaysState', async () => {
+    stubApi(leaveRoutes({ 'GET /api/leave/days': () => json(200, []) }))
+
+    renderPage(EMPLOYEE)
+
+    expect(await screen.findByText('Önümüzdeki 90 günde izniniz yok.')).toBeInTheDocument()
+  })
+
+  it('shouldShowASkeletonWhileMyLeaveDaysLoad', async () => {
+    let resolveDays!: (value: Response) => void
+    const pending = new Promise<Response>((resolve) => {
+      resolveDays = resolve
+    })
+    stubApi(leaveRoutes({ 'GET /api/leave/days': () => pending }))
+
+    renderPage(EMPLOYEE)
+
+    expect(document.querySelector('[data-slot="my-leave-days-skeleton"]')).toBeInTheDocument()
+    resolveDays(
+      json(200, [{ date: '2026-11-30', type: 'EXCUSE', halfDay: 'PM', requestId: 'r-9' }]),
+    )
+    expect(await screen.findByText('Öğleden sonra')).toBeInTheDocument()
+    expect(document.querySelector('[data-slot="my-leave-days-skeleton"]')).toBeNull()
+  })
+
+  it('shouldShowTheMyLeaveDaysErrorState', async () => {
+    stubApi(
+      leaveRoutes({
+        'GET /api/leave/days': () => json(500, { status: 500, code: 'INTERNAL_ERROR' }),
+      }),
+    )
+
+    renderPage(EMPLOYEE)
+
+    expect(
+      await screen.findByText('İşlem tamamlanamadı. Lütfen tekrar deneyin.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Önümüzdeki 90 günde izniniz yok.')).toBeNull()
   })
 })
 
@@ -694,6 +927,51 @@ describe('hr view', () => {
       reason: 'geçmiş dönem düzeltmesi',
     })
     expect(await screen.findByText('Yeni kalan: 14 gün')).toBeInTheDocument()
+  })
+
+  it('shouldAdjustTheBalanceByHalfADay', async () => {
+    // D16: HR corrections move in half-day steps; the new remaining is formatted as a decimal.
+    const adjust = vi.fn((_init?: RequestInit) =>
+      json(200, { ...BALANCE, adjustments: 0.5, remaining: 11.5 }),
+    )
+    stubApi(
+      leaveRoutes({
+        'GET /api/users': () =>
+          json(200, [
+            {
+              id: 'u-other',
+              email: 'other@acme.test',
+              displayName: 'Other Person',
+              role: 'EMPLOYEE',
+              active: true,
+              mustChangePassword: false,
+              managerId: null,
+              hireDate: '2020-03-15',
+            },
+          ]),
+        'POST /api/leave/adjustments': adjust,
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderPage(HR)
+    await screen.findByText('Bakiye düzeltmesi')
+
+    await user.click(screen.getByRole('combobox', { name: 'Çalışan' }))
+    await user.click(await screen.findByRole('option', { name: 'Other Person' }))
+    const days = screen.getByLabelText('Gün (eksi düşürür)')
+    expect(days).toHaveAttribute('step', '0.5')
+    await user.type(days, '0.5')
+    await user.type(screen.getByLabelText('Gerekçe'), 'yarım gün düzeltmesi')
+    await user.click(screen.getByRole('button', { name: 'Düzeltmeyi kaydet' }))
+
+    await waitFor(() => expect(adjust).toHaveBeenCalled())
+    expect(JSON.parse(String(adjust.mock.calls[0]?.[0]?.body))).toEqual({
+      employeeId: 'u-other',
+      days: 0.5,
+      reason: 'yarım gün düzeltmesi',
+    })
+    expect(await screen.findByText('Yeni kalan: 11,5 gün')).toBeInTheDocument()
   })
 
   it('shouldMapAnAdjustmentRefusalToItsOwnMessage', async () => {

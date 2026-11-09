@@ -8,12 +8,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.UUID;
 
 /** HR user administration use cases; controllers never touch the repository (architecture rule 2). */
@@ -208,11 +208,11 @@ public class UserAdminService {
             // M-02: only the direct manager can decide these; clearing the link strands them.
             return new UpdateResult(AdminOutcome.HAS_PENDING_REQUESTS, null);
         }
-        OptionalInt remaining = leaveFacts.remainingIfHiredOn(targetId, hireDate);
+        Optional<BigDecimal> remaining = leaveFacts.remainingIfHiredOn(targetId, hireDate);
         if (remaining.isEmpty()) {
             return new UpdateResult(AdminOutcome.NOT_FOUND, null);
         }
-        if (remaining.getAsInt() < 0) {
+        if (remaining.get().signum() < 0) {
             // M-01: the domain invariant (docs/domain.md) — no sequence of HR edits may leave the
             // balance below zero, so the edit is refused and the row is never written.
             return new UpdateResult(AdminOutcome.WOULD_GO_NEGATIVE, null);
