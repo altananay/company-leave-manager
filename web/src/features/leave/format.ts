@@ -1,6 +1,6 @@
 import { ApiError } from '@/features/auth/authApi'
-import type { MessageKey } from '@/i18n/messages'
-import type { LeaveStatus, LeaveType } from './leaveApi'
+import type { Lang, MessageKey } from '@/i18n/messages'
+import type { HalfDay, LeaveStatus, LeaveType } from './leaveApi'
 
 /**
  * The server's stable code becomes the catalogue's message; the SPA never writes prose itself.
@@ -21,6 +21,8 @@ export function leaveErrorKey(failure: unknown): MessageKey {
       return 'leaveRangeTooLong'
     case 'LEAVE_NO_WORKING_DAY':
       return 'leaveNoWorkingDay'
+    case 'LEAVE_HALF_DAY_INVALID':
+      return 'leaveHalfDayInvalid'
     case 'LEAVE_REASON_REQUIRED':
       return 'leaveReasonRequired'
     case 'LEAVE_EXCUSE_TOO_LONG':
@@ -57,6 +59,28 @@ export function leaveErrorKey(failure: unknown): MessageKey {
 
 export function leaveTypeKey(type: LeaveType): MessageKey {
   return type === 'ANNUAL' ? 'leaveTypeAnnual' : 'leaveTypeExcuse'
+}
+
+export function halfDayKey(halfDay: HalfDay): MessageKey {
+  switch (halfDay) {
+    case 'NONE':
+      return 'halfDayNone'
+    case 'AM':
+      return 'halfDayAm'
+    case 'PM':
+      return 'halfDayPm'
+  }
+}
+
+/**
+ * Days are fractional from B1 on: a half day is 0.5 (D16). The screen shows it in the catalogue's
+ * locale ("0,5" in Turkish, "0.5" in English) and never as a raw floating-point number; the API
+ * still owns the value and the arithmetic.
+ */
+export function formatDays(value: number, lang: Lang): string {
+  return new Intl.NumberFormat(lang === 'tr' ? 'tr-TR' : 'en-US', {
+    maximumFractionDigits: 1,
+  }).format(value)
 }
 
 export function leaveStatusKey(status: LeaveStatus): MessageKey {

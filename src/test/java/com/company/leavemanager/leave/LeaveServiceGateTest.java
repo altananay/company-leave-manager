@@ -3,6 +3,7 @@ package com.company.leavemanager.leave;
 import com.company.leavemanager.audit.api.AuditRecorder;
 import com.company.leavemanager.identity.api.EmployeeDirectory;
 import com.company.leavemanager.identity.api.EmployeeDirectory.EmployeeView;
+import com.company.leavemanager.leave.internal.HalfDay;
 import com.company.leavemanager.leave.internal.LeaveAdjustmentRepository;
 import com.company.leavemanager.leave.internal.LeaveError;
 import com.company.leavemanager.leave.internal.LeaveRepository;
@@ -13,6 +14,7 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -91,8 +93,8 @@ class LeaveServiceGateTest {
 
     @Test
     void shouldRefuseAnAdjustmentFromANonHrActorBeforeWritingAnything() {
-        LeaveResult<?> manager = service.adjust(MANAGER, EMPLOYEE, 1, "düzeltme");
-        LeaveResult<?> ceo = service.adjust(CEO, EMPLOYEE, 1, "düzeltme");
+        LeaveResult<?> manager = service.adjust(MANAGER, EMPLOYEE, new BigDecimal("1"), "düzeltme");
+        LeaveResult<?> ceo = service.adjust(CEO, EMPLOYEE, new BigDecimal("1"), "düzeltme");
 
         assertThat(manager.error()).isEqualTo(LeaveError.NOT_AUTHORIZED);
         assertThat(ceo.error()).isEqualTo(LeaveError.NOT_AUTHORIZED);
@@ -129,7 +131,7 @@ class LeaveServiceGateTest {
         LocalDate monday = LocalDate.of(2026, 11, 16);
 
         LeaveResult<?> result = service.create(EMPLOYEE, STRANGER, com.company.leavemanager.leave.internal.LeaveType.ANNUAL,
-                monday, monday, "izin");
+                monday, monday, HalfDay.NONE, "izin");
 
         assertThat(result.error()).isEqualTo(LeaveError.NOT_AUTHORIZED);
         verifyNoInteractions(requests);

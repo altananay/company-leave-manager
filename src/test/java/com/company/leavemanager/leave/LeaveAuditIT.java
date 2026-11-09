@@ -120,6 +120,45 @@ class LeaveAuditIT extends LeaveTestSupport {
         });
     }
 
+    @Test
+    void shouldRecordTheFractionalDaysAsJsonNumbers() throws Exception {
+        // D16/AC-12: the trail carries 0,5 as a JSON number, not as prose. A half-day request and a
+        // half-day HR correction are read back through the database's own jsonb operators.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        LocalDate monday = nextMonday();
+        String requestId = extract(createLeave(member, "ANNUAL", monday, monday, "AM", "öğleden önce").body(), "id");
+
+        assertThat(jdbc.queryForObject(
+                "select jsonb_typeof(after_state->'businessDays') from audit_event "
+                        + "where event_type = 'LEAVE_REQUESTED' and details like ?",
+                String.class, "%" + requestId + "%")).isEqualTo("number");
+        assertThat(jdbc.queryForObject(
+                "select (after_state->>'businessDays')::numeric from audit_event "
+                        + "where event_type = 'LEAVE_REQUESTED' and details like ?",
+                java.math.BigDecimal.class, "%" + requestId + "%")).isEqualByComparingTo("0.5");
+
+        HttpResponse<String> adjusted = session.post("/api/leave/adjustments",
+                "{\"employeeId\":\"" + employee.id() + "\",\"days\":0.5,\"reason\":\"yarım gün düzeltmesi\"}");
+        assertThat(adjusted.statusCode()).isEqualTo(200);
+
+        // The pending 0,5 is in the balance, so the correction moves 13,5 → 14,0 as JSON numbers.
+        assertThat(jdbc.queryForObject(
+                "select (before_state->>'remaining')::numeric from audit_event "
+                        + "where event_type = 'LEAVE_BALANCE_ADJUSTED' and target_user_id = ?",
+                java.math.BigDecimal.class, employee.id())).isEqualByComparingTo("13.5");
+        assertThat(jdbc.queryForObject(
+                "select jsonb_typeof(after_state->'remaining') from audit_event "
+                        + "where event_type = 'LEAVE_BALANCE_ADJUSTED' and target_user_id = ?",
+                String.class, employee.id())).isEqualTo("number");
+        assertThat(jdbc.queryForObject(
+                "select details from audit_event "
+                        + "where event_type = 'LEAVE_BALANCE_ADJUSTED' and target_user_id = ?",
+                String.class, employee.id())).contains("days=0.5");
+    }
+
     private String storedJson(String column, UUID id, String key) {
         return jdbc.queryForObject(
                 "select " + column + "->>? from audit_event where id = ?", String.class, key, id);

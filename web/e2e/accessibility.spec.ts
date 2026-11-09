@@ -651,6 +651,16 @@ test('shouldHaveNoAccessibilityViolationsOnTheLeaveScreen', async ({ page }) => 
   await expectNoViolations(employeePage, 'leave request dialog')
   await expectFocusTrappedInDialog(employeePage, 'leave request dialog')
 
+  // The half-day control only exists for a single-day request (D15): make it visible and selected
+  // before the second scan, so the new control and its summary are measured too.
+  const day = await nextBusinessMonday(employeePage)
+  await employeePage.getByLabel('Başlangıç').fill(day)
+  await employeePage.getByLabel('Bitiş').fill(day)
+  await employeePage.getByRole('combobox', { name: 'Yarım gün' }).click()
+  await employeePage.getByRole('option', { name: 'Öğleden sonra' }).click()
+  await expect(employeePage.getByText(/0,5 iş günü/)).toBeVisible()
+  await expectNoViolations(employeePage, 'leave request dialog with a half day')
+
   await employeeContext.close()
 })
 

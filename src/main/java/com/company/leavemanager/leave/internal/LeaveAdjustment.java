@@ -5,6 +5,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -19,8 +21,8 @@ public class LeaveAdjustment {
     @Column(name = "employee_id", nullable = false)
     private UUID employeeId;
 
-    @Column(nullable = false)
-    private int days;
+    @Column(nullable = false, precision = 4, scale = 1)
+    private BigDecimal days;
 
     @Column(nullable = false)
     private String reason;
@@ -35,11 +37,15 @@ public class LeaveAdjustment {
         // for JPA
     }
 
-    public static LeaveAdjustment of(UUID employeeId, int days, String reason, UUID createdBy, Instant now) {
+    public static LeaveAdjustment of(UUID employeeId,
+                                     BigDecimal days,
+                                     String reason,
+                                     UUID createdBy,
+                                     Instant now) {
         LeaveAdjustment adjustment = new LeaveAdjustment();
         adjustment.id = UUID.randomUUID();
         adjustment.employeeId = employeeId;
-        adjustment.days = days;
+        adjustment.days = days.setScale(LeaveBalance.SCALE, RoundingMode.UNNECESSARY);
         adjustment.reason = reason;
         adjustment.createdBy = createdBy;
         adjustment.createdAt = now;
@@ -54,7 +60,7 @@ public class LeaveAdjustment {
         return employeeId;
     }
 
-    public int getDays() {
+    public BigDecimal getDays() {
         return days;
     }
 

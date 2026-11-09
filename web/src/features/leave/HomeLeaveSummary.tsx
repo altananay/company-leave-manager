@@ -7,7 +7,7 @@ import { Button } from '@/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/card'
 import { Skeleton } from '@/ui/skeleton'
 import { BalanceCard } from './BalanceCard'
-import { leaveStatusKey, leaveStatusVariant, leaveTypeKey } from './format'
+import { formatDays, leaveStatusKey, leaveStatusVariant, leaveTypeKey } from './format'
 import { leaveApi, type Balance, type LeaveRequest } from './leaveApi'
 
 /**
@@ -16,7 +16,7 @@ import { leaveApi, type Balance, type LeaveRequest } from './leaveApi'
  * is opened from the leave screen, which the button below reaches.
  */
 function HomeLeaveSummary({ onOpenLeave }: { onOpenLeave: () => void }) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [balance, setBalance] = useState<Balance | null>(null)
   const [balanceStatus, setBalanceStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [requests, setRequests] = useState<LeaveRequest[]>([])
@@ -92,7 +92,8 @@ function HomeLeaveSummary({ onOpenLeave }: { onOpenLeave: () => void }) {
                     {formatDate(request.startDate)} – {formatDate(request.endDate)}
                   </span>
                   <span className="text-small text-muted-foreground">
-                    {t(leaveTypeKey(request.type))} · {request.businessDays} {t('leaveWorkingDays')}
+                    {t(leaveTypeKey(request.type))} · {formatDays(request.businessDays, lang)}{' '}
+                    {t('leaveWorkingDays')}
                   </span>
                   <Badge variant={leaveStatusVariant(request.status)} className="ml-auto">
                     {t(leaveStatusKey(request.status))}

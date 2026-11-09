@@ -4,6 +4,17 @@ export type LeaveType = 'ANNUAL' | 'EXCUSE'
 
 export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
 
+/** A single day is either whole or half; only a one-day ANNUAL/EXCUSE request may carry AM/PM (D15). */
+export type HalfDay = 'NONE' | 'AM' | 'PM'
+
+/** One approved day of the caller, as `GET /api/leave/days` answers it (D20). */
+export type LeaveDay = {
+  date: string
+  type: LeaveType
+  halfDay: HalfDay
+  requestId: string
+}
+
 export type LeaveRequest = {
   id: string
   employeeId: string
@@ -12,6 +23,7 @@ export type LeaveRequest = {
   startDate: string
   endDate: string
   businessDays: number
+  halfDay: HalfDay
   status: LeaveStatus
   reason: string | null
   decidedBy: string | null
@@ -66,15 +78,16 @@ export const leaveApi = {
       `/api/leave/requests?page=${page}&size=${size}${status ? `&status=${status}` : ''}`,
     ),
   queue: () => apiRequest<LeaveRequest[]>('/api/leave/queue'),
-  preview: (startDate: string, endDate: string, type: LeaveType) =>
+  preview: (startDate: string, endDate: string, type: LeaveType, halfDay: HalfDay) =>
     apiRequest<Preview>(
-      `/api/leave/preview?startDate=${startDate}&endDate=${endDate}&type=${type}`,
+      `/api/leave/preview?startDate=${startDate}&endDate=${endDate}&type=${type}&halfDay=${halfDay}`,
     ),
-  create: (type: LeaveType, startDate: string, endDate: string, reason: string) =>
+  create: (type: LeaveType, startDate: string, endDate: string, halfDay: HalfDay, reason: string) =>
     apiRequest<LeaveRequest>('/api/leave/requests', {
       method: 'POST',
-      body: JSON.stringify({ type, startDate, endDate, reason: reason.trim() || null }),
+      body: JSON.stringify({ type, startDate, endDate, halfDay, reason: reason.trim() || null }),
     }),
+  days: () => apiRequest<LeaveDay[]>('/api/leave/days'),
   approve: (id: string, note: string) =>
     apiRequest<LeaveRequest>(`/api/leave/requests/${id}/approve`, {
       method: 'POST',

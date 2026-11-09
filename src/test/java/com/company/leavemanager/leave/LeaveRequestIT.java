@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.math.BigDecimal;
 import java.net.http.HttpResponse;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -123,7 +124,7 @@ class LeaveRequestIT extends LeaveTestSupport {
 
         // The state can only be reached out of band (an HR correction made before the adjustment
         // guard existed): the approval must still refuse to leave the balance negative (BR-5).
-        adjustments.save(LeaveAdjustment.of(employee.id(), -10, "kayıt dışı düzeltme",
+        adjustments.save(LeaveAdjustment.of(employee.id(), new BigDecimal("-10"), "kayıt dışı düzeltme",
                 UUID.fromString(extract(session.get("/api/auth/me").body(), "id")), Instant.now()));
 
         HttpResponse<String> approval = approve(managerSession, requestId);
@@ -779,5 +780,165 @@ class LeaveRequestIT extends LeaveTestSupport {
         } finally {
             jdbc.update("delete from public_holiday where day = ?", holiday);
         }
+    }
+
+    // ------------------------------------------------------------------ half day (B1)
+
+    @Test
+    void shouldCountAHalfDayAsHalfADay() throws Exception {
+        // AC-12/D15: one working day, ANNUAL or EXCUSE, AM or PM → 0,5 business days, stored and
+        // returned in the decimal unit; the pending balance drops by half a day.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        LocalDate monday = nextMonday();
+
+        HttpResponse<String> created = createLeave(member, "ANNUAL", monday, monday, "AM", "öğleden önce");
+
+        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
+        assertThat(decimal(created.body(), "businessDays")).isEqualByComparingTo("0.5");
+        assertThat(created.body()).contains("\"halfDay\":\"AM\"");
+        String balance = member.get("/api/leave/balance").body();
+        assertThat(decimal(balance, "pending")).isEqualByComparingTo("0.5");
+        assertThat(decimal(balance, "remaining")).isEqualByComparingTo("13.5");
+    }
+
+    @Test
+    void shouldTreatASecondHalfDayOnTheSameDayAsAnOverlap() throws Exception {
+        // D15: BR-6 looks at the day, not the half. AM + PM on one date is still an overlap.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        LocalDate monday = nextMonday();
+        assertThat(createLeave(member, "ANNUAL", monday, monday, "AM", "sabah").statusCode()).isEqualTo(201);
+
+        HttpResponse<String> pm = createLeave(member, "ANNUAL", monday, monday, "PM", "öğleden sonra");
+
+        assertThat(pm.statusCode()).isEqualTo(409);
+        assertThat(errorCode(pm)).isEqualTo("LEAVE_OVERLAP");
+    }
+
+    @Test
+    void shouldRejectAHalfDayOverARange() throws Exception {
+        // D15: a half day is a single-day selection; over a range it is a data-entry error.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        LocalDate monday = nextMonday();
+
+        HttpResponse<String> overRange = createLeave(member, "EXCUSE", monday, monday.plusDays(1), "PM", "iki gün");
+
+        assertThat(overRange.statusCode()).as(overRange.body()).isEqualTo(400);
+        assertThat(errorCode(overRange)).isEqualTo("LEAVE_HALF_DAY_INVALID");
+        assertThat(number(member.get("/api/leave/requests").body(), "total")).isZero();
+    }
+
+    @Test
+    void shouldRejectAHalfDayOnANonWorkingDay() throws Exception {
+        // D15: the single day still has to be a working day; a weekend answers the existing code.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        LocalDate saturday = nextMonday().plusDays(5);
+
+        HttpResponse<String> weekend = createLeave(member, "ANNUAL", saturday, saturday, "AM", "hafta sonu");
+
+        assertThat(weekend.statusCode()).as(weekend.body()).isEqualTo(400);
+        assertThat(errorCode(weekend)).isEqualTo("LEAVE_NO_WORKING_DAY");
+    }
+
+    @Test
+    void shouldPreviewAHalfDay() throws Exception {
+        // AC-12: the form's summary carries the same 0,5 and the same remaining balance.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        LocalDate monday = nextMonday();
+
+        HttpResponse<String> preview = member.get("/api/leave/preview?startDate=" + monday
+                + "&endDate=" + monday + "&type=ANNUAL&halfDay=AM");
+
+        assertThat(preview.statusCode()).as(preview.body()).isEqualTo(200);
+        assertThat(decimal(preview.body(), "businessDays")).isEqualByComparingTo("0.5");
+        assertThat(decimal(preview.body(), "remainingAfter")).isEqualByComparingTo("13.5");
+
+        // The preview refuses an invalid half-day selection exactly as create does.
+        HttpResponse<String> overRange = member.get("/api/leave/preview?startDate=" + monday
+                + "&endDate=" + monday.plusDays(1) + "&type=ANNUAL&halfDay=AM");
+        assertThat(overRange.statusCode()).isEqualTo(400);
+        assertThat(errorCode(overRange)).isEqualTo("LEAVE_HALF_DAY_INVALID");
+    }
+
+    @Test
+    void shouldAdjustTheBalanceByHalfADay() throws Exception {
+        // AC-12/D16: HR corrects the balance in half days and the answer is decimal too.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+
+        HttpResponse<String> adjusted = session.post("/api/leave/adjustments",
+                "{\"employeeId\":\"" + employee.id() + "\",\"days\":0.5,\"reason\":\"yarım gün düzeltmesi\"}");
+
+        assertThat(adjusted.statusCode()).as(adjusted.body()).isEqualTo(200);
+        assertThat(decimal(adjusted.body(), "adjustments")).isEqualByComparingTo("0.5");
+        assertThat(decimal(adjusted.body(), "remaining")).isEqualByComparingTo("14.5");
+    }
+
+    @Test
+    void shouldRejectAnAdjustmentThatIsNotAHalfDayMultipleOrIsTooLarge() throws Exception {
+        // D16: only half-day steps, within ±365 days. A finer fraction is a validation failure; a
+        // fifth of a day (0.2) reaches the service's own rule; 366 days exceeds the cap.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+
+        HttpResponse<String> finerUnit = session.post("/api/leave/adjustments",
+                "{\"employeeId\":\"" + employee.id() + "\",\"days\":0.2,\"reason\":\"çeyrek gün\"}");
+        assertThat(finerUnit.statusCode()).isEqualTo(400);
+        assertThat(errorCode(finerUnit)).isEqualTo("LEAVE_INVALID_ADJUSTMENT");
+
+        HttpResponse<String> quarter = session.post("/api/leave/adjustments",
+                "{\"employeeId\":\"" + employee.id() + "\",\"days\":0.25,\"reason\":\"çeyrek gün\"}");
+        assertThat(quarter.statusCode()).isEqualTo(400);
+        assertThat(quarter.body()).contains("VALIDATION_FAILED");
+
+        HttpResponse<String> tooLarge = session.post("/api/leave/adjustments",
+                "{\"employeeId\":\"" + employee.id() + "\",\"days\":366,\"reason\":\"bir yıldan fazla\"}");
+        assertThat(tooLarge.statusCode()).isEqualTo(400);
+        assertThat(errorCode(tooLarge)).isEqualTo("LEAVE_INVALID_ADJUSTMENT");
+
+        // None of the refusals wrote an adjustment.
+        assertThat(decimal(session.get("/api/leave/balance?employeeId=" + employee.id()).body(), "adjustments"))
+                .isEqualByComparingTo("0");
+    }
+
+    @Test
+    void shouldApproveAndCancelAHalfDayAndRestoreTheBalance() throws Exception {
+        // AC-12/BR-8: approval moves the decimal day from pending to approved; cancellation gives
+        // the same decimal amount back. No rounding anywhere.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        Session managerSession = signIn(manager);
+        LocalDate monday = nextMonday();
+        String requestId = extract(createLeave(member, "ANNUAL", monday, monday, "PM", "öğleden sonra").body(), "id");
+
+        assertThat(decimal(member.get("/api/leave/balance").body(), "pending")).isEqualByComparingTo("0.5");
+        assertThat(approve(managerSession, requestId).statusCode()).isEqualTo(200);
+        String approved = member.get("/api/leave/balance").body();
+        assertThat(decimal(approved, "approved")).isEqualByComparingTo("0.5");
+        assertThat(decimal(approved, "pending")).isEqualByComparingTo("0");
+        assertThat(decimal(approved, "remaining")).isEqualByComparingTo("13.5");
+
+        assertThat(cancel(member, requestId).statusCode()).isEqualTo(200);
+        String restored = member.get("/api/leave/balance").body();
+        assertThat(decimal(restored, "approved")).isEqualByComparingTo("0");
+        assertThat(decimal(restored, "remaining")).isEqualByComparingTo("14");
     }
 }

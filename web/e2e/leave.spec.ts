@@ -54,8 +54,14 @@ async function signInAs(page: Page, email: string, temporaryPassword: string, ne
 /** The remaining days as the balance card shows them; the server computed the number. */
 async function remaining(page: Page): Promise<number> {
   const value = page.locator('[data-slot="balance-remaining"]')
-  await expect(value).toHaveText(/\d+/)
-  return Number(await value.textContent())
+  await expect(value).toHaveText(/^\d+([.,]\d+)?$/)
+  const text = (await value.textContent()) ?? ''
+  return Number(text.trim().replace(',', '.'))
+}
+
+/** The balance card's own formatting, so an assertion compares like with like (0,5 in Turkish). */
+function dayText(value: number): string {
+  return new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 1 }).format(value)
 }
 
 /** HR creates one account through the users screen and returns its temporary password. */
@@ -179,6 +185,95 @@ test('shouldRequestApproveAndCancelLeave', async ({ page }) => {
   await expect(page.getByRole('table').getByText('İptal edildi')).toBeVisible()
 
   // The screen carries no accessibility violation once a real request is on it.
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze()
+  expect(
+    results.violations.map((rule) => `${rule.id}: ${rule.nodes.length} node(s)`),
+    'the leave screen has accessibility violations',
+  ).toEqual([])
+})
+
+test('shouldRequestAHalfDayAndSeeItInMyDays', async ({ page }) => {
+  // A half day is 0.5 working days (D15): the summary, the balance, the manager's queue and the
+  // "izinli günlerim" view all carry the fraction, and cancelling restores it (D20).
+  await signIn(page, HR_EMAIL, HR_PASSWORD)
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+  const stamp = Date.now()
+  const fixture = await page.evaluate(async (suffix) => {
+    const token = (await (await fetch('/api/auth/csrf')).json()).token
+    const post = (body: unknown) =>
+      fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+        body: JSON.stringify(body),
+      }).then((response) => response.json())
+    const manager = await post({
+      email: `half-lead-${suffix}@acme.test`,
+      displayName: `Half Lead ${suffix}`,
+      role: 'MANAGER',
+    })
+    const employee = await post({
+      email: `half-${suffix}@acme.test`,
+      displayName: `Half Employee ${suffix}`,
+      role: 'EMPLOYEE',
+      managerId: manager.user.id,
+      hireDate: '2024-01-15',
+    })
+    return {
+      email: employee.user.email,
+      password: employee.temporaryPassword,
+      managerEmail: manager.user.email,
+      managerPassword: manager.temporaryPassword,
+      employeeName: employee.user.displayName,
+    }
+  }, stamp)
+  await logOut(page)
+
+  await signInAs(page, fixture.email, fixture.password, EMPLOYEE_PASSWORD)
+  await goToLeave(page)
+  const before = await remaining(page)
+  const day = await nextBusinessMonday(page)
+
+  await page.getByRole('button', { name: 'Yeni talep' }).click()
+  const requestDialog = page.getByRole('dialog')
+  await requestDialog.getByLabel('Başlangıç').fill(day)
+  await requestDialog.getByLabel('Bitiş').fill(day)
+  await requestDialog.getByRole('combobox', { name: 'Yarım gün' }).click()
+  await page.getByRole('option', { name: 'Öğleden sonra' }).click()
+  await expect(requestDialog.getByText(/0,5 iş günü/)).toBeVisible()
+  await requestDialog.getByRole('button', { name: 'Talebi gönder' }).click()
+
+  await expect(page.getByText('İzin talebi oluşturuldu.')).toBeVisible()
+  await expect(page.locator('[data-slot="balance-remaining"]')).toHaveText(dayText(before - 0.5))
+  // A pending request is not an approved day yet.
+  await expect(page.locator('[data-slot="my-leave-day"]')).toHaveCount(0)
+  await logOut(page)
+
+  await signInAs(page, fixture.managerEmail, fixture.managerPassword, MANAGER_PASSWORD)
+  await goToLeave(page)
+  const queue = page.locator('[data-slot="card"]').filter({ hasText: 'Onay kuyruğu' })
+  await expect(queue.getByText(fixture.employeeName)).toBeVisible()
+  await expect(queue.getByText('0,5')).toBeVisible()
+  await queue.getByRole('button', { name: 'Onayla' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Onayla' }).click()
+  await expect(page.getByText('Karar kaydedildi.')).toBeVisible()
+  await logOut(page)
+
+  await signIn(page, fixture.email, EMPLOYEE_PASSWORD)
+  await goToLeave(page)
+  const rows = page.locator('[data-slot="my-leave-day"]')
+  await expect(rows).toHaveCount(1)
+  await expect(rows.first()).toContainText(day.split('-').reverse().join('.'))
+  await expect(rows.first()).toContainText('Öğleden sonra')
+  await expect(page.locator('[data-slot="balance-remaining"]')).toHaveText(dayText(before - 0.5))
+
+  await page.getByRole('button', { name: 'Talebi iptal et' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Talebi iptal et' }).click()
+  await expect(page.getByText('Talep iptal edildi; bakiye geri yüklendi.')).toBeVisible()
+  await expect(page.locator('[data-slot="balance-remaining"]')).toHaveText(dayText(before))
+  await expect(page.locator('[data-slot="my-leave-day"]')).toHaveCount(0)
+
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()

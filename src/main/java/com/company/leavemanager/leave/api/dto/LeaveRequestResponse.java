@@ -1,15 +1,20 @@
 package com.company.leavemanager.leave.api.dto;
 
+import com.company.leavemanager.leave.internal.HalfDay;
+
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
 /**
- * One request as the API shows it. {@code cancellable} answers "may the owner withdraw it right now"
- * (BR-8: approved and not started yet) so the screen does not re-derive a rule of its own.
- * {@code cancelledAt}/{@code cancelledByName} are the withdrawal's own record and never overwrite
- * the decision's ({@code decidedAt}/{@code decidedByName}, L-17). {@code retroactive} marks the
- * HR-recorded request that started in the past (BR-11's exception, L-06).
+ * One request as the API shows it. {@code businessDays} is the decimal day unit (D16): a half day
+ * is {@code 0.5}; {@code halfDay} carries the AM/PM selection and is {@code NONE} otherwise.
+ * {@code cancellable} answers "may the owner withdraw it right now" (BR-8: approved and not started
+ * yet) so the screen does not re-derive a rule of its own. {@code cancelledAt}/{@code
+ * cancelledByName} are the withdrawal's own record and never overwrite the decision's ({@code
+ * decidedAt}/{@code decidedByName}, L-17). {@code retroactive} marks the HR-recorded request that
+ * started in the past (BR-11's exception, L-06).
  */
 public record LeaveRequestResponse(
         UUID id,
@@ -18,7 +23,8 @@ public record LeaveRequestResponse(
         String type,
         LocalDate startDate,
         LocalDate endDate,
-        int businessDays,
+        HalfDay halfDay,
+        BigDecimal businessDays,
         String status,
         String reason,
         UUID decidedBy,

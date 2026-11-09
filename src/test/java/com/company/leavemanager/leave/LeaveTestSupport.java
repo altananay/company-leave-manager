@@ -5,6 +5,7 @@ import com.company.leavemanager.testing.WorkingDays;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.math.BigDecimal;
 import java.net.http.HttpResponse;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -90,9 +91,22 @@ abstract class LeaveTestSupport extends IdentityTestSupport {
                 + "\",\"reason\":\"" + reason + "\"}");
     }
 
+    /** The same request with a half-day selection (D15); {@code NONE} is a whole-day request. */
+    protected HttpResponse<String> createLeave(Session member,
+                                               String type,
+                                               LocalDate start,
+                                               LocalDate end,
+                                               String halfDay,
+                                               String reason) throws Exception {
+        return member.post("/api/leave/requests", "{\"type\":\"" + type
+                + "\",\"startDate\":\"" + start
+                + "\",\"endDate\":\"" + end
+                + "\",\"halfDay\":\"" + halfDay
+                + "\",\"reason\":\"" + reason + "\"}");
+    }
+
     /** HR records a request on behalf of an employee (BR-11's exception path). */
-    protected HttpResponse<String> createLeaveFor(Session hr,
-                                                  UUID employeeId,
+    protected HttpResponse<String> createLeaveFor(Session hr,                                                  UUID employeeId,
                                                   String type,
                                                   LocalDate start,
                                                   LocalDate end,
@@ -147,6 +161,13 @@ abstract class LeaveTestSupport extends IdentityTestSupport {
     protected static int number(String json, String field) {
         Matcher matcher = Pattern.compile("\"" + field + "\":(-?\\d+)").matcher(json);
         return matcher.find() ? Integer.parseInt(matcher.group(1)) : Integer.MIN_VALUE;
+    }
+
+    /** A day amount from a JSON body, keeping the decimal unit ({@code 0.5}, {@code 13.0}, D16). */
+    protected static BigDecimal decimal(String json, String field) {
+        Matcher matcher = Pattern.compile("\"" + field + "\":(-?\\d+(?:\\.\\d+)?)").matcher(json);
+        assertThat(matcher.find()).as("%s in %s", field, json).isTrue();
+        return new BigDecimal(matcher.group(1));
     }
 
     protected static boolean jsonNull(String json, String field) {
