@@ -69,6 +69,15 @@ public class EmployeeDirectory {
         return users.findByManagerIdAndActiveTrue(managerId).stream().map(EmployeeDirectory::view).toList();
     }
 
+    /**
+     * Takes the employee's row lock for the rest of the transaction (spec 0004, L-07). The leave
+     * module calls this before it reads the state a rule depends on, so writes for one employee run
+     * one after the other while two different employees never wait for each other.
+     */
+    public void lock(UUID employeeId) {
+        users.lockById(employeeId);
+    }
+
     private static EmployeeView view(User user) {
         return new EmployeeView(
                 user.getId(),

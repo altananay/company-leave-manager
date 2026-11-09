@@ -101,6 +101,14 @@ public abstract class IdentityTestSupport {
                     .build(), HttpResponse.BodyHandlers.ofString());
         }
 
+        public HttpResponse<String> patch(String path, String json) throws IOException, InterruptedException {
+            return client.send(HttpRequest.newBuilder(URI.create(base() + path))
+                    .header("Content-Type", "application/json")
+                    .header("X-CSRF-TOKEN", csrf())
+                    .method("PATCH", HttpRequest.BodyPublishers.ofString(json))
+                    .build(), HttpResponse.BodyHandlers.ofString());
+        }
+
         /** A POST with an explicit (usually wrong) CSRF token, to prove the check itself. */
         public HttpResponse<String> postWithToken(String path, String json, String token)
                 throws IOException, InterruptedException {

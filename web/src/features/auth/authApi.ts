@@ -128,4 +128,10 @@ export const authApi = {
   deactivate: (id: string) => request<void>(`/api/users/${id}/deactivate`, { method: 'POST' }),
   resetPassword: (id: string) =>
     request<CreatedUser>(`/api/users/${id}/reset-password`, { method: 'POST' }),
+  /** HR fills in the manager and the hire date later; the pair is replaced on every call (L-04). */
+  updateUser: (id: string, managerId: string | null, hireDate: string | null) =>
+    request<User>(`/api/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ managerId, hireDate }),
+    }),
 }

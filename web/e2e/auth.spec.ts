@@ -290,7 +290,9 @@ test('shouldLoginDenyAndLogout', async ({ page }) => {
   await page.getByRole('button', { name: 'Giriş yap' }).click()
 
   await expect(page.getByText('Giriş yapan:')).toBeVisible()
-  await expect(page.getByRole('status')).toHaveText('Sistem çalışıyor')
+  // The home screen now carries the balance summary too (spec 0004, L-21): its "no hire date"
+  // notice is a second live region, so the health status is selected by its own text.
+  await expect(page.getByRole('status').filter({ hasText: 'Sistem çalışıyor' })).toBeVisible()
 
   // HR creates an employee and receives a one-time password.
   await goToUsers(page)

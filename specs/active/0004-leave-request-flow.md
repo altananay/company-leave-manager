@@ -24,10 +24,17 @@ raporlama ekranı, hastalık raporu dosyası, çok kademeli onay.
   Süre **iş günü** olarak hesaplanır: hafta sonu ve resmî tatil düşülür (BR-4). Resmî tatiller
   veritabanında tutulur, İK yıllık olarak ekler.
 - **Kurallar (talep anında ve onay anında):** geçmiş başlangıç yasak (BR-11), çakışan aktif talep
-  yasak (BR-6), kalan bakiyeyi aşan yıllık talep yasak (BR-5).
+  yasak (BR-6), kalan bakiyeyi aşan yıllık talep yasak (BR-5). Aynı üç kural onay anında da yeniden
+  çalışır: talep beklerken başlangıcı geçmiş olabilir veya araya başka bir aktif talep girebilir.
+- **Aralık ve mazeret sınırı:** tarih aralığı en çok 366 takvim günüdür; mazeret izni gerekçe
+  zorunlu ve en çok 5 iş günüdür. İK, geçmiş başlangıçlı bir kaydı **yalnızca gerekçeyle** açabilir
+  (BR-11 istisnası); bu kayıt `LEAVE_RETROACTIVE_REQUESTED` olarak denetlenir ve onay anındaki
+  geçmiş tarih kuralından muaftır.
 - **Bakiye:** hak kıdeme göre (BR-1: 1–5 yıl 14, 5–15 yıl 20, 15+ yıl 26), hak dönemi işe giriş yıl
-  dönümünde başlar (BR-2), dönem sonunda kullanılmayan hakkın tamamı devreder (BR-3). Kullanılabilir
-  bakiye = dönem hakkı + devir + İK düzeltmeleri − onaylı − bekleyen.
+  dönümünde başlar (BR-2), dönem sonunda kullanılmayan hakkın tamamı devreder (BR-3); devir
+  **nettir**: önceki dönemlerin hakkı eksi o dönemlerde kullanılan günler. Kullanılabilir bakiye =
+  dönem hakkı + net devir + İK düzeltmeleri − onaylı − bekleyen. İşe giriş tarihi yoksa yıllık hak
+  **0**'dır ve yıllık talep `LEAVE_NO_HIRE_DATE` ile reddedilir; mazeret izni açılabilir.
 - **Onay:** yalnızca çalışanın **doğrudan yöneticisi** onaylar veya reddeder (BR-7). İK ve CEO
   onaylayamaz; İK tüm talepleri **görüntüler** ve gerekçeli bakiye düzeltmesi yapar (denetim üretir).
   Çalışan kendi talebini onaylayamaz; yöneticisi olmayan çalışan talep açamaz (İK önce bağ kurar).
@@ -36,9 +43,13 @@ raporlama ekranı, hastalık raporu dosyası, çok kademeli onay.
 - **Denetim:** talep oluşturma, onay, ret, iptal ve bakiye düzeltmesi `audit`'e yazılır; onay/ret
   kaydı **önce/sonra** durumunu taşır (backlog B-7 bu dilimde kapanır).
 - **Yönetici bağı:** kullanıcı kaydına `manager` alanı eklenir (kendine referans, ağaç); İK atar.
-  Kullanıcı oluşturma formu bu alanı kazanır.
+  Kullanıcı oluşturma formu bu alanı kazanır. İnceleme turu 1: İK mevcut kullanıcının `manager` ve
+  `hire_date` alanlarını `PATCH /api/users/{id}` ile **tek tek** düzenleyebilir (toplu göç yok);
+  yönetici aktif bir MANAGER olmalıdır ve döngü kuramaz. Aktif çalışanı olan bir yönetici pasife
+  alınamaz (önce çalışanlar başka yöneticiye bağlanır), böylece hiçbir talep onaylayıcısız kalmaz.
 - **Görünürlük:** çalışan kendi taleplerini, bakiyesini ve **hangi günlerde izinli olduğunu** görür;
-  yönetici kendi ekibinin bekleyen taleplerini; İK herkesinkini (salt okuma) görür.
+  yönetici kendi ekibinin bekleyen taleplerini ve alt ağacının bakiyesini; İK herkesinkini (salt
+  okuma) görür. Kapsam dışı bir kimlik 403 değil **404** alır: uç, nesnenin varlığını doğrulamaz.
 - **Rota:** `/leave/requests` gibi iç içe yollar doğrudan açılabilir (backlog B-4 bu dilimde kapanır).
 - **Tasarım/erişilebilirlik:** 0003'ün kabuğu, bileşenleri ve çıtası aynen kullanılır (WCAG 2.1 AA,
   44 px hedefler, 360/768/1440 yatay kaydırma yok, klavye tam).
@@ -64,17 +75,65 @@ raporlama ekranı, hastalık raporu dosyası, çok kademeli onay.
 
 - **Sensitive area: evet** (izin hakkı ve onay yetkisi) — bu yüzden bağımsız inceleme ve iki turlu
   doğrulama zorunlu.
+- **BR-10'un altı özel izin türü Faz B'ye ertelendi** (evlilik, vefat, eş doğumu, karne, doğum günü,
+  okulun ilk günü). Neden: her biri kendi süresini, koşulunu ve penceresini getiriyor (doğum günü
+  180 gün, karne/okul günü yılda 1 gün, vefat için yakınlık derecesi) ve çocuk/akrabalık verisi
+  KVKK kapsamında ayrı bir inceleme ister; Faz A'da bunların yerine `EXCUSE` **gerekçe zorunlu ve
+  en çok 5 iş günü** olarak sınırlandı. Böylece "mazeret" ikinci bir yıllık izin gibi kullanılamaz.
 - **Kapsam dışı:** e-posta/Slack bildirimi, takvim (iCal/Google) entegrasyonu, mobil uygulama,
   raporlama/analitik ekranı, hastalık raporu dosyası veya eki, çok kademeli onay, vekalet (delegate),
   toplu onay, yarım günden küçük süreler (saatlik izin), başka para birimi/tatil takvimi.
 - **Backend:** yeni modül yok; `leave` modülü kendi sınırları içinde (ArchUnit kuralları korunur).
   Yeni uçlar `/api/leave/**` altında; oturum + CSRF + rol kuralları 0002'deki gibi.
 - **Veritabanı:** Flyway `V3__leave.sql` — `leave_request`, `public_holiday`, `leave_adjustment`,
-  `users.manager_id`, `users.hire_date`. Geri dönüşü olmayan veri yok.
+  `users.manager_id`, `users.hire_date`. İnceleme turu 1 ekleri: `V4` iptal kaydı + İK geçmiş kayıt
+  işareti, `V5` denetim durumlarının `jsonb`'ye geçişi, `V6` 2027 tatil seed'i. Geri dönüşü olmayan
+  veri yok.
+- **Tarih aralığı sınırı:** bir talep en çok **366 takvim günü** olabilir (`LEAVE_RANGE_TOO_LONG`);
+  sınır hem `create` hem `preview` içinde, iş günü sayımından önce uygulanır.
+- **İş günü sayımı:** `business_days` **oluşturma anında dondurulur** (bilinçli): sonradan eklenen
+  bir resmî tatil geçmiş bir talebi yeniden yazmaz. Sayım kısa yoldan yapılır (tam haftalar +
+  kalan günler + aralıktaki tatiller), böylece 366 günlük aralık da sabit zamanda sayılır.
 - **Performans:** yeni bir bütçe yok; liste uçları sayfalanır (varsayılan 20, en çok 100).
+- **Eşzamanlılık:** aynı çalışanın yazma işlemleri (oluştur/karar/iptal/düzeltme) çalışan satırı
+  kilitlenerek sıraya alınır; bakiye ve çakışma kontrolü kilit altında taze durumla yapılır.
 - **Split:** bu dilim büyük. Eğer plan aşamasında ikiye ayrılması gerekirse: **0004a** talep + onay +
   bakiye (tam gün, hafta sonu hesabı), **0004b** yarım gün + resmî tatil takvimi + devir. Karar plan
   kapısında verilir.
+
+## Review round 1 decisions (2026-11-09)
+
+Bağımsız incelemenin triyajı insan tarafından onaylandı. Bu dilimde uygulanan kararlar (kanıt ve
+ayrıntı: plan `## Triage`):
+
+- **D1 (L-02) — BR-10 Faz B.** Altı özel tür ertelendi; Faz A'da `EXCUSE` gerekçe zorunlu ve en çok
+  5 iş günü. Gerekçe: tür başına süre/koşul/pencereler ve çocuk-akrabalık verisi kendi spec'ini ister.
+- **D2 (L-03) — aralık ve hesap.** Aralık en çok 366 takvim günü; iş günü sayımı tam hafta + kalan
+  gün + tatil farkı ile yapılır (gün gün döngü yok), tatiller tam kalır.
+- **D3 (L-05) — işe giriş tarihi yoksa hak 0.** Yıllık talep `LEAVE_NO_HIRE_DATE` ile reddedilir,
+  mazeret açılabilir, bakiye ekranı durumu gösterir. **Bilinçli kural değişikliği:** planın risk
+  kaydındaki "14 gün varsayılanı" kaldırıldı; varsayım yerine İK'nın tarihi girmesi beklenir.
+- **D4 (L-06) — BR-11 istisnası.** Yalnız İK, yalnız gerekçeyle geçmiş başlangıçlı kayıt açar;
+  `LEAVE_RETROACTIVE_REQUESTED` denetim olayı ve `retroactive` işareti kalıcıdır. Çalışan ve
+  yönetici istisnayı kullanamaz.
+- **D5 (L-08) — tatil takvimi.** 2027 resmî tatilleri aynı kaynaktan seed edilir; `business_days`
+  oluşturma anında **bilinçli olarak** dondurulur, sonradan eklenen tatil geçmiş talebi değiştirmez.
+- **D6 (L-17) — iptal kaydı.** `cancelled_at`/`cancelled_by` ayrı tutulur; karar zamanı ve karar
+  veren **korunur**, ekran iptal edeni ayrıca gösterir.
+- **D7 (L-19) — net devir.** Devir = önceki dönemlerin hakkı − o dönemlerde kullanılan günler;
+  böylece kullanılmış bir gün ikinci kez teklif edilmez.
+- **D8 (L-01) — onay anında kurallar.** BR-11 (geçmiş başlangıç) ve BR-6 (kendi dışındaki aktif
+  taleple çakışma) onay anında yeniden çalışır; `LEAVE_PAST_DATE` / `LEAVE_OVERLAP`.
+- **D9 (L-12) — onaylayıcısız talep yok.** Talep açılırken yönetici aktif MANAGER olmalı; aktif
+  çalışanı olan yönetici pasife alınamaz (`MANAGER_HAS_REPORTS`).
+- **D10 (L-14) — bakiye kapsamı.** Yönetici alt ağacının bakiyesini okur; `docs/security.md` ile kod
+  aynı kuralı söyler.
+- **D11 (L-15) — denetim durumları `jsonb`.** İnsan kararıyla ilk REJECT geri alındı; `before_state`
+  / `after_state` gerçek `jsonb`, Jackson ile yazılır, testler SQL operatörüyle okur.
+- **D12 (L-24) — Faz B notu.** Yarım gün için `business_days` `numeric(4,1)` (ya da dakika) olmalı;
+  kolon bugünden tam sayı olduğu için Faz B göçü bunu değiştirir.
+- **D13 (L-23) — kanıt.** Planın kanıt satırı, VERIFY'da bu commit'in CI koşu linki ve SHA'sı ile
+  tamamlanır; o zamana kadar yer tutucudur.
 
 ## Acceptance criteria
 

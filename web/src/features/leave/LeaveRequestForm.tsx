@@ -92,6 +92,9 @@ function LeaveRequestForm({
   }
 
   const dateInvalid = error === 'leavePastDate' || error === 'leaveInvalidRange'
+  // L-02: phase A's EXCUSE is bounded and always carries its reason; the server enforces both, and
+  // the form says so before sending. Annual leave keeps its optional reason.
+  const reasonRequired = type === 'EXCUSE'
 
   return (
     <Dialog
@@ -166,10 +169,17 @@ function LeaveRequestForm({
           <Field
             label={t('leaveReason')}
             value={reason}
-            placeholder={t('leaveReasonPlaceholder')}
+            placeholder={t(
+              reasonRequired ? 'leaveReasonExcusePlaceholder' : 'leaveReasonPlaceholder',
+            )}
             maxLength={500}
+            invalid={error === 'leaveReasonRequired'}
             describedBy={error ? 'leave-form-error' : undefined}
-            onChange={(event) => setReason(event.target.value)}
+            required={reasonRequired}
+            onChange={(event) => {
+              setReason(event.target.value)
+              setError(null)
+            }}
           />
 
           {preview && (
@@ -193,7 +203,12 @@ function LeaveRequestForm({
                 {t('cancel')}
               </Button>
             </DialogClose>
-            <Button type="submit" disabled={busy || !startDate || !endDate}>
+            <Button
+              type="submit"
+              disabled={
+                busy || !startDate || !endDate || (reasonRequired && reason.trim().length === 0)
+              }
+            >
               {busy ? t('leaveSending') : t('leaveSubmit')}
             </Button>
           </DialogFooter>

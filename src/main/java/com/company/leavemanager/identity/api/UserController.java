@@ -1,6 +1,7 @@
 package com.company.leavemanager.identity.api;
 
 import com.company.leavemanager.identity.api.dto.CreateUserRequest;
+import com.company.leavemanager.identity.api.dto.UpdateUserRequest;
 import com.company.leavemanager.identity.api.dto.UserResponse;
 import com.company.leavemanager.identity.internal.AppUserPrincipal;
 import com.company.leavemanager.identity.internal.UserAdminService;
@@ -10,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -66,12 +68,34 @@ public class UserController {
         return respond(admin.resetPassword(actor(authentication).id(), id));
     }
 
+    /** HR edits the manager link and the hire date of an existing account (L-04). */
+    @PatchMapping("/{id}")
+    public ResponseEntity<?> update(@PathVariable UUID id,
+                                    @RequestBody UpdateUserRequest request,
+                                    Authentication authentication) {
+        UserAdminService.UpdateResult result = admin.update(
+                actor(authentication).id(), id, request.managerId(), request.hireDate());
+        return switch (result.outcome()) {
+            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiExceptionHandler.problem(HttpStatus.NOT_FOUND, "NOT_FOUND"));
+            case INVALID_MANAGER -> ResponseEntity.badRequest()
+                    .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_MANAGER"));
+            case DONE -> ResponseEntity.ok(result.response());
+            default -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiExceptionHandler.problem(HttpStatus.CONFLICT, "INVALID_REQUEST"));
+        };
+    }
+
     private static ResponseEntity<?> respond(UserAdminService.AdminResult result) {
         return switch (result.outcome()) {
             case SELF_ACTION -> ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(ApiExceptionHandler.problem(HttpStatus.FORBIDDEN, "SELF_ACTION_NOT_ALLOWED"));
             case PROTECTED_ACCOUNT -> ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(ApiExceptionHandler.problem(HttpStatus.FORBIDDEN, "PROTECTED_ACCOUNT"));
+            case HAS_REPORTS -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiExceptionHandler.problem(HttpStatus.CONFLICT, "MANAGER_HAS_REPORTS"));
+            case INVALID_MANAGER -> ResponseEntity.badRequest()
+                    .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_MANAGER"));
             case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ApiExceptionHandler.problem(HttpStatus.NOT_FOUND, "NOT_FOUND"));
             case DONE -> result.response() == null

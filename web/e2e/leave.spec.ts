@@ -250,6 +250,99 @@ test('shouldFitTheLeaveScreenAtEveryWidth', async ({ page, browser }) => {
   await employeeContext.close()
 })
 
+test('shouldFitTheManagerQueueAndTheHrAdjustmentAtEveryWidth', async ({ page, browser }) => {
+  // Six measured states (two roles × three widths) do not fit the default 30 s budget.
+  test.setTimeout(90_000)
+  // L-20: the manager queue, its decision dialog and the HR adjustment row are measured at the
+  // three widths, not only the employee's list.
+  await signIn(page, HR_EMAIL, HR_PASSWORD)
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+
+  const stamp = Date.now()
+  const start = nextMonday()
+  const fixture = await page.evaluate(
+    async ({ suffix, startDate }) => {
+      const token = (await (await fetch('/api/auth/csrf')).json()).token
+      const post = (path: string, body: unknown) =>
+        fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+          body: JSON.stringify(body),
+        }).then((response) => response.json())
+      const manager = await post('/api/users', {
+        email: `width-lead-${suffix}@acme.test`,
+        displayName: `Width Lead ${suffix}`,
+        role: 'MANAGER',
+      })
+      const employee = await post('/api/users', {
+        email: `width-staff-${suffix}@acme.test`,
+        displayName: `Width Staff ${suffix}`,
+        role: 'EMPLOYEE',
+        managerId: manager.user.id,
+        hireDate: '2024-01-15',
+      })
+      await post('/api/leave/requests', {
+        type: 'ANNUAL',
+        startDate,
+        endDate: startDate,
+        reason: 'width scan',
+        employeeId: employee.user.id,
+      })
+      return {
+        managerEmail: manager.user.email,
+        managerPassword: manager.temporaryPassword,
+        employeeName: employee.user.displayName,
+      }
+    },
+    { suffix: stamp, startDate: start },
+  )
+
+  // The HR adjustment row is filled once; the loop then measures the same row at each width. The
+  // open listbox is measured by the axe test (and by contrast.spec), not here: Radix portals it and
+  // its geometry is width-independent.
+  await goToLeave(page)
+  await page.getByRole('combobox', { name: 'Çalışan' }).click()
+  await page.getByRole('option', { name: fixture.employeeName, exact: true }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('option', { name: fixture.employeeName, exact: true })).toHaveCount(0)
+  await page.getByLabel('Gün (eksi düşürür)').fill('2')
+  await page.getByLabel('Gerekçe').fill('genişlik düzeltmesi')
+
+  for (const width of [360, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await goToLeave(page)
+    await expect(page.getByRole('heading', { name: 'İzin talepleri' })).toBeVisible()
+
+    expect(await horizontalOverflow(page), `HR adjustment form at ${width}px`).toBe(0)
+    await expectTouchTargets(page, `HR adjustment at ${width}px`)
+  }
+
+  const managerContext = await browser.newContext()
+  const managerPage = await managerContext.newPage()
+  await signIn(managerPage, fixture.managerEmail, fixture.managerPassword)
+  await changePasswordIfAsked(managerPage, fixture.managerPassword, MANAGER_PASSWORD)
+  await expect(managerPage.getByText('Giriş yapan:')).toBeVisible()
+
+  for (const width of [360, 768, 1440]) {
+    await managerPage.setViewportSize({ width, height: 900 })
+    await goToLeave(managerPage)
+    const queue = managerPage.locator('[data-slot="card"]').filter({ hasText: 'Onay kuyruğu' })
+    await expect(queue.getByText(fixture.employeeName)).toBeVisible()
+
+    expect(await horizontalOverflow(managerPage), `manager queue at ${width}px`).toBe(0)
+    await expectTouchTargets(managerPage, `manager queue at ${width}px`)
+
+    await queue.getByRole('button', { name: 'Onayla' }).click()
+    await expect(managerPage.getByRole('dialog')).toBeVisible()
+    expect(await horizontalOverflow(managerPage), `decision dialog at ${width}px`).toBe(0)
+    await expectTouchTargets(managerPage, `decision dialog at ${width}px`)
+    await managerPage.keyboard.press('Escape')
+    await expect(managerPage.getByRole('dialog')).toHaveCount(0)
+  }
+
+  await managerContext.close()
+})
+
 test('shouldServeTheNestedRouteDirectly', async ({ page }) => {
   // The server answers the nested route with the shell (backlog B-4); the SPA then signs in and
   // lands on the screen the path names (AC-9).

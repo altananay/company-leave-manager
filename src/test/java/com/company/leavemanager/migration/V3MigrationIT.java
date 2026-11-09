@@ -44,6 +44,7 @@ class V3MigrationIT {
 
         int applied = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .target(MigrationVersion.fromVersion("3"))
                 .load()
                 .migrate()
                 .migrationsExecuted;

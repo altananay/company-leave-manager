@@ -8,6 +8,7 @@ import { PasswordChangePage } from '@/features/auth/PasswordChangePage'
 import { authApi, setUnauthorizedHandler, Unauthorized, type Me } from '@/features/auth/authApi'
 import { roleKey } from '@/features/auth/roles'
 import { HealthStatus } from '@/features/health/HealthStatus'
+import { HomeLeaveSummary } from '@/features/leave/HomeLeaveSummary'
 import { LeaveRequestsPage } from '@/features/leave/LeaveRequestsPage'
 import { UsersPage } from '@/features/users/UsersPage'
 import { useI18n } from '@/i18n/I18nProvider'
@@ -329,6 +330,8 @@ function App() {
             </Card>
             <HealthStatus />
           </div>
+          {/* The home screen's own summary: the balance and the last requests (spec 0004, L-21). */}
+          <HomeLeaveSummary onOpenLeave={() => navigate('leave')} />
         </div>
       )}
 

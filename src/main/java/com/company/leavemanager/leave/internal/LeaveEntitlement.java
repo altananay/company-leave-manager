@@ -12,8 +12,10 @@ import java.time.LocalDate;
  * are the carryover. So the arithmetic is exactly
  * {@code dönem hakkı + devir + düzeltmeler − onaylı − bekleyen}.
  *
- * <p>An account without a hire date (every account V2 created) cannot know its seniority: the plan's
- * risk decision is the 1–5 year default of 14 days, flagged so the screen can say so.
+ * <p>An account without a hire date knows no seniority, and the rule is not to guess: its
+ * entitlement is <strong>zero</strong> and an annual request is refused with
+ * {@code LEAVE_NO_HIRE_DATE} (spec 0004 review round 1, L-05 — the earlier 14-day default was a
+ * deliberate rule change). {@code defaulted} tells the screen which state it is showing.
  */
 public record LeaveEntitlement(
         int currentPeriodDays,
@@ -23,12 +25,11 @@ public record LeaveEntitlement(
         long completedYears,
         boolean defaulted) {
 
-    /** The 1–5 year tier: also the documented default while the hire date is unknown. */
-    public static final int DEFAULT_DAYS = 14;
-
     public static LeaveEntitlement of(LocalDate hireDate, LocalDate today) {
         if (hireDate == null) {
-            return new LeaveEntitlement(DEFAULT_DAYS, 0, null, null, 0, true);
+            // No hire date, no seniority, no entitlement. The screen shows the state and HR fills
+            // the date in (one account at a time, no bulk migration).
+            return new LeaveEntitlement(0, 0, null, null, 0, true);
         }
         long years = completedYears(hireDate, today);
         LocalDate periodStart = hireDate.plusYears(years);
@@ -67,6 +68,7 @@ public record LeaveEntitlement(
         return java.time.temporal.ChronoUnit.YEARS.between(hireDate, today);
     }
 
+    /** The gross entitlement of every period: what the employee earned, before any usage. */
     public int totalDays() {
         return currentPeriodDays + carryoverDays;
     }

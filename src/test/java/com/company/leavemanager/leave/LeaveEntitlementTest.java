@@ -69,13 +69,15 @@ class LeaveEntitlementTest {
     }
 
     @Test
-    void shouldDefaultTo14DaysWhenTheHireDateIsUnknown() {
-        // Spec 0004, Risks: an account without a hire date gets the 1–5 year default and a warning.
+    void shouldGrantNoEntitlementWhenTheHireDateIsUnknown() {
+        // L-05 (rule change): an account without a hire date has no known seniority, and the rule is
+        // not to invent one. Annual leave is refused with LEAVE_NO_HIRE_DATE until HR fills the date.
         LeaveEntitlement entitlement = LeaveEntitlement.of(null, LocalDate.of(2026, 11, 9));
 
-        assertThat(entitlement.currentPeriodDays()).isEqualTo(14);
+        assertThat(entitlement.currentPeriodDays()).isZero();
         assertThat(entitlement.carryoverDays()).isZero();
         assertThat(entitlement.defaulted()).isTrue();
+        assertThat(entitlement.totalDays()).isZero();
         assertThat(entitlement.periodStart()).isNull();
         assertThat(entitlement.periodEnd()).isNull();
     }

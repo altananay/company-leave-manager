@@ -78,6 +78,20 @@ abstract class LeaveTestSupport extends IdentityTestSupport {
                 + "\",\"reason\":\"" + reason + "\"}");
     }
 
+    /** HR records a request on behalf of an employee (BR-11's exception path). */
+    protected HttpResponse<String> createLeaveFor(Session hr,
+                                                  UUID employeeId,
+                                                  String type,
+                                                  LocalDate start,
+                                                  LocalDate end,
+                                                  String reason) throws Exception {
+        return hr.post("/api/leave/requests", "{\"type\":\"" + type
+                + "\",\"startDate\":\"" + start
+                + "\",\"endDate\":\"" + end
+                + "\",\"reason\":\"" + reason
+                + "\",\"employeeId\":\"" + employeeId + "\"}");
+    }
+
     protected HttpResponse<String> approve(Session manager, String requestId) throws Exception {
         return manager.post("/api/leave/requests/" + requestId + "/approve", "{}");
     }

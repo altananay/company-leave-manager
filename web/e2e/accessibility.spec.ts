@@ -12,6 +12,17 @@ function describeRule(rule: Result) {
   return `${rule.id}: ${rule.nodes.length} node(s)`
 }
 
+/** The same, with every node's target and the check keys that produced the verdict. */
+function describeUnmeasured(rule: Result) {
+  const nodes = rule.nodes.map((node) => {
+    const checks = [...node.any, ...node.all, ...node.none]
+      .map((check) => `${check.id}/${check.data?.messageKey ?? check.message}`)
+      .join(',')
+    return `${node.target.join(' ')} [${checks}]`
+  })
+  return `${rule.id}: ${nodes.join(' | ')}`
+}
+
 /** axe's manual question about `aria-controls` on an expanded `aria-haspopup` trigger. */
 const POPUP_CONTROLS_REVIEW = 'controlsWithinPopup'
 
@@ -81,6 +92,40 @@ async function allNodesOutsideDialog(page: Page, nodes: NodeResult[]) {
     nodes.map((node) => String(node.target[0])),
   )
   return !results.includes(true)
+}
+
+/**
+ * Whether axe could not measure this text because an open overlay paints over it. That happens on
+ * an overlay's own scan — a menu or a modal covers part of the page — and the covered text was
+ * already measured on the same page before the overlay opened. A node *inside* the overlay is never
+ * excused: it is the surface the scan exists for.
+ */
+function isOverlayContrastReview(node: NodeResult) {
+  return [...node.any, ...node.all, ...node.none].some(
+    (check) => check.id === 'color-contrast' && check.data?.messageKey === 'bgOverlap',
+  )
+}
+
+/** A `color-contrast` node this file knows how to answer: a measured gradient, or covered text. */
+function isKnownContrastReview(node: NodeResult) {
+  return (
+    isGradientContrastReview(node) || isNonTextContrastReview(node) || isOverlayContrastReview(node)
+  )
+}
+
+/** Per node: whether it sits outside every open overlay (a dialog, a menu or a listbox). */
+async function nodesOutsideOverlays(page: Page, nodes: NodeResult[]) {
+  return page.evaluate(
+    (selectors) =>
+      selectors.map((selector) => {
+        const element = document.querySelector(selector)
+        return (
+          element !== null &&
+          element.closest('[role="dialog"], [role="menu"], [role="listbox"]') === null
+        )
+      }),
+    nodes.map((node) => String(node.target[0])),
+  )
 }
 
 /**
@@ -164,9 +209,9 @@ async function expectFocusTrappedInDialog(page: Page, label: string) {
  * jest-axe runs in jsdom, where colour rules are switched off and no stylesheet is loaded, so this
  * test is the one that can actually fail on a contrast regression (spec 0003, AC-3).
  *
- * <p>{@code include} narrows the scan to a surface that overlaps the page (an open menu): axe marks
- * the partially covered text behind it "incomplete", which is a measurement gap, not a defect. The
- * page itself is measured before such a surface opens.
+ * <p>The scan is the whole page. An {@code include} is no longer used to dodge an open overlay
+ * (review round 1, L-10): covered text is handled where it can be measured, and the overlay's own
+ * text is never excused.
  */
 async function expectNoViolations(page: Page, label: string, include?: string | string[]) {
   const builder = new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -187,6 +232,10 @@ async function expectNoViolations(page: Page, label: string, include?: string | 
   //   `nonBmp` on the panel's `✓` chips is allowed too: the node holds a non-text glyph, so there
   //   is no text contrast to measure. `expectGradientContrastNodesToBeMeasured` proves each
   //   incomplete node sits on one of those surfaces; any other gradient node fails below.
+  // - `color-contrast` (`bgOverlap`): an open menu or dialog paints over part of the page, so axe
+  //   cannot resolve the covered text's background. That text was measured on the same page before
+  //   the overlay opened (the scan above), and only nodes *outside* the overlay are excused: the
+  //   overlay's own text has to pass, which is why the scan is full-page and not narrowed.
   // - `aria-hidden-focus` while a modal dialog is open: `focusable-modal-open` asks whether the
   //   focus trap keeps the hidden nodes out of the tab order. The nodes are Radix's two focus
   //   guards (focusable and hidden by design) and the shell Radix hides behind the dialog;
@@ -205,12 +254,22 @@ async function expectNoViolations(page: Page, label: string, include?: string | 
 
   const unmeasured: Result[] = []
   for (const rule of results.incomplete) {
-    if (
-      rule.id === 'color-contrast' &&
-      rule.nodes.every((node) => isGradientContrastReview(node) || isNonTextContrastReview(node))
-    ) {
-      await expectGradientContrastNodesToBeMeasured(page, label, rule.nodes)
-      continue
+    if (rule.id === 'color-contrast' && rule.nodes.every((node) => isKnownContrastReview(node))) {
+      // Two kinds of node can be incomplete in one rule: text on a measured gradient surface (the
+      // brand panel, a primary action) and text an open overlay covers. The first kind is measured
+      // here directly; the second was measured on the page before the overlay opened — but only
+      // when the node really sits outside the overlay, so the overlay's own text still has to pass.
+      const gradients = rule.nodes.filter(
+        (node) => isGradientContrastReview(node) || isNonTextContrastReview(node),
+      )
+      const covered = rule.nodes.filter((node) => !gradients.includes(node))
+      if (gradients.length > 0) {
+        await expectGradientContrastNodesToBeMeasured(page, label, gradients)
+      }
+      const outside = await nodesOutsideOverlays(page, covered)
+      if (outside.every(Boolean)) {
+        continue
+      }
     }
     if (rule.id === 'aria-valid-attr-value' && rule.nodes.every(isPopupControlsReview)) {
       await expectPopupControlsToResolve(page, rule.nodes)
@@ -227,7 +286,10 @@ async function expectNoViolations(page: Page, label: string, include?: string | 
     unmeasured.push(rule)
   }
 
-  expect(unmeasured.map(describeRule), `${label} has incomplete accessibility checks`).toEqual([])
+  expect(
+    unmeasured.map(describeUnmeasured),
+    `${label} has incomplete accessibility checks`,
+  ).toEqual([])
 }
 
 /**
@@ -420,17 +482,14 @@ test('shouldHaveNoAccessibilityViolationsOnEveryScreen', async ({ page }) => {
 
   await page.getByRole('button', { name: 'İşlemler' }).first().click()
   await expect(page.getByRole('menuitem', { name: 'Pasife al' })).toBeVisible()
-  // The open menu covers part of the form behind it, so axe cannot measure that text: scan the
-  // menu and its trigger, which is the surface this step exists for.
-  await expectNoViolations(page, 'row actions menu', [
-    '[role="menu"]',
-    'button[aria-haspopup="menu"][aria-expanded="true"]',
-  ])
+  // Full page, not just the menu: an overlay is part of the page's accessibility, and narrowing the
+  // scan hid every regression outside it (review round 1, L-10). The menu's own text is measured
+  // here; the covered page text was measured above, before the menu opened.
+  await expectNoViolations(page, 'row actions menu')
   await page.getByRole('menuitem', { name: 'Pasife al' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
-  // A modal dims the page behind it, so axe can no longer decide the contrast of the text it
-  // covers: measure the dialog itself, and prove the focus trap the modal promises separately.
-  await expectNoViolations(page, 'deactivation dialog', '[role="dialog"]')
+  // Full page with the modal open; the focus trap the modal promises is proved separately.
+  await expectNoViolations(page, 'deactivation dialog')
   await expectFocusTrappedInDialog(page, 'deactivation dialog')
   await page.keyboard.press('Escape')
 })
@@ -591,6 +650,114 @@ test('shouldHaveNoAccessibilityViolationsOnTheLeaveScreen', async ({ page }) => 
 
   await employeeContext.close()
 })
+
+test('shouldHaveNoAccessibilityViolationsOnTheManagerQueueAndTheHrAdjustment', async ({
+  page,
+  browser,
+}) => {
+  // L-10/L-20: the manager queue, its decision dialog and HR's adjustment row are their own
+  // surfaces. The page is scanned in full while each of them is the reason it exists.
+  await page.goto('/')
+  await page.getByLabel('E-posta').fill(HR_EMAIL)
+  await page.getByLabel('Parola').fill(HR_PASSWORD)
+  await page.getByRole('button', { name: 'Giriş yap' }).click()
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+
+  const stamp = Date.now()
+  const start = nextMonday()
+  const fixture = await page.evaluate(
+    async ({ suffix, startDate }) => {
+      const token = (await (await fetch('/api/auth/csrf')).json()).token
+      const post = (path: string, body: unknown) =>
+        fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+          body: JSON.stringify(body),
+        }).then((response) => response.json())
+      const manager = await post('/api/users', {
+        email: `a11y-lead-${suffix}@acme.test`,
+        displayName: `A11y Lead ${suffix}`,
+        role: 'MANAGER',
+      })
+      const employee = await post('/api/users', {
+        email: `a11y-staff-${suffix}@acme.test`,
+        displayName: `A11y Staff ${suffix}`,
+        role: 'EMPLOYEE',
+        managerId: manager.user.id,
+        hireDate: '2024-01-15',
+      })
+      const request = await post('/api/leave/requests', {
+        type: 'ANNUAL',
+        startDate,
+        endDate: startDate,
+        reason: 'a11y scan',
+        employeeId: employee.user.id,
+      })
+      return {
+        managerEmail: manager.user.email,
+        managerPassword: manager.temporaryPassword,
+        employeeName: employee.user.displayName,
+        requestId: request.id,
+        status: request.status,
+      }
+    },
+    { suffix: stamp, startDate: start },
+  )
+  expect(fixture.status, 'the fixture request is pending').toBe('PENDING')
+
+  // HR's adjustment row: choose the employee, then fill the form. The row's own states are scanned
+  // in full; the open listbox is measured by `contrast.spec.ts#shouldKeepTheRoleListboxReadable`
+  // and by the width test, because Radix's select marks the page `aria-hidden` while it is open and
+  // its focus guard would be reported as a false `aria-hidden-focus` violation.
+  await goToLeave(page)
+  await expect(page.getByRole('heading', { name: 'İzin talepleri' })).toBeVisible()
+  await page.getByRole('combobox', { name: 'Çalışan' }).click()
+  await expect(page.getByRole('option', { name: fixture.employeeName, exact: true })).toBeVisible()
+  await page.getByRole('option', { name: fixture.employeeName, exact: true }).click()
+  await page.getByLabel('Gün (eksi düşürür)').fill('2')
+  await page.getByLabel('Gerekçe').fill('a11y düzeltmesi')
+  await expectNoViolations(page, 'HR adjustment form')
+
+  // The manager's queue and its approve dialog.
+  const managerContext = await browser.newContext()
+  const managerPage = await managerContext.newPage()
+  await managerPage.goto('/')
+  await managerPage.getByLabel('E-posta').fill(fixture.managerEmail)
+  await managerPage.getByLabel('Parola').fill(fixture.managerPassword)
+  await managerPage.getByRole('button', { name: 'Giriş yap' }).click()
+  await expect(managerPage.getByRole('heading', { name: 'Parola değiştirme' })).toBeVisible()
+  await managerPage.getByLabel('Mevcut parola').fill(fixture.managerPassword)
+  await managerPage.getByLabel('Yeni parola', { exact: true }).fill('a11y-manager-pass-123')
+  await managerPage.getByLabel('Yeni parola (tekrar)').fill('a11y-manager-pass-123')
+  await managerPage.getByRole('button', { name: 'Parolayı değiştir' }).click()
+  await expect(managerPage.getByText('Giriş yapan:')).toBeVisible()
+
+  await goToLeave(managerPage)
+  const queue = managerPage.locator('[data-slot="card"]').filter({ hasText: 'Onay kuyruğu' })
+  await expect(queue.getByText(fixture.employeeName)).toBeVisible()
+  await expectNoViolations(managerPage, 'manager queue')
+
+  await queue.getByRole('button', { name: 'Onayla' }).click()
+  await expect(managerPage.getByRole('dialog')).toBeVisible()
+  await expectNoViolations(managerPage, 'leave decision dialog')
+  await expectFocusTrappedInDialog(managerPage, 'leave decision dialog')
+  await managerPage.keyboard.press('Escape')
+
+  await managerContext.close()
+})
+
+/** The next Monday at least a week ahead: the fixture request is always in the future (BR-11). */
+function nextMonday(): string {
+  const date = new Date()
+  date.setDate(date.getDate() + 7)
+  while (date.getDay() !== 1) {
+    date.setDate(date.getDate() + 1)
+  }
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 test('shouldKeepTheBrandPanelTextReadable', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })

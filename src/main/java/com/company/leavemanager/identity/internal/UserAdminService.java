@@ -23,9 +23,13 @@ public class UserAdminService {
     public record CreateResult(CreateOutcome outcome, CreateUserResponse response) {
     }
 
-    public enum AdminOutcome { DONE, SELF_ACTION, PROTECTED_ACCOUNT, NOT_FOUND }
+    public enum AdminOutcome { DONE, SELF_ACTION, PROTECTED_ACCOUNT, NOT_FOUND, HAS_REPORTS, INVALID_MANAGER }
 
     public record AdminResult(AdminOutcome outcome, CreateUserResponse response) {
+    }
+
+    /** The outcome of an org-data edit, with the row as it now stands (L-04). */
+    public record UpdateResult(AdminOutcome outcome, UserResponse response) {
     }
 
     private final UserRepository users;
@@ -101,7 +105,7 @@ public class UserAdminService {
         if (actorId.equals(targetId)) {
             return new AdminResult(AdminOutcome.SELF_ACTION, null);
         }
-        Optional<User> found = users.findById(targetId);
+        Optional<User> found = users.lockById(targetId);
         if (found.isEmpty()) {
             return new AdminResult(AdminOutcome.NOT_FOUND, null);
         }
@@ -109,11 +113,57 @@ public class UserAdminService {
         if (isProtected(user)) {
             return new AdminResult(AdminOutcome.PROTECTED_ACCOUNT, null);
         }
+        // L-12: a manager who still has active reports cannot leave them without an approver. HR
+        // reassigns the reports first (through the edit dialog), then deactivates.
+        if (!users.findByManagerIdAndActiveTrue(user.getId()).isEmpty()) {
+            return new AdminResult(AdminOutcome.HAS_REPORTS, null);
+        }
         user.deactivate(clock.instant());
         users.save(user);
         sessions.endAllFor(user.getEmail());
         audit.userDeactivated(actorId, user.getId());
         return new AdminResult(AdminOutcome.DONE, null);
+    }
+
+    /**
+     * HR backfills the org data of an existing account (L-04): the manager link and the hire date.
+     * There is no bulk migration — a V2-era account is edited one by one by HR, and until its hire
+     * date is set its annual entitlement is zero (L-05) rather than a guess.
+     *
+     * <p>The manager must be an active MANAGER and may not be the account itself or one of its own
+     * reports (a cycle), so BR-7's "direct manager decides" stays true after every edit.
+     */
+    @Transactional
+    public UpdateResult update(UUID actorId, UUID targetId, UUID managerId, LocalDate hireDate) {
+        Optional<User> found = users.lockById(targetId);
+        if (found.isEmpty()) {
+            return new UpdateResult(AdminOutcome.NOT_FOUND, null);
+        }
+        User user = found.get();
+        if (!isAssignableManager(managerId)
+                || targetId.equals(managerId)
+                || createsCycle(targetId, managerId)) {
+            return new UpdateResult(AdminOutcome.INVALID_MANAGER, null);
+        }
+        UUID beforeManager = user.getManagerId();
+        LocalDate beforeHireDate = user.getHireDate();
+        user.updateOrg(managerId, hireDate, clock.instant());
+        users.save(user);
+        audit.userUpdated(actorId, user.getId(), beforeManager, beforeHireDate, managerId, hireDate);
+        return new UpdateResult(AdminOutcome.DONE, UserResponse.of(user));
+    }
+
+    /** Whether pointing {@code targetId} at {@code managerId} would close a loop in the org tree. */
+    private boolean createsCycle(UUID targetId, UUID managerId) {
+        java.util.Set<UUID> seen = new java.util.HashSet<>();
+        UUID current = managerId;
+        while (current != null && seen.add(current)) {
+            if (current.equals(targetId)) {
+                return true;
+            }
+            current = users.findById(current).map(User::getManagerId).orElse(null);
+        }
+        return false;
     }
 
     @Transactional

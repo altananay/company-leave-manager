@@ -64,6 +64,17 @@ public class LeaveRequest {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /** BR-11's HR exception, frozen with the row: only HR records a request that starts in the past. */
+    @Column(nullable = false)
+    private boolean retroactive;
+
+    /** When the approved request was withdrawn; the decision's own timestamp stays untouched. */
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
+    @Column(name = "cancelled_by")
+    private UUID cancelledBy;
+
     protected LeaveRequest() {
         // for JPA
     }
@@ -74,6 +85,17 @@ public class LeaveRequest {
                                       LocalDate endDate,
                                       int businessDays,
                                       String reason,
+                                      Instant now) {
+        return create(employeeId, type, startDate, endDate, businessDays, reason, false, now);
+    }
+
+    public static LeaveRequest create(UUID employeeId,
+                                      LeaveType type,
+                                      LocalDate startDate,
+                                      LocalDate endDate,
+                                      int businessDays,
+                                      String reason,
+                                      boolean retroactive,
                                       Instant now) {
         LeaveRequest request = new LeaveRequest();
         request.id = UUID.randomUUID();
@@ -86,6 +108,7 @@ public class LeaveRequest {
         request.reason = reason;
         request.status = LeaveRequestStatus.PENDING;
         request.createdAt = now;
+        request.retroactive = retroactive;
         return request;
     }
 
@@ -107,11 +130,16 @@ public class LeaveRequest {
         this.decisionNote = note;
     }
 
-    /** APPROVED → CANCELLED before the start date; the pending balance returns (BR-8). */
-    public void cancel(Instant now) {
+    /**
+     * APPROVED → CANCELLED before the start date; the pending balance returns (BR-8). The withdrawal
+     * is recorded beside the decision, never on top of it: {@code decidedAt}/{@code decidedBy} keep
+     * answering "who approved this and when" (L-17).
+     */
+    public void cancel(UUID actorId, Instant now) {
         requireStatus(LeaveRequestStatus.APPROVED, "cancel");
         this.status = LeaveRequestStatus.CANCELLED;
-        this.decidedAt = now;
+        this.cancelledBy = actorId;
+        this.cancelledAt = now;
     }
 
     public boolean overlaps(LocalDate otherStart, LocalDate otherEnd) {
@@ -178,5 +206,17 @@ public class LeaveRequest {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public boolean isRetroactive() {
+        return retroactive;
+    }
+
+    public Instant getCancelledAt() {
+        return cancelledAt;
+    }
+
+    public UUID getCancelledBy() {
+        return cancelledBy;
     }
 }

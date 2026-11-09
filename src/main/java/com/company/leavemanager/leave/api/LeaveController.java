@@ -58,7 +58,8 @@ public class LeaveController {
     public ResponseEntity<?> create(@Valid @RequestBody CreateLeaveRequestRequest body,
                                     Authentication authentication) {
         LeaveResult<LeaveRequestResponse> result = leave.create(
-                actorId(authentication), body.type(), body.startDate(), body.endDate(), body.reason());
+                actorId(authentication), body.employeeId(), body.type(),
+                body.startDate(), body.endDate(), body.reason());
         if (result.failed()) {
             return respond(result);
         }
@@ -67,7 +68,7 @@ public class LeaveController {
 
     @PostMapping("/requests/{id}/approve")
     public ResponseEntity<?> approve(@PathVariable UUID id,
-                                     @RequestBody(required = false) ApproveLeaveRequestRequest body,
+                                     @Valid @RequestBody(required = false) ApproveLeaveRequestRequest body,
                                      Authentication authentication) {
         String note = body == null ? null : body.note();
         return respond(leave.approve(actorId(authentication), id, note));

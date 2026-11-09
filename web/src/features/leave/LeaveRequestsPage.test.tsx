@@ -174,6 +174,9 @@ describe('leave balance', () => {
         'GET /api/leave/balance': () =>
           json(200, {
             ...BALANCE,
+            entitlement: 0,
+            carryover: 0,
+            remaining: 0,
             entitlementDefaulted: true,
             hireDate: null,
             periodStart: null,
@@ -185,9 +188,13 @@ describe('leave balance', () => {
 
     renderPage(EMPLOYEE)
 
+    // L-05 (rule change): no hire date means no entitlement, not a guessed 14 days.
     expect(
-      await screen.findByText(/İşe giriş tarihi girilmedi; bakiye 1–5 yıl varsayımıyla/),
+      await screen.findByText(
+        /İşe giriş tarihi girilmedi; yıllık izin hakkı hesaplanamıyor \(0 gün\)/,
+      ),
     ).toBeInTheDocument()
+    expect(screen.getByText('Dönem hakkı').parentElement).toHaveTextContent('0')
   })
 
   it('shouldExplainWhenNoManagerIsAssigned', async () => {
@@ -304,6 +311,30 @@ describe('request list', () => {
     expect(within(dialog).getByText(/Karar notu: uygun/)).toBeInTheDocument()
   })
 
+  it('shouldShowWhoCancelledWithoutLosingTheDecision', async () => {
+    // L-17: the withdrawal has its own actor and moment; the decision stays on screen too.
+    const cancelled = {
+      ...DECIDED_REQUEST,
+      id: 'r-3',
+      status: 'CANCELLED',
+      cancellable: false,
+      cancelledAt: '2026-11-10T10:00:00Z',
+      cancelledBy: 'u-emp',
+      cancelledByName: 'Employee Person',
+    }
+    stubApi(leaveRoutes({ 'GET /api/leave/requests': () => page([cancelled]) }))
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Ayrıntı' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/Karar veren: Manager Person/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/İptal eden: Employee Person/)).toBeInTheDocument()
+  })
+
   it('shouldLetTheOwnerCancelAnApprovedRequest', async () => {
     const cancel = vi.fn((_init?: RequestInit) =>
       json(200, { ...DECIDED_REQUEST, status: 'CANCELLED', cancellable: false }),
@@ -393,6 +424,55 @@ describe('request dialog', () => {
       ),
     ).toBeInTheDocument()
     expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('shouldRequireAReasonForAnExcuseLeave', async () => {
+    // L-02: phase A's excuse leave always carries its reason, and the form says so before sending.
+    const create = vi.fn((_init?: RequestInit) => json(201, { ...PENDING_REQUEST, id: 'r-new' }))
+    stubApi(leaveRoutes({ 'POST /api/leave/requests': create }))
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Yeni talep' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('combobox', { name: 'İzin türü' }))
+    await user.click(await screen.findByRole('option', { name: 'Mazeret izni' }))
+    fireEvent.change(within(dialog).getByLabelText('Başlangıç'), {
+      target: { value: '2026-11-30' },
+    })
+    fireEvent.change(within(dialog).getByLabelText('Bitiş'), { target: { value: '2026-11-30' } })
+
+    const submit = within(dialog).getByRole('button', { name: 'Talebi gönder' })
+    expect(submit).toBeDisabled()
+
+    await user.type(within(dialog).getByLabelText('Gerekçe'), 'rapor sonradan iletildi')
+    expect(submit).toBeEnabled()
+  })
+
+  it('shouldMapTheRangeCapAndTheExcuseBoundToTheirOwnMessages', async () => {
+    stubApi(
+      leaveRoutes({
+        'POST /api/leave/requests': () => json(400, { status: 400, code: 'LEAVE_RANGE_TOO_LONG' }),
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderPage(EMPLOYEE)
+    await screen.findByRole('table')
+
+    await user.click(screen.getByRole('button', { name: 'Yeni talep' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Başlangıç'), {
+      target: { value: '2026-11-30' },
+    })
+    fireEvent.change(within(dialog).getByLabelText('Bitiş'), { target: { value: '2027-12-31' } })
+    await user.click(within(dialog).getByRole('button', { name: 'Talebi gönder' }))
+
+    expect(
+      await within(dialog).findByText('En fazla 366 günlük bir tarih aralığı seçilebilir.'),
+    ).toBeInTheDocument()
   })
 
   it('shouldReturnFocusToTheTriggerWhenTheDialogCloses', async () => {
@@ -539,6 +619,87 @@ describe('hr view', () => {
 
     expect(queue).not.toHaveBeenCalled()
     expect(screen.queryByText('Onay kuyruğu')).toBeNull()
+  })
+
+  it('shouldFillTheAdjustmentFormAndShowTheNewRemaining', async () => {
+    // L-13: the HR form is filled and sent, and the answer's new remaining is what the screen shows.
+    const adjust = vi.fn((_init?: RequestInit) =>
+      json(200, { ...BALANCE, adjustments: 5, remaining: 14 }),
+    )
+    stubApi(
+      leaveRoutes({
+        'GET /api/users': () =>
+          json(200, [
+            {
+              id: 'u-other',
+              email: 'other@acme.test',
+              displayName: 'Other Person',
+              role: 'EMPLOYEE',
+              active: true,
+              mustChangePassword: false,
+              managerId: null,
+              hireDate: '2020-03-15',
+            },
+          ]),
+        'POST /api/leave/adjustments': adjust,
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderPage(HR)
+    await screen.findByText('Bakiye düzeltmesi')
+
+    await user.click(screen.getByRole('combobox', { name: 'Çalışan' }))
+    await user.click(await screen.findByRole('option', { name: 'Other Person' }))
+    await user.type(screen.getByLabelText('Gün (eksi düşürür)'), '3')
+    await user.type(screen.getByLabelText('Gerekçe'), 'geçmiş dönem düzeltmesi')
+    await user.click(screen.getByRole('button', { name: 'Düzeltmeyi kaydet' }))
+
+    await waitFor(() => expect(adjust).toHaveBeenCalled())
+    expect(JSON.parse(String(adjust.mock.calls[0]?.[0]?.body))).toEqual({
+      employeeId: 'u-other',
+      days: 3,
+      reason: 'geçmiş dönem düzeltmesi',
+    })
+    expect(await screen.findByText('Yeni kalan: 14 gün')).toBeInTheDocument()
+  })
+
+  it('shouldMapAnAdjustmentRefusalToItsOwnMessage', async () => {
+    // L-18: "this correction would go below zero" is its own sentence, not the annual-request one.
+    stubApi(
+      leaveRoutes({
+        'GET /api/users': () =>
+          json(200, [
+            {
+              id: 'u-other',
+              email: 'other@acme.test',
+              displayName: 'Other Person',
+              role: 'EMPLOYEE',
+              active: true,
+              mustChangePassword: false,
+              managerId: null,
+              hireDate: '2020-03-15',
+            },
+          ]),
+        'POST /api/leave/adjustments': () =>
+          json(409, { status: 409, code: 'LEAVE_ADJUSTMENT_NOT_ALLOWED' }),
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderPage(HR)
+    await screen.findByText('Bakiye düzeltmesi')
+
+    await user.click(screen.getByRole('combobox', { name: 'Çalışan' }))
+    await user.click(await screen.findByRole('option', { name: 'Other Person' }))
+    await user.type(screen.getByLabelText('Gün (eksi düşürür)'), '-40')
+    await user.type(screen.getByLabelText('Gerekçe'), 'fazla düzeltme')
+    await user.click(screen.getByRole('button', { name: 'Düzeltmeyi kaydet' }))
+
+    expect(
+      await screen.findByText('Bu düzeltme bakiyeyi eksiye düşüreceği için yapılamaz.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Kalan bakiyeniz bu talep için yeterli değil.')).toBeNull()
   })
 })
 

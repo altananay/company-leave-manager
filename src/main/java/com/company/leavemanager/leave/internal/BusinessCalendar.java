@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.Collection;
 import java.util.Set;
 
@@ -18,6 +19,9 @@ public final class BusinessCalendar {
 
     /** The business calendar is Europe/Istanbul (docs/conventions.md, Data rules). */
     public static final ZoneId BUSINESS_ZONE = ZoneId.of("Europe/Istanbul");
+
+    /** The longest range the API accepts: a year plus its leap day (spec 0004, L-03). */
+    public static final int MAX_RANGE_DAYS = 366;
 
     private final Set<LocalDate> holidays;
 
@@ -37,15 +41,29 @@ public final class BusinessCalendar {
     /**
      * Working days in {@code [start, end]}, both ends included. An inverted range has none; the
      * service rejects that as an invalid range before it asks.
+     *
+     * <p>The count is arithmetic, not a walk over every date: whole weeks contribute five days each,
+     * the remaining days are counted one by one (at most six), and the holiday rows of the range are
+     * subtracted. That keeps a 366-day range constant-time while the holiday set stays exact — the
+     * set holds a few dozen rows, so scanning it is cheap and, unlike a day-by-day loop, does not
+     * grow with the range.
      */
     public int workingDays(LocalDate start, LocalDate end) {
         if (end.isBefore(start)) {
             return 0;
         }
-        int days = 0;
-        for (LocalDate day = start; !day.isAfter(end); day = day.plusDays(1)) {
-            if (isWorkingDay(day)) {
+        long calendarDays = ChronoUnit.DAYS.between(start, end) + 1;
+        long wholeWeeks = calendarDays / 7;
+        int days = Math.toIntExact(wholeWeeks * 5);
+        LocalDate remainderStart = start.plusDays(wholeWeeks * 7);
+        for (LocalDate day = remainderStart; !day.isAfter(end); day = day.plusDays(1)) {
+            if (!isWeekend(day)) {
                 days++;
+            }
+        }
+        for (LocalDate holiday : holidays) {
+            if (!holiday.isBefore(start) && !holiday.isAfter(end) && !isWeekend(holiday)) {
+                days--;
             }
         }
         return days;

@@ -50,21 +50,39 @@ class LeaveRequestTest {
     }
 
     @Test
-    void shouldCancelAnApprovedRequest() {
+    void shouldCancelAnApprovedRequestWithoutOverwritingTheDecision() {
         LeaveRequest request = request();
-        request.approve(MANAGER, null, Instant.now());
+        Instant decidedAt = Instant.parse("2026-11-01T08:00:00Z");
+        Instant cancelledAt = Instant.parse("2026-11-02T09:00:00Z");
+        UUID employee = UUID.randomUUID();
+        request.approve(MANAGER, "uygun", decidedAt);
 
-        request.cancel(Instant.now());
+        request.cancel(employee, cancelledAt);
 
         assertThat(request.getStatus()).isEqualTo(LeaveRequestStatus.CANCELLED);
+        // L-17: the withdrawal is its own record; the manager's decision stays readable.
+        assertThat(request.getCancelledBy()).isEqualTo(employee);
+        assertThat(request.getCancelledAt()).isEqualTo(cancelledAt);
+        assertThat(request.getDecidedBy()).isEqualTo(MANAGER);
+        assertThat(request.getDecidedAt()).isEqualTo(decidedAt);
     }
 
     @Test
     void shouldRefuseToCancelAPendingRequest() {
         LeaveRequest request = request();
 
-        assertThatThrownBy(() -> request.cancel(Instant.now()))
+        assertThatThrownBy(() -> request.cancel(MANAGER, Instant.now()))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void shouldCarryTheRetroactiveMarker() {
+        LeaveRequest ordinary = request();
+        LeaveRequest retroactive = LeaveRequest.create(UUID.randomUUID(), LeaveType.ANNUAL, START,
+                START.plusDays(2), 3, "geçmiş kayıt", true, Instant.now());
+
+        assertThat(ordinary.isRetroactive()).isFalse();
+        assertThat(retroactive.isRetroactive()).isTrue();
     }
 
     @Test

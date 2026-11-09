@@ -4,10 +4,20 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
+/**
+ * One audit row: who did what, when, and — for a state change — the state before and after.
+ *
+ * <p>{@code beforeState}/{@code afterState} are real {@code jsonb} columns (V5, spec 0004 review
+ * round 1, L-15): the database can query them with its JSON operators, and a value that is not JSON
+ * cannot be stored at all. The Java side is a map, so no call site hand-builds JSON text.
+ */
 @Entity
 @Table(name = "audit_event")
 public class AuditEvent {
@@ -30,13 +40,15 @@ public class AuditEvent {
     @Column
     private String details;
 
-    /** The state the record was in before the change, as a JSON object (backlog B-7, BR-13). */
-    @Column(name = "before_state")
-    private String beforeState;
+    /** The state the record was in before the change — a JSON object (backlog B-7, BR-13). */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "before_state", columnDefinition = "jsonb")
+    private Map<String, Object> beforeState;
 
-    /** The state the record is in after the change, as a JSON object (backlog B-7, BR-13). */
-    @Column(name = "after_state")
-    private String afterState;
+    /** The state the record is in after the change — a JSON object (backlog B-7, BR-13). */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "after_state", columnDefinition = "jsonb")
+    private Map<String, Object> afterState;
 
     protected AuditEvent() {
         // for JPA
@@ -46,8 +58,8 @@ public class AuditEvent {
                                 UUID actorUserId,
                                 UUID targetUserId,
                                 String details,
-                                String beforeState,
-                                String afterState,
+                                Map<String, Object> beforeState,
+                                Map<String, Object> afterState,
                                 Instant now) {
         AuditEvent event = new AuditEvent();
         event.id = UUID.randomUUID();
@@ -85,11 +97,11 @@ public class AuditEvent {
         return details;
     }
 
-    public String getBeforeState() {
+    public Map<String, Object> getBeforeState() {
         return beforeState;
     }
 
-    public String getAfterState() {
+    public Map<String, Object> getAfterState() {
         return afterState;
     }
 }

@@ -186,7 +186,9 @@ class LeaveRequestIT extends LeaveTestSupport {
     void shouldNotCancelAfterStart() throws Exception {
         loginAsHr();
         Account manager = createAccount("MANAGER", null, null);
-        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        // The latest anniversary is ten days behind us, so "yesterday" is still inside the current
+        // entitlement period: the day stays an approved day of this period, not a carryover debt.
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1).minusDays(10));
         Session member = signIn(employee);
         Session managerSession = signIn(manager);
         LocalDate monday = nextMonday();
@@ -422,5 +424,212 @@ class LeaveRequestIT extends LeaveTestSupport {
         // The same request with the session and its token is accepted: the 403 was the CSRF check.
         assertThat(createLeave(member, "ANNUAL", nextMonday(), nextMonday(), "izin").statusCode())
                 .isEqualTo(201);
+    }
+
+    @Test
+    void shouldRefuseAnnualLeaveWithoutAHireDateAndGrantNoDays() throws Exception {
+        // L-05: an unknown hire date is not a 14-day default. The balance is zero and an annual
+        // request is refused until HR enters the date; an excuse leave still works.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), null);
+        Session member = signIn(employee);
+        LocalDate monday = nextMonday();
+
+        HttpResponse<String> annual = createLeave(member, "ANNUAL", monday, monday, "izin");
+
+        assertThat(annual.statusCode()).isEqualTo(409);
+        assertThat(errorCode(annual)).isEqualTo("LEAVE_NO_HIRE_DATE");
+        String balance = member.get("/api/leave/balance").body();
+        assertThat(number(balance, "entitlement")).isZero();
+        assertThat(number(balance, "remaining")).isZero();
+        assertThat(balance).contains("\"entitlementDefaulted\":true");
+
+        HttpResponse<String> excuse = createLeave(member, "EXCUSE", monday, monday, "mazeret");
+        assertThat(excuse.statusCode()).as(excuse.body()).isEqualTo(201);
+    }
+
+    @Test
+    void shouldBoundExcuseLeaveAndRequireItsReason() throws Exception {
+        // L-02: phase A has no BR-10 sub-types, so EXCUSE is bounded to five business days and always
+        // carries a reason. Annual leave keeps its reason optional.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        LocalDate monday = nextMonday();
+
+        HttpResponse<String> withoutReason = createLeave(member, "EXCUSE", monday, monday.plusDays(4), "");
+        assertThat(withoutReason.statusCode()).isEqualTo(400);
+        assertThat(errorCode(withoutReason)).isEqualTo("LEAVE_REASON_REQUIRED");
+
+        // Monday to Monday is six working days: one more than the bound.
+        HttpResponse<String> tooLong = createLeave(member, "EXCUSE", monday, monday.plusDays(7), "uzun mazeret");
+        assertThat(tooLong.statusCode()).isEqualTo(400);
+        assertThat(errorCode(tooLong)).isEqualTo("LEAVE_EXCUSE_TOO_LONG");
+
+        // Five working days with a reason is the allowed maximum.
+        assertThat(createLeave(member, "EXCUSE", monday, monday.plusDays(4), "beş gün").statusCode())
+                .isEqualTo(201);
+        // An annual request without a reason is still valid: the reason requirement is EXCUSE's.
+        assertThat(createLeave(member, "ANNUAL", monday.plusDays(7), monday.plusDays(7), "").statusCode())
+                .as("annual leave keeps its optional reason")
+                .isEqualTo(201);
+    }
+
+    @Test
+    void shouldRejectARangeLongerThan366CalendarDays() throws Exception {
+        // L-03: the range is capped before anything is counted, and 366 days is the maximum.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(6));
+        Session member = signIn(employee);
+        LocalDate start = nextMonday();
+        LocalDate lastAllowed = start.plusDays(365);
+
+        HttpResponse<String> createTooLong = createLeave(member, "ANNUAL", start, lastAllowed.plusDays(1), "bir yıl");
+        assertThat(createTooLong.statusCode()).isEqualTo(400);
+        assertThat(errorCode(createTooLong)).isEqualTo("LEAVE_RANGE_TOO_LONG");
+
+        HttpResponse<String> previewTooLong = member.get("/api/leave/preview?startDate=" + start
+                + "&endDate=" + lastAllowed.plusDays(1) + "&type=ANNUAL");
+        assertThat(previewTooLong.statusCode()).isEqualTo(400);
+        assertThat(errorCode(previewTooLong)).isEqualTo("LEAVE_RANGE_TOO_LONG");
+
+        // The 366-day range itself is accepted, and the count equals the database's own day-by-day
+        // oracle (weekdays minus the holiday rows), so the arithmetic cannot drift from the data.
+        HttpResponse<String> preview = member.get("/api/leave/preview?startDate=" + start
+                + "&endDate=" + lastAllowed + "&type=EXCUSE");
+        assertThat(preview.statusCode()).as(preview.body()).isEqualTo(200);
+        Integer oracle = jdbc.queryForObject(
+                "select count(*) from generate_series(?::date, ?::date, interval '1 day') as d "
+                        + "where extract(isodow from d) < 6 "
+                        + "and d::date not in (select day from public_holiday)",
+                Integer.class, start.toString(), lastAllowed.toString());
+        assertThat(number(preview.body(), "businessDays")).isEqualTo(oracle);
+    }
+
+    @Test
+    void shouldRecordHrRetroactiveLeaveWithAReasonAndKeepTheExceptionForApproval() throws Exception {
+        // L-06: BR-11's only exception is HR's recorded retroactive request. It needs its reason, it
+        // is audited under its own event, and the manager can still approve it.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(3));
+        Session managerSession = signIn(manager);
+        LocalDate past = today().minusDays(7);
+
+        HttpResponse<String> noReason = createLeaveFor(session, employee.id(), "EXCUSE", past, past, "");
+        assertThat(noReason.statusCode()).isEqualTo(400);
+        assertThat(errorCode(noReason)).isEqualTo("LEAVE_RETROACTIVE_REASON_REQUIRED");
+
+        HttpResponse<String> created = createLeaveFor(session, employee.id(), "EXCUSE", past, past,
+                "rapor sonradan iletildi");
+        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
+        assertThat(created.body()).contains("\"retroactive\":true");
+        String requestId = extract(created.body(), "id");
+
+        Integer audited = jdbc.queryForObject(
+                "select count(*) from audit_event where event_type = 'LEAVE_RETROACTIVE_REQUESTED' "
+                        + "and details like ?", Integer.class, "%" + requestId + "%");
+        assertThat(audited).isEqualTo(1);
+
+        // The approval-time past-date rule honours the recorded exception.
+        assertThat(approve(managerSession, requestId).statusCode()).isEqualTo(200);
+
+        // An ordinary employee cannot reach the exception: the same past range is refused.
+        Session member = signIn(employee);
+        HttpResponse<String> employeePast = createLeave(member, "EXCUSE", today().minusDays(2),
+                today().minusDays(2), "geçmiş");
+        assertThat(employeePast.statusCode()).isEqualTo(400);
+        assertThat(errorCode(employeePast)).isEqualTo("LEAVE_PAST_DATE");
+    }
+
+    @Test
+    void shouldKeepTheCancellationRecordApartFromTheDecision() throws Exception {
+        // L-17: cancelling records its own actor and moment; the manager's decision stays intact and
+        // the detail (the list response) shows the cancelling actor.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        Session managerSession = signIn(manager);
+        LocalDate monday = nextMonday();
+        String requestId = extract(createLeave(member, "ANNUAL", monday, monday.plusDays(2), "aile").body(), "id");
+
+        HttpResponse<String> approved = approve(managerSession, requestId);
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        java.sql.Timestamp decidedAt = jdbc.queryForObject(
+                "select decided_at from leave_request where id = ?", java.sql.Timestamp.class,
+                UUID.fromString(requestId));
+        assertThat(decidedAt).isNotNull();
+
+        assertThat(cancel(member, requestId).statusCode()).isEqualTo(200);
+
+        // The stored decision timestamp is exactly what it was before the cancellation (L-17).
+        java.sql.Timestamp stillDecidedAt = jdbc.queryForObject(
+                "select decided_at from leave_request where id = ?", java.sql.Timestamp.class,
+                UUID.fromString(requestId));
+        assertThat(stillDecidedAt).isEqualTo(decidedAt);
+
+        String listed = member.get("/api/leave/requests").body();
+        assertThat(listed).contains("\"decidedByName\":\"" + manager.displayName() + "\"");
+        assertThat(listed).contains("\"cancelledByName\":\"" + employee.displayName() + "\"");
+        assertThat(extract(listed, "cancelledAt")).isNotBlank();
+        assertThat(extract(listed, "decidedAt")).isNotBlank();
+        assertThat(extract(listed, "cancelledAt")).isNotEqualTo(extract(listed, "decidedAt"));
+    }
+
+    @Test
+    void shouldRejectADecisionNoteLongerThan500Characters() throws Exception {
+        // L-16: the approve body is validated like the reject body.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        Session managerSession = signIn(manager);
+        LocalDate monday = nextMonday();
+        String approveId = extract(createLeave(member, "ANNUAL", monday, monday, "bir").body(), "id");
+        String rejectId = extract(createLeave(member, "EXCUSE", monday.plusDays(2), monday.plusDays(2), "iki").body(), "id");
+        String tooLong = "x".repeat(501);
+
+        HttpResponse<String> approveRefused = managerSession.post(
+                "/api/leave/requests/" + approveId + "/approve", "{\"note\":\"" + tooLong + "\"}");
+        assertThat(approveRefused.statusCode()).isEqualTo(400);
+        assertThat(approveRefused.body()).contains("VALIDATION_FAILED");
+
+        HttpResponse<String> rejectRefused = managerSession.post(
+                "/api/leave/requests/" + rejectId + "/reject", "{\"note\":\"" + tooLong + "\"}");
+        assertThat(rejectRefused.statusCode()).isEqualTo(400);
+        assertThat(rejectRefused.body()).contains("VALIDATION_FAILED");
+    }
+
+    @Test
+    void shouldFreezeTheBusinessDayCountAtCreation() throws Exception {
+        // L-08: business_days is frozen on purpose. A holiday added later must not rewrite a request
+        // that was already created — the stored count, not a recalculation, is the record.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        LocalDate start = nextMonday();
+        LocalDate end = start.plusDays(2);
+        HttpResponse<String> created = createLeave(member, "EXCUSE", start, end, "üç gün");
+        String requestId = extract(created.body(), "id");
+        assertThat(number(created.body(), "businessDays")).isEqualTo(3);
+
+        LocalDate holiday = start.plusDays(1);
+        jdbc.update("insert into public_holiday (day, name) values (?, ?)", holiday, "Sonradan eklenen tatil");
+        try {
+            // The form's preview sees the new holiday (it counts now) …
+            assertThat(number(member.get("/api/leave/preview?startDate=" + start + "&endDate=" + end)
+                    .body(), "businessDays")).isEqualTo(2);
+            // … while the created request keeps the count it was created with.
+            String listed = member.get("/api/leave/requests").body();
+            assertThat(listed).contains("\"id\":\"" + requestId + "\"");
+            assertThat(number(listed, "businessDays")).isEqualTo(3);
+        } finally {
+            jdbc.update("delete from public_holiday where day = ?", holiday);
+        }
     }
 }

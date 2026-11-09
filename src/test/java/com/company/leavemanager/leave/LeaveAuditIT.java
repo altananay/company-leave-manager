@@ -4,11 +4,13 @@ import com.company.leavemanager.audit.internal.AuditEvent;
 import com.company.leavemanager.audit.internal.AuditRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.net.http.HttpResponse;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,11 +18,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * AC-7 (backlog B-7): creation, approval, rejection, cancellation and an HR adjustment each leave an
  * audit row, and a decision carries the state it changed from and the state it moved to.
+ *
+ * <p>The states are <strong>jsonb</strong> columns now (review round 1, L-15): the assertions read
+ * them through the database's own JSON operators, so a row that is not JSON could not pass.
  */
 class LeaveAuditIT extends LeaveTestSupport {
 
     @Autowired
     AuditRepository auditRepository;
+
+    @Autowired
+    JdbcTemplate jdbc;
 
     @Test
     void shouldRecordEveryLeaveEventWithBeforeAndAfter() throws Exception {
@@ -61,23 +69,23 @@ class LeaveAuditIT extends LeaveTestSupport {
 
         AuditEvent requested = single(events, "LEAVE_REQUESTED", approvedId);
         assertThat(requested.getBeforeState()).isNull();
-        assertThat(requested.getAfterState()).contains("\"status\":\"PENDING\"");
+        assertThat(requested.getAfterState()).containsEntry("status", "PENDING");
         assertThat(requested.getActorUserId()).isEqualTo(employee.id());
 
         AuditEvent approved = single(events, "LEAVE_APPROVED", approvedId);
-        assertThat(approved.getBeforeState()).contains("\"status\":\"PENDING\"");
-        assertThat(approved.getAfterState()).contains("\"status\":\"APPROVED\"");
+        assertThat(approved.getBeforeState()).containsEntry("status", "PENDING");
+        assertThat(approved.getAfterState()).containsEntry("status", "APPROVED");
         // The decision names the manager as the actor and the employee as the target (BR-13).
         assertThat(approved.getActorUserId()).isEqualTo(manager.id());
         assertThat(approved.getTargetUserId()).isEqualTo(employee.id());
 
         AuditEvent rejected = single(events, "LEAVE_REJECTED", rejectedId);
-        assertThat(rejected.getBeforeState()).contains("\"status\":\"PENDING\"");
-        assertThat(rejected.getAfterState()).contains("\"status\":\"REJECTED\"");
+        assertThat(rejected.getBeforeState()).containsEntry("status", "PENDING");
+        assertThat(rejected.getAfterState()).containsEntry("status", "REJECTED");
 
         AuditEvent cancelled = single(events, "LEAVE_CANCELLED", cancelledId);
-        assertThat(cancelled.getBeforeState()).contains("\"status\":\"APPROVED\"");
-        assertThat(cancelled.getAfterState()).contains("\"status\":\"CANCELLED\"");
+        assertThat(cancelled.getBeforeState()).containsEntry("status", "APPROVED");
+        assertThat(cancelled.getAfterState()).containsEntry("status", "CANCELLED");
 
         AuditEvent adjustment = events.stream()
                 .filter(event -> "LEAVE_BALANCE_ADJUSTED".equals(event.getEventType()))
@@ -85,16 +93,26 @@ class LeaveAuditIT extends LeaveTestSupport {
                 .orElseThrow();
         assertThat(adjustment.getActorUserId()).isEqualTo(UUID.fromString(hrId));
         assertThat(adjustment.getTargetUserId()).isEqualTo(employee.id());
-        assertThat(adjustment.getBeforeState()).contains("\"remaining\"");
-        assertThat(adjustment.getAfterState()).contains("\"remaining\"");
+        assertThat(adjustment.getBeforeState()).containsKey("remaining");
+        assertThat(adjustment.getAfterState()).containsKey("remaining");
         assertThat(adjustment.getDetails()).contains("days=2").contains("geçmiş dönem");
+
+        // The database, not the Java map, is the authority: jsonb and the documented keys.
+        assertThat(storedJson("after_state", approved.getId(), "status")).isEqualTo("APPROVED");
+        assertThat(storedJson("before_state", approved.getId(), "status")).isEqualTo("PENDING");
+        assertThat(storedJson("after_state", cancelled.getId(), "status")).isEqualTo("CANCELLED");
+        assertThat(jsonType("after_state", approved.getId())).isEqualTo("object");
+        assertThat(keys("after_state", approved.getId())).containsExactly("status");
+        assertThat(keys("after_state", adjustment.getId())).containsExactly("remaining");
+        // An event without a state keeps null, not the JSON text "null".
+        assertThat(jsonType("before_state", requested.getId())).isNull();
+        assertThat(keys("before_state", requested.getId())).isEmpty();
 
         // No personal data in the structured parts; the reason stays on the HR adjustment row.
         assertThat(events).allSatisfy(event -> {
-            for (String state : new String[] {event.getBeforeState(), event.getAfterState()}) {
+            for (Map<String, Object> state : new Map[] {event.getBeforeState(), event.getAfterState()}) {
                 if (state != null) {
-                    assertThat(state).doesNotContain(employee.email());
-                    assertThat(state).doesNotContain(employee.displayName());
+                    assertThat(state.values()).doesNotContain(employee.email(), employee.displayName());
                 }
             }
             if (event.getDetails() != null) {
@@ -102,6 +120,22 @@ class LeaveAuditIT extends LeaveTestSupport {
                 assertThat(event.getDetails()).doesNotContain(employee.displayName());
             }
         });
+    }
+
+    private String storedJson(String column, UUID id, String key) {
+        return jdbc.queryForObject(
+                "select " + column + "->>? from audit_event where id = ?", String.class, key, id);
+    }
+
+    private String jsonType(String column, UUID id) {
+        return jdbc.queryForObject(
+                "select jsonb_typeof(" + column + ") from audit_event where id = ?", String.class, id);
+    }
+
+    private List<String> keys(String column, UUID id) {
+        return jdbc.queryForList(
+                "select jsonb_object_keys(" + column + ") from audit_event where id = ?",
+                String.class, id);
     }
 
     private static AuditEvent single(List<AuditEvent> events, String type, String requestId) {

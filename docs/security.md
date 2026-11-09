@@ -53,18 +53,23 @@
   İK cannot deactivate itself or reset its own password through the admin screen, and cannot
   deactivate or reset a seeded `HR`/`CEO` account (`403 PROTECTED_ACCOUNT`): those accounts are
   managed by the environment only.
-- **SPA routes:** the shell is served at `/` and for the client routes under `/leave/**`
-  (spec 0004, backlog B-4): opening `/leave/requests` directly returns the shell and the SPA picks
-  the screen. The allow-list is explicit — a route prefix is added to `SecurityConfig` and
-  `SpaController` together; any other non-API path is still denied rather than forwarded to
-  `index.html`.
+- **SPA routes:** the shell is served at `/` and for the client routes under `/leave/**` and
+  `/users` (spec 0004, backlog B-4; L-09): opening `/leave/requests` or `/users` directly returns
+  the shell and the SPA picks the screen. The allow-list is explicit — a route is added to
+  `SecurityConfig` and `SpaController` together; any other non-API path is still denied rather than
+  forwarded to `index.html`.
 - **Object-level checks:** every endpoint that takes an employee or request identifier verifies the
-  caller's scope before loading the object, not after.
+  caller's scope *in the query that loads the object*, not after loading it. A decision loads the
+  request through the manager's own reports, a cancellation through the owner's id, and a balance
+  checks self/subtree/HR first; an identifier outside that scope answers **404**, exactly like one
+  that does not exist, so the endpoint never confirms that the row is real. Role and self gates
+  that need no object (HR/CEO never decide, an employee never approves) answer **403** without
+  loading anything — AC-4 names those codes.
 
 | Role | Scope | May write |
 |---|---|---|
 | Employee | own requests and balance | create/cancel own requests |
-| Manager | own subtree (read), direct reports (approve) | approve/reject direct reports' requests |
+| Manager | own subtree (read, balance included), direct reports (approve) | approve/reject direct reports' requests |
 | HR | company-wide | users, departments, balances (audited adjustments), imports, reports |
 | CEO | company-wide, read-only | nothing |
 

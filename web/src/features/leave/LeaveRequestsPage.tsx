@@ -576,6 +576,7 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
                   <dd className="text-small [overflow-wrap:anywhere]">{detail.reason}</dd>
                 </div>
               )}
+              {detail.retroactive && <Badge variant="muted">{t('leaveRetroactive')}</Badge>}
               <div className="flex flex-col gap-1 border-t border-border pt-2">
                 <dt className="text-small text-muted-foreground">{t('leaveDecision')}</dt>
                 <dd className="flex flex-col gap-1 text-small">
@@ -596,6 +597,15 @@ function LeaveRequestsPage({ me, onForbidden }: { me: Me; onForbidden: () => voi
                   )}
                 </dd>
               </div>
+              {detail.cancelledAt && (
+                <div className="flex flex-col gap-1 border-t border-border pt-2">
+                  <dt className="text-small text-muted-foreground">{t('leaveCancelledAt')}</dt>
+                  <dd className="text-small">
+                    {t('leaveCancelledBy')}: {detail.cancelledByName ?? '—'} ·{' '}
+                    {formatDate(detail.cancelledAt.slice(0, 10))}
+                  </dd>
+                </div>
+              )}
             </dl>
           )}
           <DialogFooter>

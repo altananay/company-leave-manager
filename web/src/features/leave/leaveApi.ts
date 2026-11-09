@@ -21,6 +21,12 @@ export type LeaveRequest = {
   createdAt: string
   /** The server's answer to "may the owner withdraw it now" (BR-8); never re-derived here. */
   cancellable: boolean
+  /** The withdrawal's own record; the decision's timestamp stays in `decidedAt` (L-17). */
+  cancelledAt: string | null
+  cancelledBy: string | null
+  cancelledByName: string | null
+  /** True for the HR-recorded request that started in the past (BR-11's exception, L-06). */
+  retroactive: boolean
 }
 
 export type LeavePage = {

@@ -32,10 +32,12 @@ class LeaveAuthorizationIT extends LeaveTestSupport {
         LocalDate monday = nextMonday();
         String requestId = extract(createLeave(member, "ANNUAL", monday, monday, "izin").body(), "id");
 
-        // A manager of another team, the employee and HR are all refused; the tree decides.
-        assertThat(errorCode(approve(otherManagerSession, requestId))).isEqualTo("LEAVE_NOT_MANAGER");
+        // A manager of another team is outside the request's scope, and the scoped load answers
+        // exactly like a missing id (L-22). The employee and HR are stopped by a role gate that needs
+        // no request at all, and the tree's manager alone decides.
+        assertThat(errorCode(approve(otherManagerSession, requestId))).isEqualTo("NOT_FOUND");
         assertThat(errorCode(approve(member, requestId))).isEqualTo("LEAVE_NOT_MANAGER");
-        assertThat(errorCode(reject(otherManagerSession, requestId, "başka ekip"))).isEqualTo("LEAVE_NOT_MANAGER");
+        assertThat(errorCode(reject(otherManagerSession, requestId, "başka ekip"))).isEqualTo("NOT_FOUND");
 
         HttpResponse<String> decided = approve(managerSession, requestId);
 
@@ -86,7 +88,8 @@ class LeaveAuthorizationIT extends LeaveTestSupport {
         assertThat(response.statusCode()).isEqualTo(403);
         assertThat(errorCode(response)).isEqualTo("LEAVE_NO_MANAGER");
 
-        // The balance screen knows why: no manager is assigned yet.
+        // The balance screen knows why: no manager is assigned yet. The hire date is known, so the
+        // annual entitlement is the ordinary 14 days; the request is refused for the missing link.
         String balance = member.get("/api/leave/balance").body();
         assertThat(balance).contains("\"hasManager\":false");
         assertThat(number(balance, "remaining")).isEqualTo(14);
@@ -114,5 +117,54 @@ class LeaveAuthorizationIT extends LeaveTestSupport {
                 "/api/leave/requests/" + pendingId + "/reject", "{\"note\":\"\"}");
         assertThat(emptyNote.statusCode()).isEqualTo(400);
         assertThat(emptyNote.body()).contains("VALIDATION_FAILED");
+    }
+
+    @Test
+    void shouldLetAManagerReadTheBalanceOfAReportAndNobodyElses() throws Exception {
+        // L-14: docs/security.md says a manager reads their own subtree, so the balance endpoint
+        // allows exactly that — and nothing outside it, which answers like a missing account (L-22).
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account otherManager = createAccount("MANAGER", null, null);
+        Account report = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Account stranger = createAccount("EMPLOYEE", otherManager.id(), today().minusYears(1));
+        Session managerSession = signIn(manager);
+        Session reportSession = signIn(report);
+
+        HttpResponse<String> ownReport = managerSession.get("/api/leave/balance?employeeId=" + report.id());
+        assertThat(ownReport.statusCode()).as(ownReport.body()).isEqualTo(200);
+        assertThat(ownReport.body()).contains("\"entitlementDefaulted\":false");
+
+        HttpResponse<String> outside = managerSession.get("/api/leave/balance?employeeId=" + stranger.id());
+        assertThat(outside.statusCode()).isEqualTo(404);
+        assertThat(errorCode(outside)).isEqualTo("NOT_FOUND");
+
+        HttpResponse<String> otherEmployee = reportSession.get("/api/leave/balance?employeeId=" + stranger.id());
+        assertThat(otherEmployee.statusCode()).isEqualTo(404);
+        assertThat(errorCode(otherEmployee)).isEqualTo("NOT_FOUND");
+    }
+
+    @Test
+    void shouldAnswerNotFoundWhenARequestIsOutsideTheScope() throws Exception {
+        // L-22: cancel loads the owner's row only; another employee's request answers like a missing
+        // one, so the endpoint does not confirm that the id exists.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Account stranger = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        Session strangerSession = signIn(stranger);
+        LocalDate monday = nextMonday();
+        String requestId = extract(createLeave(member, "ANNUAL", monday, monday, "izin").body(), "id");
+        assertThat(approve(signIn(manager), requestId).statusCode()).isEqualTo(200);
+
+        HttpResponse<String> response = cancel(strangerSession, requestId);
+
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(errorCode(response)).isEqualTo("NOT_FOUND");
+
+        HttpResponse<String> unknown = cancel(strangerSession, UUID.randomUUID().toString());
+        assertThat(unknown.statusCode()).isEqualTo(404);
+        assertThat(errorCode(unknown)).isEqualTo("NOT_FOUND");
     }
 }

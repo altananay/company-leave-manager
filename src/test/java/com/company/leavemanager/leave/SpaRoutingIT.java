@@ -10,7 +10,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * AC-9 (backlog B-4): a nested client route can be opened directly — the shell answers 200 and the
  * SPA decides which screen it shows. The API stays an API: its paths are never served the shell, and
- * a path outside the allow-list is still denied.
+ * a path outside the allow-list is still denied. The top-level {@code /users} route is allowed too
+ * (review round 1, L-09).
  */
 class SpaRoutingIT extends IdentityTestSupport {
 
@@ -19,6 +20,16 @@ class SpaRoutingIT extends IdentityTestSupport {
         HttpResponse<String> response = session.get("/leave/requests");
 
         assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.headers().firstValue("content-type").orElse("")).contains("text/html");
+        assertThat(response.body()).contains("id=\"root\"");
+    }
+
+    @Test
+    void shouldServeTheUsersRoute() throws Exception {
+        // Direct load, no session: the shell is public, the screen decides what it shows.
+        HttpResponse<String> response = session.get("/users");
+
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
         assertThat(response.headers().firstValue("content-type").orElse("")).contains("text/html");
         assertThat(response.body()).contains("id=\"root\"");
     }

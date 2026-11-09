@@ -48,6 +48,7 @@ type ErrorKey =
   | 'protectedAccountError'
   | 'selfAction'
   | 'invalidManager'
+  | 'managerHasReports'
   | 'genericError'
 
 /** How many rows one page holds. A thousand accounts are not a scroll, they are pages (AC-14). */
@@ -71,6 +72,8 @@ function errorKeyFor(failure: unknown): ErrorKey {
       return 'selfAction'
     case 'INVALID_MANAGER':
       return 'invalidManager'
+    case 'MANAGER_HAS_REPORTS':
+      return 'managerHasReports'
     default:
       return 'genericError'
   }
@@ -103,6 +106,13 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
   const [hireDate, setHireDate] = useState('')
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState<User | null>(null)
+  // The org-data edit (review round 1, L-04): manager + hire date, one account at a time.
+  const [editing, setEditing] = useState<User | null>(null)
+  const [editManagerId, setEditManagerId] = useState('NONE')
+  const [editHireDate, setEditHireDate] = useState('')
+  const [editBusy, setEditBusy] = useState(false)
+  const [editError, setEditError] = useState<ErrorKey | null>(null)
+  const [notice, setNotice] = useState<'usersUpdated' | null>(null)
   const [query, setQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('ALL')
   const [page, setPage] = useState(1)
@@ -110,6 +120,7 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
   const displayNameRef = useRef<HTMLInputElement>(null)
   // The button that opened the dialog, so focus can return to it when the dialog closes.
   const deactivateTrigger = useRef<HTMLElement | null>(null)
+  const editTrigger = useRef<HTMLElement | null>(null)
   // The newest list request: an older answer must not overwrite it.
   const latestRequest = useRef(0)
   // The screen is unmounted when the user goes back: an answer that arrives later must be dropped.
@@ -201,6 +212,38 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
     }
   }
 
+  function openEdit(user: User) {
+    setEditError(null)
+    setNotice(null)
+    setEditManagerId(user.managerId ?? 'NONE')
+    setEditHireDate(user.hireDate ?? '')
+    setEditing(user)
+  }
+
+  /** Saves the manager link and the hire date; the server validates the manager and the cycle. */
+  async function saveEdit(event: FormEvent) {
+    event.preventDefault()
+    if (!editing) {
+      return
+    }
+    setEditBusy(true)
+    setEditError(null)
+    try {
+      await authApi.updateUser(
+        editing.id,
+        editManagerId === 'NONE' ? null : editManagerId,
+        editHireDate || null,
+      )
+      setEditing(null)
+      setNotice('usersUpdated')
+      await load()
+    } catch (failure) {
+      setEditError(errorKeyFor(failure))
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
   async function resetPassword(user: User) {
     setError(null)
     try {
@@ -223,6 +266,11 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
   const managerOptions = useMemo(
     () => users.filter((user) => user.role === 'MANAGER' && user.active),
     [users],
+  )
+  // An account cannot be its own manager; the server refuses it too, this only hides the choice.
+  const editManagerChoices = useMemo(
+    () => managerOptions.filter((manager) => manager.id !== editing?.id),
+    [managerOptions, editing],
   )
 
   const active = users.filter((user) => user.active).length
@@ -269,6 +317,7 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
           </div>
         </Alert>
       )}
+      {notice && <Alert variant="success">{t(notice)}</Alert>}
       {error && !formError && (
         <Alert variant="destructive" id="users-error">
           <p className="font-medium">{t(error)}</p>
@@ -490,6 +539,14 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent>
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                editTrigger.current = deactivateTrigger.current
+                                openEdit(user)
+                              }}
+                            >
+                              {t('usersEdit')}
+                            </DropdownMenuItem>
                             <DropdownMenuItem onSelect={() => resetPassword(user)}>
                               {t('resetPassword')}
                             </DropdownMenuItem>
@@ -571,6 +628,70 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
               {t('confirm')}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent
+          closeLabel={t('close')}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            editTrigger.current?.focus()
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{t('usersEditTitle')}</DialogTitle>
+            <DialogDescription>{t('usersEditDescription')}</DialogDescription>
+          </DialogHeader>
+          {editing && (
+            <form className="flex flex-col gap-4" onSubmit={saveEdit}>
+              <p className="text-small font-medium">
+                {editing.displayName} · {editing.email}
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-manager-trigger">{t('manager')}</Label>
+                <Select value={editManagerId} onValueChange={setEditManagerId}>
+                  <SelectTrigger id="edit-manager-trigger">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">{t('managerNone')}</SelectItem>
+                    {editManagerChoices.map((manager) => (
+                      <SelectItem key={manager.id} value={manager.id}>
+                        {manager.displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Field
+                label={t('hireDate')}
+                type="date"
+                value={editHireDate}
+                invalid={editError !== null}
+                describedBy={editError ? 'edit-user-error' : undefined}
+                onChange={(event) => {
+                  setEditHireDate(event.target.value)
+                  setEditError(null)
+                }}
+              />
+              {editError && (
+                <Alert variant="destructive" id="edit-user-error">
+                  <p className="font-medium">{t(editError)}</p>
+                </Alert>
+              )}
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="secondary">
+                    {t('cancel')}
+                  </Button>
+                </DialogClose>
+                <Button type="submit" disabled={editBusy}>
+                  {t('usersEditSave')}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -7,6 +7,7 @@ import com.company.leavemanager.leave.api.dto.BalanceResponse;
 import com.company.leavemanager.leave.api.dto.LeaveRequestResponse;
 import com.company.leavemanager.leave.api.dto.PageResponse;
 import com.company.leavemanager.leave.api.dto.PreviewResponse;
+import jakarta.persistence.EntityManager;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,16 @@ import java.util.UUID;
  * <p>Every rule is checked here, never in a controller: the controller only turns the outcome into a
  * response (docs/security.md). "Today" always comes from the injected {@link Clock} read in the
  * business zone, so no test waits for a date and no rule depends on the machine's time zone.
+ *
+ * <p><strong>Write serialisation (L-07).</strong> Every write path first takes a row lock on the
+ * employee's account ({@code SELECT … FOR UPDATE} through {@link EmployeeDirectory#lock}). Two
+ * concurrent requests for the same employee therefore run one after the other: the second one sees
+ * the first one's row and its own rule check is made on committed state, so an overlapping or
+ * over-balance request cannot slip through the gap between check and insert.
+ *
+ * <p><strong>Authorisation before loading (L-22).</strong> A manager's approve/reject only ever
+ * loads a request through a query scoped to their own reports, and cancel only loads the caller's
+ * own row. A request outside that scope answers exactly like a missing one.
  */
 @Service
 public class LeaveService {
@@ -40,59 +51,116 @@ public class LeaveService {
     static final int DEFAULT_PAGE_SIZE = 20;
     static final int MAX_PAGE_SIZE = 100;
 
+    /** BR-10's excuse leave is bounded in phase A: five business days at most (L-02). */
+    static final int EXCUSE_MAX_BUSINESS_DAYS = 5;
+
     private final LeaveRepository requests;
     private final LeaveAdjustmentRepository adjustments;
     private final PublicHolidayRepository holidays;
     private final EmployeeDirectory employees;
     private final AuditRecorder audit;
     private final Clock clock;
+    private final EntityManager entityManager;
 
     public LeaveService(LeaveRepository requests,
                         LeaveAdjustmentRepository adjustments,
                         PublicHolidayRepository holidays,
                         EmployeeDirectory employees,
                         AuditRecorder audit,
-                        Clock clock) {
+                        Clock clock,
+                        EntityManager entityManager) {
         this.requests = requests;
         this.adjustments = adjustments;
         this.holidays = holidays;
         this.employees = employees;
         this.audit = audit;
         this.clock = clock;
+        this.entityManager = entityManager;
     }
 
     // ------------------------------------------------------------------ create
 
+    /** Creates the caller's own request; {@code employeeId} is the HR path (BR-11's exception). */
     @Transactional
     public LeaveResult<LeaveRequestResponse> create(UUID actorId,
+                                                    UUID employeeId,
                                                     LeaveType type,
                                                     LocalDate startDate,
                                                     LocalDate endDate,
                                                     String reason) {
         LocalDate today = today();
-        Optional<EmployeeView> found = employees.find(actorId);
+        Optional<EmployeeView> actor = employees.find(actorId);
+        if (actor.isEmpty()) {
+            return LeaveResult.error(LeaveError.NOT_FOUND);
+        }
+        if (employeeId != null && !employeeId.equals(actorId) && !actor.get().isHr()) {
+            // Only HR records a request on someone else's behalf; a manager approves, never creates.
+            return LeaveResult.error(LeaveError.NOT_AUTHORIZED);
+        }
+        UUID targetId = employeeId == null ? actorId : employeeId;
+        Optional<EmployeeView> found = employees.find(targetId);
         if (found.isEmpty()) {
             return LeaveResult.error(LeaveError.NOT_FOUND);
         }
         EmployeeView employee = found.get();
+
+        // L-12: the approver must be an active MANAGER. A link to a deactivated account, an
+        // employee or an HR/CEO user would leave the request without anyone who could decide it.
         if (employee.managerId() == null) {
             // The spec: an employee with no manager cannot request leave; HR connects the tree first.
             return LeaveResult.error(LeaveError.NO_MANAGER);
         }
+        Optional<EmployeeView> manager = employees.find(employee.managerId());
+        if (manager.isEmpty() || !manager.get().active() || !manager.get().isManager()) {
+            return LeaveResult.error(LeaveError.NO_MANAGER);
+        }
+
         if (type == null || startDate == null || endDate == null) {
             return LeaveResult.error(LeaveError.INVALID_RANGE);
         }
         if (endDate.isBefore(startDate)) {
             return LeaveResult.error(LeaveError.INVALID_RANGE);
         }
-        if (startDate.isBefore(today)) {
-            return LeaveResult.error(LeaveError.PAST_DATE);   // BR-11
+        // L-03: a year plus its leap day is the longest span the business has. Anything longer is a
+        // data-entry error, and accepting it would make the working-day count and the balance
+        // meaningless rather than merely slow.
+        if (startDate.plusDays(BusinessCalendar.MAX_RANGE_DAYS - 1L).isBefore(endDate)) {
+            return LeaveResult.error(LeaveError.RANGE_TOO_LONG);
         }
+
+        boolean retroactive = false;
+        if (startDate.isBefore(today)) {
+            if (!actor.get().isHr()) {
+                return LeaveResult.error(LeaveError.PAST_DATE);   // BR-11
+            }
+            if (blank(reason)) {
+                // BR-11's only exception: HR's own recorded request, and only with its reason.
+                return LeaveResult.error(LeaveError.RETROACTIVE_REASON_REQUIRED);
+            }
+            retroactive = true;
+        }
+
         int businessDays = calendar().workingDays(startDate, endDate);
         if (businessDays == 0) {
             return LeaveResult.error(LeaveError.NO_WORKING_DAY);
         }
+        if (type == LeaveType.EXCUSE) {
+            // L-02: phase A carries no special-leave durations; the excuse type is bounded so it
+            // cannot stand in for a second annual entitlement. Phase B opens BR-10's six types.
+            if (blank(reason)) {
+                return LeaveResult.error(LeaveError.REASON_REQUIRED);
+            }
+            if (businessDays > EXCUSE_MAX_BUSINESS_DAYS) {
+                return LeaveResult.error(LeaveError.EXCUSE_TOO_LONG);
+            }
+        }
+        if (type.consumesBalance() && employee.hireDate() == null) {
+            // L-05: without a hire date the seniority is unknown, and the rule is not to guess 14.
+            return LeaveResult.error(LeaveError.NO_HIRE_DATE);
+        }
 
+        // From here on the employee row is ours: a concurrent create/cancel/decide waits for it.
+        employees.lock(employee.id());
         List<LeaveRequest> active = activeRequests(employee.id());
         if (active.stream().anyMatch(request -> request.overlaps(startDate, endDate))) {
             return LeaveResult.error(LeaveError.OVERLAP);     // BR-6
@@ -105,9 +173,15 @@ public class LeaveService {
         }
 
         LeaveRequest request = LeaveRequest.create(
-                employee.id(), type, startDate, endDate, businessDays, reason, clock.instant());
+                employee.id(), type, startDate, endDate, businessDays, reason, retroactive,
+                clock.instant());
         requests.save(request);
-        audit.leaveRequested(actorId, employee.id(), request.getId(), type.name(), businessDays);
+        if (retroactive) {
+            audit.leaveRetroactiveRequested(actorId, employee.id(), request.getId(),
+                    type.name(), businessDays, reason);
+        } else {
+            audit.leaveRequested(actorId, employee.id(), request.getId(), type.name(), businessDays);
+        }
         return LeaveResult.ok(response(request, employee.displayName(), null, today));
     }
 
@@ -124,37 +198,69 @@ public class LeaveService {
     }
 
     private LeaveResult<LeaveRequestResponse> decide(UUID actorId, UUID requestId, String note, boolean approve) {
-        Optional<LeaveRequest> found = requests.findById(requestId);
-        if (found.isEmpty()) {
-            return LeaveResult.error(LeaveError.NOT_FOUND);
-        }
-        LeaveRequest request = found.get();
         Optional<EmployeeView> actor = employees.find(actorId);
         if (actor.isEmpty()) {
             return LeaveResult.error(LeaveError.NOT_FOUND);
+        }
+        // BR-7: HR and the CEO never decide — even if the org tree points at one of them — and an
+        // account without the MANAGER role cannot be an approver at all. These two gates need no
+        // request to answer, so the request is not loaded for them (L-22) and deleting one of the
+        // other gates (scope, self, role) still fails a test.
+        if (actor.get().isHr() || actor.get().isCeo() || !actor.get().isManager()) {
+            return LeaveResult.error(LeaveError.NOT_MANAGER);
+        }
+
+        List<UUID> reportIds = reports(actorId);
+        if (reportIds.isEmpty()) {
+            return LeaveResult.error(LeaveError.NOT_FOUND);
+        }
+        Optional<LeaveRequest> scoped = requests.findByIdAndEmployeeIdIn(requestId, reportIds);
+        if (scoped.isEmpty()) {
+            // Not the request's manager, or no such request: one answer, and it is the same one.
+            return LeaveResult.error(LeaveError.NOT_FOUND);
+        }
+        LeaveRequest request = scoped.get();
+        if (actorId.equals(request.getEmployeeId())) {
+            return LeaveResult.error(LeaveError.NOT_MANAGER);   // nobody approves their own request
         }
         Optional<EmployeeView> target = employees.find(request.getEmployeeId());
         if (target.isEmpty()) {
             return LeaveResult.error(LeaveError.NOT_FOUND);
         }
         EmployeeView employee = target.get();
-        LeaveResult<LeaveRequestResponse> refusal = authorizeDecision(actor.get(), request, employee);
-        if (refusal != null) {
-            return refusal;
-        }
+
+        // The employee's row is the lock: the request we read above may have changed while we were
+        // waiting for it, so it is re-read under the lock (L-07).
+        employees.lock(employee.id());
+        entityManager.refresh(request);
+
         if (request.getStatus() != LeaveRequestStatus.PENDING) {
             return LeaveResult.error(LeaveError.NOT_PENDING);
         }
+        if (approve) {
+            // BR-11 at approval time: the request may have been created before its start and is only
+            // being decided after it. HR's recorded retroactive request is the documented exception.
+            if (request.getStartDate().isBefore(today()) && !request.isRetroactive()) {
+                return LeaveResult.error(LeaveError.PAST_DATE);
+            }
+            // BR-6 at approval time: state can change between the request and the decision. The
+            // request itself is pending and overlaps its own range, so it is excluded by id.
+            boolean overlaps = activeRequests(employee.id()).stream()
+                    .filter(other -> !other.getId().equals(request.getId()))
+                    .anyMatch(other -> other.overlaps(request.getStartDate(), request.getEndDate()));
+            if (overlaps) {
+                return LeaveResult.error(LeaveError.OVERLAP);
+            }
+        }
         if (request.getType().consumesBalance()) {
-            // BR-5 at approval time: the state may have changed since the request was created.
-            // The pending request already counts against the balance, so "remaining < 0" means the
-            // approval itself would leave the employee below zero.
+            // BR-5 at approval time: the pending request already counts against the balance, so
+            // "remaining < 0" means the approval itself would leave the employee below zero.
             LeaveBalance balance = balanceOf(employee, activeRequests(employee.id()));
             if (balance.remaining() < 0) {
                 return LeaveResult.error(LeaveError.BALANCE_EXCEEDED);
             }
         }
-        if (!approve && (note == null || note.isBlank())) {
+        if (!approve && blank(note)) {
             return LeaveResult.error(LeaveError.INVALID_PARAMETER);
         }
 
@@ -170,40 +276,21 @@ public class LeaveService {
         return LeaveResult.ok(response(request, employee.displayName(), actor.get().displayName(), today()));
     }
 
-    /**
-     * BR-7: only the direct manager decides. HR and the CEO never approve — even if the org tree
-     * points at one of them — and nobody approves their own request.
-     */
-    private LeaveResult<LeaveRequestResponse> authorizeDecision(EmployeeView actor,
-                                                                LeaveRequest request,
-                                                                EmployeeView employee) {
-        if (actor.isHr() || actor.isCeo()) {
-            return LeaveResult.error(LeaveError.NOT_MANAGER);
-        }
-        if (actor.id().equals(request.getEmployeeId())) {
-            return LeaveResult.error(LeaveError.NOT_MANAGER);
-        }
-        if (!"MANAGER".equals(actor.role())) {
-            return LeaveResult.error(LeaveError.NOT_MANAGER);
-        }
-        if (!actor.id().equals(employee.managerId())) {
-            return LeaveResult.error(LeaveError.NOT_MANAGER);
-        }
-        return null;
-    }
-
     // ----------------------------------------------------------------- cancel
 
     @Transactional
     public LeaveResult<LeaveRequestResponse> cancel(UUID actorId, UUID requestId) {
-        Optional<LeaveRequest> found = requests.findById(requestId);
+        Optional<EmployeeView> actor = employees.find(actorId);
+        if (actor.isEmpty()) {
+            return LeaveResult.error(LeaveError.NOT_FOUND);
+        }
+        employees.lock(actorId);
+        // Scoped by owner: another employee's request is indistinguishable from a missing one.
+        Optional<LeaveRequest> found = requests.findByIdAndEmployeeId(requestId, actorId);
         if (found.isEmpty()) {
             return LeaveResult.error(LeaveError.NOT_FOUND);
         }
         LeaveRequest request = found.get();
-        if (!actorId.equals(request.getEmployeeId())) {
-            return LeaveResult.error(LeaveError.NOT_OWNER);
-        }
         if (request.getStatus() != LeaveRequestStatus.APPROVED) {
             return LeaveResult.error(LeaveError.NOT_APPROVED);
         }
@@ -212,13 +299,10 @@ public class LeaveService {
             return LeaveResult.error(LeaveError.ALREADY_STARTED);
         }
         LeaveRequestStatus before = request.getStatus();
-        request.cancel(clock.instant());
+        request.cancel(actorId, clock.instant());
         requests.save(request);
         audit.leaveCancelled(actorId, request.getEmployeeId(), request.getId(), before.name());
-        Optional<EmployeeView> employee = employees.find(request.getEmployeeId());
-        return LeaveResult.ok(response(request,
-                employee.map(EmployeeView::displayName).orElse(null),
-                null, today()));
+        return LeaveResult.ok(response(request, actor.get().displayName(), null, today()));
     }
 
     // --------------------------------------------------------------- balance
@@ -232,8 +316,10 @@ public class LeaveService {
         if (target == null) {
             return LeaveResult.error(LeaveError.NOT_FOUND);
         }
-        if (!target.id().equals(actorId) && !actor.get().isHr() && !actor.get().isCeo()) {
-            return LeaveResult.error(LeaveError.NOT_AUTHORIZED);
+        if (!target.id().equals(actorId) && !actor.get().isHr() && !actor.get().isCeo()
+                && !(actor.get().isManager() && subtree(actorId).contains(target.id()))) {
+            // Out of scope: answering 403 here would confirm that the account exists (L-22).
+            return LeaveResult.error(LeaveError.NOT_FOUND);
         }
         return LeaveResult.ok(balanceResponse(target, balanceOf(target)));
     }
@@ -251,9 +337,10 @@ public class LeaveService {
         if (found.isEmpty()) {
             return LeaveResult.error(LeaveError.NOT_FOUND);
         }
-        if (days == 0 || reason == null || reason.isBlank()) {
+        if (days == 0 || blank(reason)) {
             return LeaveResult.error(LeaveError.INVALID_ADJUSTMENT);
         }
+        employees.lock(employeeId);
         EmployeeView employee = found.get();
         LeaveBalance before = balanceOf(employee);
         LeaveBalance after = new LeaveBalance(
@@ -342,6 +429,9 @@ public class LeaveService {
         if (startDate == null || endDate == null || endDate.isBefore(startDate)) {
             return LeaveResult.error(LeaveError.INVALID_RANGE);
         }
+        if (startDate.plusDays(BusinessCalendar.MAX_RANGE_DAYS - 1L).isBefore(endDate)) {
+            return LeaveResult.error(LeaveError.RANGE_TOO_LONG);
+        }
         int businessDays = calendar().workingDays(startDate, endDate);
         LeaveBalance balance = balanceOf(employee.get());
         int consumed = type != null && type.consumesBalance() ? businessDays : 0;
@@ -359,7 +449,7 @@ public class LeaveService {
         int adjustmentDays = adjustments.findByEmployeeId(employee.id()).stream()
                 .mapToInt(LeaveAdjustment::getDays)
                 .sum();
-        return LeaveBalance.of(entitlement, adjustmentDays, new ArrayList<>(active));
+        return LeaveBalance.of(entitlement, adjustmentDays, new ArrayList<>(active), entitlement.periodStart());
     }
 
     private BalanceResponse balanceResponse(EmployeeView employee, LeaveBalance balance) {
@@ -385,6 +475,14 @@ public class LeaveService {
 
     private List<LeaveRequest> activeRequests(UUID employeeId) {
         return requests.findByEmployeeIdAndStatusIn(employeeId, LeaveRequestStatus.active());
+    }
+
+    /** The accounts that report to this manager, active or not: a departure still leaves a queue. */
+    private List<UUID> reports(UUID managerId) {
+        return employees.findAll().stream()
+                .filter(employee -> managerId.equals(employee.managerId()))
+                .map(EmployeeView::id)
+                .toList();
     }
 
     private List<UUID> subtree(UUID managerId) {
@@ -417,12 +515,21 @@ public class LeaveService {
             responses.add(response(request,
                     names.get(request.getEmployeeId()),
                     request.getDecidedBy() == null ? null : names.get(request.getDecidedBy()),
+                    request.getCancelledBy() == null ? null : names.get(request.getCancelledBy()),
                     today));
         }
         return responses;
     }
 
     private LeaveRequestResponse response(LeaveRequest request, String employeeName, String decidedByName, LocalDate today) {
+        return response(request, employeeName, decidedByName, null, today);
+    }
+
+    private LeaveRequestResponse response(LeaveRequest request,
+                                          String employeeName,
+                                          String decidedByName,
+                                          String cancelledByName,
+                                          LocalDate today) {
         return new LeaveRequestResponse(
                 request.getId(),
                 request.getEmployeeId(),
@@ -438,7 +545,11 @@ public class LeaveService {
                 request.getDecidedAt(),
                 request.getDecisionNote(),
                 request.getCreatedAt(),
-                request.getStatus() == LeaveRequestStatus.APPROVED && !request.hasStarted(today));
+                request.getStatus() == LeaveRequestStatus.APPROVED && !request.hasStarted(today),
+                request.getCancelledAt(),
+                request.getCancelledBy(),
+                cancelledByName,
+                request.isRetroactive());
     }
 
     private BusinessCalendar calendar() {

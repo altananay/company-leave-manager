@@ -60,13 +60,43 @@ class LeaveBalanceTest {
         rejected.reject(UUID.randomUUID(), "yoğunluk", Instant.now());
         LeaveRequest approvedThenCancelled = request(LeaveType.ANNUAL, 3);
         approvedThenCancelled.approve(UUID.randomUUID(), null, Instant.now());
-        approvedThenCancelled.cancel(Instant.now());
+        approvedThenCancelled.cancel(UUID.randomUUID(), Instant.now());
 
         LeaveBalance balance = LeaveBalance.of(ENTITLEMENT, 0, List.of(rejected, approvedThenCancelled));
 
         assertThat(balance.approved()).isZero();
         assertThat(balance.pending()).isZero();
         assertThat(balance.remaining()).isEqualTo(ENTITLEMENT.totalDays());
+    }
+
+    @Test
+    void shouldCarryOverOnlyWhatWasNotUsedInTheEarlierPeriods() {
+        // L-19: the gross entitlement before the current period is 76; five of those days were taken
+        // in 2025. The net carryover is 71, and the day is not offered a second time.
+        LeaveRequest earlier = LeaveRequest.create(UUID.randomUUID(), LeaveType.ANNUAL,
+                LocalDate.of(2025, 6, 2), LocalDate.of(2025, 6, 6), 5, null, Instant.now());
+        earlier.approve(UUID.randomUUID(), null, Instant.now());
+
+        LeaveBalance balance = LeaveBalance.of(ENTITLEMENT, 0, List.of(earlier));
+
+        assertThat(ENTITLEMENT.carryoverDays()).isEqualTo(76);
+        assertThat(balance.carryover()).isEqualTo(71);
+        assertThat(balance.approved()).isZero();
+        assertThat(balance.remaining()).isEqualTo(ENTITLEMENT.currentPeriodDays() + 71);
+    }
+
+    @Test
+    void shouldCountAnEarlierPendingDayAgainstTheCarryoverToo() {
+        // A pending request in an earlier period already holds its day: approving it later must not
+        // free a second one, so the net carryover reserves it now.
+        LeaveRequest earlierPending = LeaveRequest.create(UUID.randomUUID(), LeaveType.ANNUAL,
+                LocalDate.of(2025, 6, 2), LocalDate.of(2025, 6, 3), 2, null, Instant.now());
+
+        LeaveBalance balance = LeaveBalance.of(ENTITLEMENT, 0, List.of(earlierPending));
+
+        assertThat(balance.carryover()).isEqualTo(74);
+        assertThat(balance.pending()).isZero();
+        assertThat(balance.remaining()).isEqualTo(ENTITLEMENT.totalDays() - 2);
     }
 
     @Test

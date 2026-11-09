@@ -119,6 +119,17 @@ public class User {
         this.updatedAt = now;
     }
 
+    /**
+     * HR sets the org data of an existing account (spec 0004 review round 1, L-04): the manager link
+     * and the hire date are write-once facts HR backfills one account at a time. A null clears the
+     * field; nothing else about the account changes here.
+     */
+    public void updateOrg(UUID managerId, LocalDate hireDate, Instant now) {
+        this.managerId = managerId;
+        this.hireDate = hireDate;
+        this.updatedAt = now;
+    }
+
     public UUID getId() {
         return id;
     }
