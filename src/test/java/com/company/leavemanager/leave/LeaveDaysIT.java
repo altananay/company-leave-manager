@@ -164,6 +164,53 @@ class LeaveDaysIT extends LeaveTestSupport {
     }
 
     @Test
+    void shouldNotListCancelledDays() throws Exception {
+        // AC-13: a cancelled request is no longer a day off; only APPROVED is a day (D20).
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        Session managerSession = signIn(manager);
+        LocalDate monday = nextMonday();
+        String requestId = extract(createLeave(member, "ANNUAL", monday, monday, "aile").body(), "id");
+        assertThat(approve(managerSession, requestId).statusCode()).isEqualTo(200);
+        assertThat(days(member, "?from=" + monday + "&to=" + monday)).hasSize(1);
+
+        assertThat(cancel(member, requestId).statusCode()).isEqualTo(200);
+
+        assertThat(days(member, "?from=" + monday + "&to=" + monday)).isEmpty();
+    }
+
+    @Test
+    void shouldFollowTheCurrentHolidayCalendar() throws Exception {
+        // D20: the day list is expanded against the current calendar, so a holiday added later removes
+        // the day from the view — while the request's frozen business_days does not move (D5). Removing
+        // the holiday brings the day back.
+        loginAsHr();
+        Account manager = createAccount("MANAGER", null, null);
+        Account employee = createAccount("EMPLOYEE", manager.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        Session managerSession = signIn(manager);
+        LocalDate monday = nextMonday();
+        String requestId = extract(createLeave(member, "ANNUAL", monday, monday, "aile").body(), "id");
+        assertThat(approve(managerSession, requestId).statusCode()).isEqualTo(200);
+        String range = "?from=" + monday + "&to=" + monday;
+        assertThat(days(member, range)).hasSize(1);
+
+        jdbc.update("insert into public_holiday (day, name) values (?, ?)", monday, "Test tatili");
+        try {
+            assertThat(days(member, range)).isEmpty();
+            // The frozen count on the request is untouched: only the display follows the calendar.
+            assertThat(decimal(member.get("/api/leave/requests").body(), "businessDays"))
+                    .isEqualByComparingTo("1");
+        } finally {
+            jdbc.update("delete from public_holiday where day = ?", monday);
+        }
+
+        assertThat(days(member, range)).hasSize(1);
+    }
+
+    @Test
     void shouldRequireASession() throws Exception {
         Session anonymous = new Session();
 

@@ -146,7 +146,7 @@ Faz B iki PR'a ayrıldı ve kararlar insan onayıyla verildi. Plan: `specs/plans
 "Phase B". B1 merge olmadan B2 başlamaz: B2, B1'in getirdiği ondalık gün birimini ve form altyapısını
 kullanır.
 
-- **D14 — B1/B2 ayrımı.** **B1**: yarım gün (AM/PM, 0,5), `business_days` `numeric(4,1)`, İK
+- **D14 — B1/B2 ayrımı.** **B1**: yarım gün (AM/PM, 0,5), `business_days` `numeric(6,1)`, İK
   düzeltmesinde 0,5 adımı, "izinli günlerim" görünümü. **B2**: BR-10'un altı özel türü (evlilik,
   vefat, eş doğumu, karne, doğum günü, okulun ilk günü), süre/koşul/pencereleri ve gerektirdiği
   minimal kişisel veri. Neden: B2 altı ayrı kural seti ve KVKK kararı getiriyor; ayrı inceleme ve
@@ -155,10 +155,12 @@ kullanır.
   (`startDate = endDate`) ve o gün iş günüyse; 0,5 gün sayılır. Özel türler tam gündür. Aynı gün
   ikinci bir talep (biri öğleden önce, biri öğleden sonra olsa bile) BR-6 çakışmasıdır: kural gün
   aralığına bakar, saat dilimine değil.
-- **D16 — Gün birimi.** `leave_request.business_days` ve `leave_adjustment.days` `numeric(4,1)`;
+- **D16 — Gün birimi.** `leave_request.business_days` ve `leave_adjustment.days` `numeric(6,1)`;
   bakiye alanları (hak, devir, düzeltme, onaylı, bekleyen, kalan) 0,1 duyarlılığında döner. İK
   düzeltmesi 0,5'in katı olmalı ve ±365 günle sınırlıdır. Neden: 0,5 gün taşıyan bir bakiye tam sayı
-  olamaz; tek birim her yerde aynı kalır (D12'nin uygulanışı).
+  olamaz; tek birim her yerde aynı kalır (D12'nin uygulanışı). **6,1 (inceleme S-1):** Faz A'nın
+  düzeltme ucu sınırsız `Integer` aldığı için eski bir satır `numeric(4,1)`i taşırabilir (ör. 1000);
+  göç eski satırı korumalı, başarısız olmamalı. Yeni düzeltmeler yine ±365 ve 0,5 adımdır.
 - **D17 — Kişisel veri (KVKK) minimal set.** BR-10'un koşullarını denetlemek için yalnız üç alan
   tutulur: `users.birth_date` (doğum günü penceresi), `users.has_school_age_child` (karne ve okulun
   ilk günü), `leave_request.kinship` (yalnız vefat; eş, çocuk, anne-baba, kardeş). Çocuğun adı,
@@ -190,8 +192,8 @@ kullanır.
 - Özet (`preview`) ve bakiye 0,5 duyarlılığında döner; form "0,5 gün" gösterir.
 - "İzinli günlerim" kartı izin ekranındadır: tarih, tür ve yarım gün bilgisi; boş, yükleniyor ve
   hata durumları; liste olarak ekran okuyucuyla okunur.
-- Göç: `V7__half_day_days.sql` — iki kolon `numeric(4,1)`, `business_days > 0` ve `days <> 0`
-  kontrolleri. Mevcut satırlar tam gün olarak korunur.
+- Göç: `V7__half_day_days.sql` — iki kolon `numeric(6,1)`, `business_days > 0` ve `days <> 0`
+  kontrolleri. Mevcut satırlar (1000 günlük eski düzeltme dahil) tam gün olarak korunur.
 
 ### B2 — BR-10'un altı özel türü
 

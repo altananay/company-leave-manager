@@ -106,7 +106,8 @@ abstract class LeaveTestSupport extends IdentityTestSupport {
     }
 
     /** HR records a request on behalf of an employee (BR-11's exception path). */
-    protected HttpResponse<String> createLeaveFor(Session hr,                                                  UUID employeeId,
+    protected HttpResponse<String> createLeaveFor(Session hr,
+                                                  UUID employeeId,
                                                   String type,
                                                   LocalDate start,
                                                   LocalDate end,

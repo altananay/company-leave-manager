@@ -21,7 +21,7 @@ public class LeaveAdjustment {
     @Column(name = "employee_id", nullable = false)
     private UUID employeeId;
 
-    @Column(nullable = false, precision = 4, scale = 1)
+    @Column(nullable = false, precision = 6, scale = 1)
     private BigDecimal days;
 
     @Column(nullable = false)

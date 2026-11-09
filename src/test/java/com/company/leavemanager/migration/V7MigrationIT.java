@@ -19,9 +19,11 @@ import static org.assertj.core.api.Assertions.fail;
 
 /**
  * D12/D16's migration half: V7 turns {@code leave_request.business_days} and
- * {@code leave_adjustment.days} into {@code numeric(4,1)}. A V6-era row keeps its whole-day value
- * (3 → 3.0, −2 → −2.0), a half day fits afterwards, and the two checks still refuse zero and
- * negative business days and a zero correction.
+ * {@code leave_adjustment.days} into {@code numeric(6,1)}. A V6-era row keeps its whole-day value
+ * (3 → 3.0, −2 → −2.0) and a legacy correction larger than {@code numeric(4,1)} could hold
+ * (1000 → 1000.0) still migrates: Phase A accepted an unbounded Integer, and a failed cast would
+ * block the application from starting. A half day fits afterwards, and the two checks still refuse
+ * zero and negative business days and a zero correction.
  */
 @Testcontainers
 class V7MigrationIT {
@@ -57,6 +59,12 @@ class V7MigrationIT {
                     + "(id, employee_id, days, reason, created_by, created_at) values "
                     + "('00000000-0000-0000-0000-0000000000e2', '" + EMPLOYEE + "', -2, "
                     + "'geçmiş dönem', '" + MANAGER + "', '2026-11-09T08:00:00Z')");
+            // S-1: Phase A's adjustment endpoint took an unbounded Integer, so a legacy row can be
+            // larger than numeric(4,1) allows. The migration must carry it over, not fail on it.
+            statement.execute("insert into leave_adjustment "
+                    + "(id, employee_id, days, reason, created_by, created_at) values "
+                    + "('00000000-0000-0000-0000-0000000000e6', '" + EMPLOYEE + "', 1000, "
+                    + "'fazla düzeltme', '" + MANAGER + "', '2026-11-09T08:00:00Z')");
         }
 
         int applied = Flyway.configure()
@@ -69,11 +77,11 @@ class V7MigrationIT {
 
         try (Connection connection = connection(); Statement statement = connection.createStatement()) {
             assertThat(column(statement, "leave_request", "business_days"))
-                    .as("business_days is numeric(4,1)")
-                    .containsExactly("numeric", "4", "1");
+                    .as("business_days is numeric(6,1)")
+                    .containsExactly("numeric", "6", "1");
             assertThat(column(statement, "leave_adjustment", "days"))
-                    .as("days is numeric(4,1)")
-                    .containsExactly("numeric", "4", "1");
+                    .as("days is numeric(6,1)")
+                    .containsExactly("numeric", "6", "1");
 
             try (ResultSet row = statement.executeQuery(
                     "select business_days from leave_request where id = "
@@ -86,6 +94,12 @@ class V7MigrationIT {
                             + "'00000000-0000-0000-0000-0000000000e2'")) {
                 assertThat(row.next()).isTrue();
                 assertThat(row.getBigDecimal("days")).isEqualByComparingTo("-2");
+            }
+            try (ResultSet row = statement.executeQuery(
+                    "select days from leave_adjustment where id = "
+                            + "'00000000-0000-0000-0000-0000000000e6'")) {
+                assertThat(row.next()).isTrue();
+                assertThat(row.getBigDecimal("days")).isEqualByComparingTo("1000");
             }
 
             // The new unit stores a half day on both sides.

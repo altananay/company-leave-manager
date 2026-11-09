@@ -44,7 +44,7 @@ public class LeaveRequest {
     private HalfDay halfDay;
 
     /** Working days fixed at creation (BR-4): later holiday edits never rewrite this row. */
-    @Column(name = "business_days", nullable = false, precision = 4, scale = 1)
+    @Column(name = "business_days", nullable = false, precision = 6, scale = 1)
     private BigDecimal businessDays;
 
     @Column

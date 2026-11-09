@@ -1,14 +1,16 @@
 -- V7: the day unit becomes decimal so a half day can be stored (spec 0004 D12/D16, phase B1).
 --
--- Phase A's columns were integer, which cannot carry "0,5 gün". Both stay numeric(4,1): four
--- significant digits with one decimal place, so the largest value is 999.9 — a 366-day range and
--- the ±365-day HR adjustment bound both fit comfortably. The cast keeps every existing row exactly
--- as it was: an integer 3 becomes 3.0, whole days stay whole days.
+-- Phase A's columns were integer, which cannot carry "0,5 gün". Both become numeric(6,1): six
+-- significant digits with one decimal place, so the largest value is 99999.9. The wider precision is
+-- deliberate: Phase A's adjustment endpoint accepted an unbounded Integer, so a legacy row can hold a
+-- value (e.g. 1000) that numeric(4,1) cannot store, and the migration must preserve every existing
+-- row instead of failing on one. New corrections are still bounded by the application (±365 days,
+-- half-day steps) and the stored unit stays one decimal place.
 alter table leave_request
-    alter column business_days type numeric(4,1) using business_days::numeric(4,1);
+    alter column business_days type numeric(6,1) using business_days::numeric(6,1);
 
 alter table leave_adjustment
-    alter column days type numeric(4,1) using days::numeric(4,1);
+    alter column days type numeric(6,1) using days::numeric(6,1);
 
 -- The two checks belong to these columns, so the migration states them explicitly (V3 created them
 -- with the same names and expressions; they are re-created here over the numeric type so the
