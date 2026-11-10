@@ -289,7 +289,3 @@ build sonrası bağımsız inceleme ve insan triyajı yapılır, VERIFY görsell
 (merge) insan tarafından açılır. Kurallar [AGENTS.md](AGENTS.md) ve [workflows/](workflows/) içinde;
 testleri zayıflatmak, silmek veya atlamak yasaktır — `./scripts/check` yeşil olmadan hiçbir değişiklik
 merge edilmez.
-
-## Lisans
-
-[MIT](LICENSE) © 2026 Engin Demiroğ
