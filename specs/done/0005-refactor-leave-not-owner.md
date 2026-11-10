@@ -1,6 +1,6 @@
 # Spec 0005 — LEAVE_NOT_OWNER ölü kod temizliği (mini)
 
-- Status: Approved
+- Status: Shipped
 - Mode: lite
 - Plan: `specs/plans/0005-plan.md`
 - Self-critique: done
@@ -18,15 +18,15 @@ Kullanıcıya görünen davranış değişmiyor.
 
 ## Changed behavior
 
-- [ ] CB-1 — none — no observable behavior change
+- [x] CB-1 — none — no observable behavior change
 
 ## Preserved behavior
 
-- [ ] PB-1 — API'nin döndürebildiği her izin kodu SPA'da mesaja eşlenmeye devam eder;
+- [x] PB-1 — API'nin döndürebildiği her izin kodu SPA'da mesaja eşlenmeye devam eder;
   `LEAVE_NOT_MANAGER` → `leaveNotManager` eşlemesi (silinen case'in fallthrough komşusu) bozulmaz.
-- [ ] PB-2 — Kapsam dışı iptal isteği **404** alır (L-22); kaldırma 403'lük bir sahiplik yolu geri
+- [x] PB-2 — Kapsam dışı iptal isteği **404** alır (L-22); kaldırma 403'lük bir sahiplik yolu geri
   getirmez.
-- [ ] PB-3 — `docs/conventions.md`'deki izin kodu listesi `LeaveError` sabitleriyle birebir kalır;
+- [x] PB-3 — `docs/conventions.md`'deki izin kodu listesi `LeaveError` sabitleriyle birebir kalır;
   yalnız `LEAVE_NOT_OWNER` çıkar, başka kod düşmez.
 
 ## Out of scope
@@ -38,8 +38,8 @@ Kullanıcıya görünen davranış değişmiyor.
 
 ## Definition of Done
 
-- [ ] `scripts/check` green
-- [ ] Independent review done; real findings fixed, noise rejected with written rationale, deferred
+- [x] `scripts/check` green
+- [x] Independent review done; real findings fixed, noise rejected with written rationale, deferred
   ones in `specs/backlog.md`
-- [ ] Criterion ↔ evidence table complete for CB-* and PB-* (UI değişikliği yok → görsel yok)
-- [ ] Spec moved to `specs/done/` (immutable there)
+- [x] Criterion ↔ evidence table complete for CB-* and PB-* (UI değişikliği yok → görsel yok)
+- [x] Spec moved to `specs/done/` (immutable there)
