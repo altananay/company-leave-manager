@@ -29,7 +29,7 @@ Always available, outside the loop:
 
 | Group | Commands |
 |---|---|
-| Terminal scripts | `scripts/init` · `scripts/doctor` · `scripts/check` · `scripts/residue` · `scripts/selftest` |
+| Terminal scripts | `scripts/init` · `scripts/doctor` · `scripts/check` · `scripts/residue` · `scripts/selftest` · `scripts/logging` |
 | Request lanes | `/change` (existing behavior) · `/fix-bug` (broken behavior) · `/refactor` (structure only) |
 | Setup · record · recover | `/bootstrap` · `/adr` · `/recover` |
 

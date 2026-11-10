@@ -80,11 +80,33 @@ npm --prefix web run dev        # SPA: http://localhost:5173 (/api → :8080 pro
 
 Sağlık kontrolü: `curl http://localhost:8080/api/health` → `{"status":"UP"}`
 
+## Merkezi loglama (ELK, isteğe bağlı)
+
+Varsayılan geliştirme yolu stdout'tur (`docker compose up -d db` + host uygulama). Uygulama her
+modda **JSON (ECS) stdout** yazar; isteğe bağlı `logging` profili aynı satırları Elasticsearch'e
+taşır. Stack **kendi compose projesinde** (`leave-manager-logging`) çalışır; `down -v` yalnız onun
+volume'larını siler, geliştirme veritabanına dokunmaz.
+
+```bash
+./mvnw -q -DskipUnitTests=true package     # compose app servisi target/ klasörünü bağlar
+DB_HOST_PORT=0 docker compose -p leave-manager-logging --profile logging up -d
+# uygulama: docker compose -p leave-manager-logging port app 8080 (varsayılan 127.0.0.1:8085)
+# Kibana: http://localhost:5601 · Elasticsearch: http://localhost:9200
+./scripts/logging smoke                   # health + Kibana + log dokümanı + ILM 30d; sonunda temizler
+./scripts/logging smoke --keep            # stack'i VERIFY için açık bırakır
+docker compose -p leave-manager-logging --profile logging down -v  # yalnız logging projesini siler
+```
+
+- Stack ~2 GB bellek ister (ES 512 MB heap + Kibana) ve **yerel geliştirme** içindir: kimlik
+  doğrulama/TLS yoktur, portlar yalnız `127.0.0.1`'e bağlanır. Üretim için yönetilen küme + TLS/auth.
+- Saklama: `leave-manager-logs` ILM politikası logları **30 gün** tutar, sonra siler.
+- Loglarda kişisel veri/sır yoktur (`docs/security.md`); dev konsolu artık JSON satırlarıdır.
+
 ## Doğrulama
 
 ```bash
 ./scripts/check          # full: build + birim + entegrasyon + bileşen + lint + e2e (tek kanıt)
-./scripts/check --fast   # iç döngü: build + birim + bileşen + lint
+./scripts/check --fast   # iç döngü: build + birim + bileşen + lint + compose config (docker compose plugin ister)
 ```
 
 Full check e2e için Docker ve Playwright Chromium ister; `scripts/e2e` veritabanını kendi compose
