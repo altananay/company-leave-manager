@@ -84,14 +84,17 @@ Sağlık kontrolü: `curl http://localhost:8080/api/health` → `{"status":"UP"}
 
 Varsayılan geliştirme yolu stdout'tur (`docker compose up -d db` + host uygulama). Uygulama her
 modda **JSON (ECS) stdout** yazar; isteğe bağlı `logging` profili aynı satırları Elasticsearch'e
-taşır:
+taşır. Stack **kendi compose projesinde** (`leave-manager-logging`) çalışır; `down -v` yalnız onun
+volume'larını siler, geliştirme veritabanına dokunmaz.
 
 ```bash
 ./mvnw -q -DskipUnitTests=true package     # compose app servisi target/ klasörünü bağlar
-docker compose --profile logging up -d    # db + app + Elasticsearch + Kibana + Filebeat
-# uygulama: http://localhost:8085 · Kibana: http://localhost:5601 · Elasticsearch: http://localhost:9200
-./scripts/logging smoke                   # health + Kibana + log dokümanı + 30 gün ILM doğrular
-docker compose --profile logging down -v  # stack'i ve volume'ları siler
+DB_HOST_PORT=0 docker compose -p leave-manager-logging --profile logging up -d
+# uygulama: docker compose -p leave-manager-logging port app 8080 (varsayılan 127.0.0.1:8085)
+# Kibana: http://localhost:5601 · Elasticsearch: http://localhost:9200
+./scripts/logging smoke                   # health + Kibana + log dokümanı + ILM 30d; sonunda temizler
+./scripts/logging smoke --keep            # stack'i VERIFY için açık bırakır
+docker compose -p leave-manager-logging --profile logging down -v  # yalnız logging projesini siler
 ```
 
 - Stack ~2 GB bellek ister (ES 512 MB heap + Kibana) ve **yerel geliştirme** içindir: kimlik
@@ -103,7 +106,7 @@ docker compose --profile logging down -v  # stack'i ve volume'ları siler
 
 ```bash
 ./scripts/check          # full: build + birim + entegrasyon + bileşen + lint + e2e (tek kanıt)
-./scripts/check --fast   # iç döngü: build + birim + bileşen + lint
+./scripts/check --fast   # iç döngü: build + birim + bileşen + lint + compose config (docker compose plugin ister)
 ```
 
 Full check e2e için Docker ve Playwright Chromium ister; `scripts/e2e` veritabanını kendi compose

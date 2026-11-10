@@ -1,27 +1,38 @@
 #!/bin/sh
 # scripts/logging — the optional logging profile's two jobs (spec 0006).
 #   config: validate the compose profile without starting a container; the check runs this step.
-#   smoke:  bring the stack up, wait for the app/Kibana/Elasticsearch, prove a leave-manager log
-#           document and the 30-day ILM policy, then tear down. `--keep` leaves the stack up for
-#           the VERIFY screenshots; `docker compose --profile logging down -v` cleans it.
+#   smoke:  bring the stack up in its own compose project, wait for the app/Kibana/Elasticsearch,
+#           prove the leave-manager log document (service.name/log.level/message) and the 30-day
+#           ILM delete phase, then tear down. `--keep` leaves the stack up for the VERIFY
+#           screenshots; `docker compose -p leave-manager-logging --profile logging down -v` cleans.
+#
+# The stack runs in its own project (`leave-manager-logging`) so `down -v` never touches the
+# default dev database (scripts/e2e isolates its DB the same way); its db gets a random host port
+# (DB_HOST_PORT=0), so the dev db on 5434 and anything on 8080 (Jenkins) are out of the way. The
+# app's host port is whatever compose publishes for the container's 8080 (APP_HOST_PORT, 8085).
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 
-APP_URL="http://127.0.0.1:${APP_HOST_PORT:-8085}"
+PROJECT=leave-manager-logging
 ES_URL="http://127.0.0.1:9200"
 KIBANA_URL="http://127.0.0.1:5601"
+
+logging_compose() { DB_HOST_PORT=0 docker compose -p "$PROJECT" --profile logging "$@"; }
 
 fail() { echo "logging: $*" >&2; exit 1; }
 
 config() {
   default_services=$(docker compose config --services | sort | tr '\n' ' ')
   [ "$default_services" = "db " ] || fail "the default profile must start only db, got: $default_services"
-  logging_services=$(docker compose --profile logging config --services | sort | tr '\n' ' ')
-  [ "$logging_services" = "app db elasticsearch filebeat filebeat-setup kibana " ] \
+  logging_services=$(logging_compose config --services | sort | tr '\n' ' ')
+  [ "$logging_services" = "app db elasticsearch filebeat filebeat-setup kibana kibana-setup " ] \
     || fail "the logging profile services changed: $logging_services"
-  docker compose --profile logging config -q || fail "compose config is invalid"
-  echo "logging config ok: default=db, profile=app db elasticsearch filebeat filebeat-setup kibana"
+  rendered=$(logging_compose config)
+  printf '%s' "$rendered" | grep -q 'host_ip: 127.0.0.1' || fail "a logging port is not bound to 127.0.0.1"
+  printf '%s' "$rendered" | grep -q 'elasticsearch:9.5.5' || fail "Elasticsearch is not pinned to 9.5.5"
+  printf '%s' "$rendered" | grep -q 'es-data' || fail "the Elasticsearch data volume is missing"
+  echo "logging config ok: default=db, profile=app db elasticsearch filebeat filebeat-setup kibana kibana-setup"
 }
 
 wait_for() { # <label> <url> <attempts>
@@ -46,22 +57,33 @@ json_has() { # <label> <url> <grep pattern>
 smoke() {
   keep=0
   for arg in "$@"; do [ "$arg" = "--keep" ] && keep=1; done
-  docker compose --profile logging up -d
-  wait_for "app health" "$APP_URL/api/health" 60
+  cleanup() {
+    if [ "$keep" -eq 0 ]; then
+      echo "logging: tearing the stack down (pass --keep to leave it up)"
+      logging_compose down -v >/dev/null 2>&1 || true
+    fi
+  }
+  trap cleanup EXIT INT TERM
+  logging_compose up -d
+  app_port=$(logging_compose port app 8080 | sed 's/.*://')
+  [ -n "$app_port" ] || fail "the app container publishes no host port"
+  app_url="http://127.0.0.1:$app_port"
+  wait_for "app health" "$app_url/api/health" 60
   wait_for "elasticsearch" "$ES_URL/_cluster/health" 60
   wait_for "kibana" "$KIBANA_URL/api/status" 60
-  # Filebeat's dashboard setup cannot talk to this Kibana (9.x's public /api/status carries no
-  # version), so the data view is created here; a repeated run is ignored.
-  curl -fsS -X POST "$KIBANA_URL/api/data_views/data_view" \
-    -H 'kbn-xsrf: true' -H 'Content-Type: application/json' \
-    -d '{"data_view":{"title":"filebeat-*","name":"Filebeat"}}' >/dev/null 2>&1 || true
   json_has "the Kibana data view" "$KIBANA_URL/api/data_views" '"filebeat-'
   json_has "the app log document" \
     "$ES_URL/filebeat-*/_search?q=service.name:leave-manager&size=1&filter_path=hits.hits._source.service" \
     '"name":"leave-manager"'
-  json_has "the ILM policy" "$ES_URL/_ilm/policy/leave-manager-logs" '"min_age":"30d"'
-  echo "logging smoke ok: app health, kibana, a leave-manager log document, ILM 30d"
-  if [ "$keep" -eq 0 ]; then docker compose --profile logging down -v; fi
+  json_has "the app log level" \
+    "$ES_URL/filebeat-*/_search?q=service.name:leave-manager&size=1&filter_path=hits.hits._source.log.level" \
+    '"level":"INFO"'
+  json_has "the app log message" \
+    "$ES_URL/filebeat-*/_search?q=service.name:leave-manager&size=1&filter_path=hits.hits._source.message" \
+    '"message":"'
+  json_has "the ILM delete phase" "$ES_URL/_ilm/policy/leave-manager-logs" '"delete":{"min_age":"30d"'
+  json_has "the ILM delete action" "$ES_URL/_ilm/policy/leave-manager-logs" '"actions":{"delete":'
+  echo "logging smoke ok: app health ($app_url), kibana, log doc (service.name/log.level/message), ILM delete 30d"
 }
 
 case "${1:-}" in
