@@ -1,0 +1,41 @@
+# Filebeat for the optional `logging` compose profile (spec 0006). The docker input is gone in
+# Beats 9, so the autodiscover template reads the app container's json-file log through the
+# filestream input's container parser; the app writes ECS JSON, which decode_json_fields merges
+# into the event. `filebeat setup` applies the 30-day ILM policy and the index template. The
+# default `docker compose up` never starts this.
+filebeat.autodiscover:
+  providers:
+    - type: docker
+      templates:
+        - condition:
+            contains:
+              docker.container.name: leave-manager-app
+          config:
+            - type: filestream
+              id: leave-manager-${data.container.id}
+              paths:
+                - /var/lib/docker/containers/${data.container.id}/*-json.log
+              parsers:
+                - container:
+                    stream: all
+                    format: docker
+              processors:
+                - decode_json_fields:
+                    fields: ['message']
+                    target: ''
+                    overwrite_keys: true
+                    add_error_key: true
+                - add_docker_metadata:
+                    host: 'unix:///var/run/docker.sock'
+
+processors:
+  - add_host_metadata: ~
+
+output.elasticsearch:
+  hosts: ['http://elasticsearch:9200']
+
+setup:
+  ilm:
+    enabled: true
+    policy_name: leave-manager-logs
+    policy_file: /usr/share/filebeat/ilm-policy.json

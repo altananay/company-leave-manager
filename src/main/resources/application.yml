@@ -49,6 +49,13 @@ management:
         enabled: false
       show-details: never
 
+logging:
+  # Every mode writes ECS JSON to stdout (spec 0006 D-4): the optional Filebeat profile ships
+  # exactly these lines to Elasticsearch, and the dev console is JSON too (README notes it).
+  structured:
+    format:
+      console: ecs
+
 app:
   identity:
     max-failed-attempts: 5

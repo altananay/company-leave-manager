@@ -80,6 +80,25 @@ npm --prefix web run dev        # SPA: http://localhost:5173 (/api → :8080 pro
 
 Sağlık kontrolü: `curl http://localhost:8080/api/health` → `{"status":"UP"}`
 
+## Merkezi loglama (ELK, isteğe bağlı)
+
+Varsayılan geliştirme yolu stdout'tur (`docker compose up -d db` + host uygulama). Uygulama her
+modda **JSON (ECS) stdout** yazar; isteğe bağlı `logging` profili aynı satırları Elasticsearch'e
+taşır:
+
+```bash
+./mvnw -q -DskipUnitTests=true package     # compose app servisi target/ klasörünü bağlar
+docker compose --profile logging up -d    # db + app + Elasticsearch + Kibana + Filebeat
+# uygulama: http://localhost:8085 · Kibana: http://localhost:5601 · Elasticsearch: http://localhost:9200
+./scripts/logging smoke                   # health + Kibana + log dokümanı + 30 gün ILM doğrular
+docker compose --profile logging down -v  # stack'i ve volume'ları siler
+```
+
+- Stack ~2 GB bellek ister (ES 512 MB heap + Kibana) ve **yerel geliştirme** içindir: kimlik
+  doğrulama/TLS yoktur, portlar yalnız `127.0.0.1`'e bağlanır. Üretim için yönetilen küme + TLS/auth.
+- Saklama: `leave-manager-logs` ILM politikası logları **30 gün** tutar, sonra siler.
+- Loglarda kişisel veri/sır yoktur (`docs/security.md`); dev konsolu artık JSON satırlarıdır.
+
 ## Doğrulama
 
 ```bash

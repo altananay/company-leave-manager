@@ -1,0 +1,71 @@
+#!/bin/sh
+# scripts/logging — the optional logging profile's two jobs (spec 0006).
+#   config: validate the compose profile without starting a container; the check runs this step.
+#   smoke:  bring the stack up, wait for the app/Kibana/Elasticsearch, prove a leave-manager log
+#           document and the 30-day ILM policy, then tear down. `--keep` leaves the stack up for
+#           the VERIFY screenshots; `docker compose --profile logging down -v` cleans it.
+set -eu
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+cd "$ROOT"
+
+APP_URL="http://127.0.0.1:${APP_HOST_PORT:-8085}"
+ES_URL="http://127.0.0.1:9200"
+KIBANA_URL="http://127.0.0.1:5601"
+
+fail() { echo "logging: $*" >&2; exit 1; }
+
+config() {
+  default_services=$(docker compose config --services | sort | tr '\n' ' ')
+  [ "$default_services" = "db " ] || fail "the default profile must start only db, got: $default_services"
+  logging_services=$(docker compose --profile logging config --services | sort | tr '\n' ' ')
+  [ "$logging_services" = "app db elasticsearch filebeat filebeat-setup kibana " ] \
+    || fail "the logging profile services changed: $logging_services"
+  docker compose --profile logging config -q || fail "compose config is invalid"
+  echo "logging config ok: default=db, profile=app db elasticsearch filebeat filebeat-setup kibana"
+}
+
+wait_for() { # <label> <url> <attempts>
+  label=$1; url=$2; attempts=$3; i=0
+  while [ "$i" -lt "$attempts" ]; do
+    if curl -fsS "$url" >/dev/null 2>&1; then return 0; fi
+    i=$((i + 1)); sleep 2
+  done
+  fail "$label did not answer at $url"
+}
+
+json_has() { # <label> <url> <grep pattern>
+  label=$1; url=$2; pattern=$3; i=0
+  while [ "$i" -lt 30 ]; do
+    body=$(curl -fsS "$url" 2>/dev/null || true)
+    if printf '%s' "$body" | grep -q "$pattern"; then return 0; fi
+    i=$((i + 1)); sleep 2
+  done
+  fail "$label did not contain $pattern"
+}
+
+smoke() {
+  keep=0
+  for arg in "$@"; do [ "$arg" = "--keep" ] && keep=1; done
+  docker compose --profile logging up -d
+  wait_for "app health" "$APP_URL/api/health" 60
+  wait_for "elasticsearch" "$ES_URL/_cluster/health" 60
+  wait_for "kibana" "$KIBANA_URL/api/status" 60
+  # Filebeat's dashboard setup cannot talk to this Kibana (9.x's public /api/status carries no
+  # version), so the data view is created here; a repeated run is ignored.
+  curl -fsS -X POST "$KIBANA_URL/api/data_views/data_view" \
+    -H 'kbn-xsrf: true' -H 'Content-Type: application/json' \
+    -d '{"data_view":{"title":"filebeat-*","name":"Filebeat"}}' >/dev/null 2>&1 || true
+  json_has "the Kibana data view" "$KIBANA_URL/api/data_views" '"filebeat-'
+  json_has "the app log document" \
+    "$ES_URL/filebeat-*/_search?q=service.name:leave-manager&size=1&filter_path=hits.hits._source.service" \
+    '"name":"leave-manager"'
+  json_has "the ILM policy" "$ES_URL/_ilm/policy/leave-manager-logs" '"min_age":"30d"'
+  echo "logging smoke ok: app health, kibana, a leave-manager log document, ILM 30d"
+  if [ "$keep" -eq 0 ]; then docker compose --profile logging down -v; fi
+}
+
+case "${1:-}" in
+  config) config ;;
+  smoke) shift; smoke "$@" ;;
+  *) fail "usage: scripts/logging {config|smoke [--keep]}" ;;
+esac

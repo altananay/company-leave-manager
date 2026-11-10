@@ -118,9 +118,12 @@
   CVEs; the human approves it at the plan gate. Prefer the Spring Boot BOM's managed versions.
 - Frontend: the lockfile (`package-lock.json`) is committed and CI installs with `npm ci`.
 - No dependency is added for formatting or convenience alone.
-- License note for the deferred logging spec (`specs/backlog.md` B-1): Elasticsearch/Kibana are
-  Elastic License 2.0 / SSPL — free for internal use; OpenSearch (Apache 2.0) is the alternative if
-  the company's license policy requires it.
+- Logging (spec 0006): the optional `logging` profile ships the app's JSON stdout to Elasticsearch
+  and keeps it for **30 days** (ILM `leave-manager-logs`), then deletes it. Log lines carry no
+  personal data or secrets; the profile binds Elasticsearch/Kibana to `127.0.0.1` and runs without
+  auth/TLS for local development — production must use a managed cluster with TLS and
+  authentication. Elasticsearch/Kibana are Elastic License 2.0 / SSPL (free for internal use);
+  OpenSearch (Apache 2.0) is the alternative if the company's license policy requires it.
 
 ## Review lens
 
