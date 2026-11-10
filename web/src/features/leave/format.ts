@@ -59,7 +59,6 @@ export function leaveErrorKey(failure: unknown): MessageKey {
     case 'LEAVE_NO_MANAGER':
       return 'leaveNoManagerError'
     case 'LEAVE_NOT_MANAGER':
-    case 'LEAVE_NOT_OWNER':
       return 'leaveNotManager'
     case 'LEAVE_ALREADY_STARTED':
       return 'leaveAlreadyStarted'
