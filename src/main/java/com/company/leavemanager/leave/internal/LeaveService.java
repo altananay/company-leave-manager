@@ -462,7 +462,7 @@ public class LeaveService {
                     : requests.findByEmployeeIdInAndStatusOrderByStartDateDesc(scope, filter, pageable);
         }
         return LeaveResult.ok(new PageResponse<>(
-                responses(result.getContent()),
+                responses(result.getContent(), kinshipScope(actor.get(), actorId)),
                 page,
                 size,
                 result.getTotalElements(),
@@ -484,7 +484,8 @@ public class LeaveService {
         }
         List<LeaveRequest> pending =
                 requests.findByEmployeeIdInAndStatusOrderByStartDateAsc(reports, LeaveRequestStatus.PENDING);
-        return LeaveResult.ok(responses(pending));
+        // The queue is the direct reports' queue: every row's kinship belongs to this manager (D18).
+        return LeaveResult.ok(responses(pending, null));
     }
 
     // --------------------------------------------------------------- preview
@@ -686,7 +687,25 @@ public class LeaveService {
         return List.copyOf(visited);
     }
 
-    private List<LeaveRequestResponse> responses(List<LeaveRequest> page) {
+    /**
+     * The employees whose kinship this actor may read (D18/AC-15): HR reads every request, a manager
+     * reads their <strong>direct</strong> reports and themselves, and everybody else — the CEO
+     * included — reads only their own. The list scope itself stays BR-12's subtree; only the
+     * bereavement kinship is narrowed, so a grand-manager sees the row without its sensitive field.
+     */
+    private Set<UUID> kinshipScope(EmployeeView actor, UUID actorId) {
+        if (actor.isHr()) {
+            return null;   // null means "every row"
+        }
+        Set<UUID> visible = new LinkedHashSet<>();
+        visible.add(actorId);
+        if (actor.isManager()) {
+            employees.directReports(actorId).forEach(employee -> visible.add(employee.id()));
+        }
+        return visible;
+    }
+
+    private List<LeaveRequestResponse> responses(List<LeaveRequest> page, Set<UUID> visibleKinship) {
         Map<UUID, String> names = new HashMap<>();
         for (EmployeeView employee : employees.findAll()) {
             names.put(employee.id(), employee.displayName());
@@ -694,30 +713,34 @@ public class LeaveService {
         LocalDate today = today();
         List<LeaveRequestResponse> responses = new ArrayList<>(page.size());
         for (LeaveRequest request : page) {
+            boolean kinshipVisible = visibleKinship == null
+                    || visibleKinship.contains(request.getEmployeeId());
             responses.add(response(request,
                     names.get(request.getEmployeeId()),
                     request.getDecidedBy() == null ? null : names.get(request.getDecidedBy()),
                     request.getCancelledBy() == null ? null : names.get(request.getCancelledBy()),
+                    kinshipVisible,
                     today));
         }
         return responses;
     }
 
     private LeaveRequestResponse response(LeaveRequest request, String employeeName, String decidedByName, LocalDate today) {
-        return response(request, employeeName, decidedByName, null, today);
+        return response(request, employeeName, decidedByName, null, true, today);
     }
 
     private LeaveRequestResponse response(LeaveRequest request,
                                           String employeeName,
                                           String decidedByName,
                                           String cancelledByName,
+                                          boolean kinshipVisible,
                                           LocalDate today) {
         return new LeaveRequestResponse(
                 request.getId(),
                 request.getEmployeeId(),
                 employeeName,
                 request.getType().name(),
-                request.getKinship() == null ? null : request.getKinship().name(),
+                kinshipVisible && request.getKinship() != null ? request.getKinship().name() : null,
                 request.getStartDate(),
                 request.getEndDate(),
                 request.getHalfDay(),

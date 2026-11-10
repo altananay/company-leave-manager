@@ -255,6 +255,37 @@ class LeaveSpecialTypesIT extends LeaveTestSupport {
     }
 
     @Test
+    void shouldRecheckTheBirthdayQuotaOnApproval() throws Exception {
+        // D19/T-1: the birthday branch of the approval-time quota check. The first birthday uses the
+        // window; the second is created for the next window (free), moved into the used one out of
+        // band, and approval must refuse it — the same rule the school test proves for its bucket.
+        LocalDate monday = semesterStart();
+        Team team = team(birthdayOn(monday), false);
+
+        HttpResponse<String> first = createSpecialLeave(team.member(), "BIRTHDAY",
+                monday, monday, null, "doğum günü");
+        assertThat(first.statusCode()).as(first.body()).isEqualTo(201);
+        assertThat(approve(team.managerSession(), extract(first.body(), "id")).statusCode())
+                .isEqualTo(200);
+
+        LocalDate nextWindow = monday.plusYears(1);
+        HttpResponse<String> second = createSpecialLeave(team.member(), "BIRTHDAY",
+                nextWindow, nextWindow, null, "gelecek pencere");
+        assertThat(second.statusCode()).as(second.body()).isEqualTo(201);
+        String secondId = extract(second.body(), "id");
+
+        jdbc.update("update leave_request set start_date = ?, end_date = ? where id = ?",
+                monday.plusDays(10), monday.plusDays(10), UUID.fromString(secondId));
+
+        HttpResponse<String> approval = approve(team.managerSession(), secondId);
+        assertThat(approval.statusCode()).as(approval.body()).isEqualTo(400);
+        assertThat(errorCode(approval)).isEqualTo("LEAVE_SPECIAL_QUOTA_USED");
+        assertThat(team.member().get("/api/leave/requests").body())
+                .contains("\"id\":\"" + secondId + "\"")
+                .contains("\"status\":\"PENDING\"");
+    }
+
+    @Test
     void shouldRefuseHalfDayForEverySpecialType() throws Exception {
         // D15/AC-12: a half day exists only for a single-day ANNUAL/EXCUSE; BR-10's six are full
         // days, so the half-day gate answers before any type rule runs.
@@ -268,5 +299,53 @@ class LeaveSpecialTypesIT extends LeaveTestSupport {
             assertThat(errorCode(response)).as(type).isEqualTo("LEAVE_HALF_DAY_INVALID");
         }
         assertThat(number(team.member().get("/api/leave/requests").body(), "total")).isZero();
+    }
+
+    @Test
+    void shouldHideTheKinshipFromANonDirectManager() throws Exception {
+        // D18/AC-15: the kinship belongs to the employee, their direct manager and HR. The list keeps
+        // BR-12's subtree scope, but a grand-manager (and the CEO) see the row with kinship: null.
+        loginAsHr();
+        Account grand = createAccount("MANAGER", null, null);
+        Account lead = createAccount("MANAGER", grand.id(), null);
+        Account employee = createAccount("EMPLOYEE", lead.id(), today().minusYears(1));
+        Session member = signIn(employee);
+        Session leadSession = signIn(lead);
+        Session grandSession = signIn(grand);
+        LocalDate monday = semesterStart();
+        String requestId = extract(createSpecialLeave(member, "BEREAVEMENT",
+                monday, monday.plusDays(4), "SPOUSE", "vefat").body(), "id");
+
+        // The direct manager's list and queue carry the kinship.
+        assertThat(kinshipOf(leadSession.get("/api/leave/requests?size=100").body(), requestId))
+                .isEqualTo("SPOUSE");
+        assertThat(kinshipOf(leadSession.get("/api/leave/queue").body(), requestId))
+                .isEqualTo("SPOUSE");
+
+        // The grand-manager sees the request (BR-12's subtree) but not the sensitive field.
+        String grandList = grandSession.get("/api/leave/requests?size=100").body();
+        assertThat(grandList).contains("\"id\":\"" + requestId + "\"");
+        assertThat(kinshipOf(grandList, requestId)).isNull();
+
+        // HR sees it; the CEO's company-wide read does not; the employee's own list does. The page
+        // size is raised because the class's other tests have already filled page 1 (start-date
+        // order); the endpoint allows 100.
+        assertThat(kinshipOf(session.get("/api/leave/requests?size=100").body(), requestId))
+                .isEqualTo("SPOUSE");
+        Session ceo = new Session();
+        assertThat(ceo.login(CEO_EMAIL, CEO_PASSWORD).statusCode()).isEqualTo(200);
+        assertThat(kinshipOf(ceo.get("/api/leave/requests?size=100").body(), requestId)).isNull();
+        assertThat(kinshipOf(member.get("/api/leave/requests?size=100").body(), requestId))
+                .isEqualTo("SPOUSE");
+    }
+
+    /** The kinship of one request in a list/queue body: its value, or null when masked. */
+    private static String kinshipOf(String json, String requestId) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("\"id\":\"" + requestId + "\"[^}]*?\"kinship\":(\"[A-Z]+\"|null)")
+                .matcher(json);
+        assertThat(matcher.find()).as("request %s is in the body", requestId).isTrue();
+        String value = matcher.group(1);
+        return "null".equals(value) ? null : value.substring(1, value.length() - 1);
     }
 }

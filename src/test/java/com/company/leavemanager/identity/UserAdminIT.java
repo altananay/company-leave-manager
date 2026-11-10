@@ -675,6 +675,35 @@ class UserAdminIT extends IdentityTestSupport {
     // ------------------------------------- phase B2: birth date and school-age child (D17/D18)
 
     @Test
+    void shouldTreatAnOmittedSchoolAgeFlagAsFalse() throws Exception {
+        // T-5: the boxed flag exists because Jackson 3 rejects a record body that omits a primitive
+        // creator property (observed as INVALID_REQUEST). An omitted flag reads as false — the
+        // field's default — on creation and on the full-replace edit alike.
+        assertThat(session.login(HR_EMAIL, HR_PASSWORD).statusCode()).isEqualTo(200);
+        String email = unique("omitted-flag");
+        HttpResponse<String> created = session.post("/api/users",
+                "{\"email\":\"" + email + "\",\"displayName\":\"Omitted Flag\",\"role\":\"EMPLOYEE\"}");
+
+        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
+        assertThat(created.body()).contains("\"hasSchoolAgeChild\":false");
+        String id = extract(created.body(), "id");
+
+        assertThat(session.patch("/api/users/" + id,
+                "{\"managerId\":null,\"hireDate\":null,\"birthDate\":null,\"hasSchoolAgeChild\":true}")
+                .statusCode()).isEqualTo(200);
+        assertThat(jdbc.queryForObject("select has_school_age_child from users where id = ?",
+                Boolean.class, UUID.fromString(id))).isTrue();
+
+        HttpResponse<String> omitted = session.patch("/api/users/" + id,
+                "{\"managerId\":null,\"hireDate\":null,\"birthDate\":null}");
+
+        assertThat(omitted.statusCode()).as(omitted.body()).isEqualTo(200);
+        assertThat(omitted.body()).contains("\"hasSchoolAgeChild\":false");
+        assertThat(jdbc.queryForObject("select has_school_age_child from users where id = ?",
+                Boolean.class, UUID.fromString(id))).isFalse();
+    }
+
+    @Test
     void shouldStoreBirthDateAndSchoolAgeChild() throws Exception {
         // D17: HR enters the two personal-data fields the BR-10 conditions need, and only HR's
         // user endpoints show them back (D18).

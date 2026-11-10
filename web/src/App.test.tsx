@@ -828,6 +828,52 @@ describe('users screen', () => {
     })
   })
 
+  it('shouldMarkTheCreateBirthDateFieldWhenTheServerRejectsIt', async () => {
+    // T-2: the create path carries the same field-level INVALID_BIRTH_DATE as the edit dialog — the
+    // refusal marks (and focuses) the birth date, not the hire date or the name beside it.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/api/auth/csrf')) {
+          return Promise.resolve(json(200, { token: 't' }))
+        }
+        if (url.includes('/api/auth/me')) {
+          return Promise.resolve(json(200, HR))
+        }
+        if (url.includes('/api/health')) {
+          return Promise.resolve(json(200, { status: 'UP' }))
+        }
+        if (url.includes('/api/users') && init?.method === 'POST') {
+          return Promise.resolve(json(400, { status: 400, code: 'INVALID_BIRTH_DATE' }))
+        }
+        if (url.includes('/api/users')) {
+          return Promise.resolve(json(200, [EMPLOYEE]))
+        }
+        return Promise.resolve(json(404, null))
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await navigationButton('Kullanıcılar'))
+    await screen.findByRole('heading', { name: 'Kullanıcılar' })
+
+    await user.type(await screen.findByLabelText('E-posta'), 'bad-birth@acme.test')
+    await user.type(screen.getByLabelText('Ad soyad'), 'Bad Birth')
+    fireEvent.change(screen.getByLabelText('Doğum tarihi'), {
+      target: { value: '1899-12-31' },
+    })
+    await user.click(screen.getByRole('button', { name: 'Oluştur' }))
+
+    expect(
+      await screen.findByText('Doğum tarihi 1900 ile bugün arasında olmalı.'),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Doğum tarihi')).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('İşe giriş tarihi')).not.toHaveAttribute('aria-invalid')
+    expect(screen.getByLabelText('Doğum tarihi')).toHaveFocus()
+  })
+
   it('shouldEditTheBirthDateAndTheSchoolAgeFlag', async () => {
     // The edit dialog prefills both fields from the response and sends them back; the refreshed row
     // proves the two fields round-trip through the server's answer.

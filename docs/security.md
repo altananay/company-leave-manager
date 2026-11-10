@@ -37,7 +37,9 @@
   through HR's user endpoints (`GET/POST/PATCH /api/users`). They are deliberately absent from
   `/api/auth/me`, the balance, the leave lists and every other response, so a manager or a peer
   cannot learn them. The employee cannot edit either field. `kinship` stays on its request row and
-  is visible only through the existing request scopes — the employee, the direct manager and HR.
+  is visible only to the employee, their **direct** manager and HR: the request list keeps BR-12's
+  subtree scope but masks the field (`kinship: null`) for a manager above the direct one and for the
+  CEO, and the queue/decision responses belong to the direct manager by construction.
 - **Auditing.** An HR edit of either field writes `USER_UPDATED` with the before/after values
   (BR-13), so the change is attributable.
 - **Retention.** Personal data is kept for the employment period plus the statutory retention

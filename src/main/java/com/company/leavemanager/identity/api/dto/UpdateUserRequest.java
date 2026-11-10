@@ -8,7 +8,8 @@ import java.util.UUID;
  * replaced on every call, and a null clears a date. Since phase B2 the set also carries the birth
  * date and the school-age-child flag BR-10 needs (D17/D18); those are still entered by HR only.
  * Only these fields are writable — role, password and the active flag have their own endpoints and
- * rules. The flag is boxed so an omitted property reads as {@code false} (the field's default).
+ * rules. The flag is boxed for the same reason as on creation; an omitted property reads as
+ * {@code false} (the field's default), and the full-replace contract means an omitted flag clears it.
  */
 public record UpdateUserRequest(
         UUID managerId,

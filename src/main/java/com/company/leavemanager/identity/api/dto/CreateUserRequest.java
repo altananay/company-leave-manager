@@ -9,8 +9,9 @@ import java.util.UUID;
 /**
  * The manager, the hire date and — since phase B2 — the birth date and the school-age-child flag are
  * optional: an account made before spec 0004 has none, and the form sends them only once HR has the
- * data (AC-8, D17/D18). The flag is boxed so an older client that omits it reads as {@code false}
- * instead of failing deserialisation.
+ * data (AC-8, D17/D18). The flag is boxed because Spring Boot 4's Jackson rejects a record body that
+ * omits a primitive creator property (observed as {@code INVALID_REQUEST}); an omitted flag reads as
+ * {@code false}, the field's default.
  */
 public record CreateUserRequest(
         @NotBlank @Email String email,

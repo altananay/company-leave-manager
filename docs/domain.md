@@ -58,8 +58,9 @@
 
   "Süre" sütunu bir **üst sınırdır** (D19): evlilik, vefat ve eş doğumunda **en çok 5 iş günü**;
   karne, doğum günü ve okulun ilk gününde **tam 1 iş günü** (tek gün). Karne ve okulun ilk günü
-  kotası **takvim yılında 1 gün**, doğum günü hakkı **en son doğum gününden itibaren 180 gün**
-  içinde kullanılır ve o pencere başına 1 gündür. Kota **onaylı ve bekleyen** talepleri sayar; onay
+  kotası **her tür için takvim yılında 1 gün** (ikisi ayrı kova), doğum günü hakkı **en son doğum
+  gününden itibaren 180 gün** içinde kullanılır ve o pencere başına 1 gündür. Kota **onaylı ve
+  bekleyen** talepleri sayar; onay
   anında talebin kendisi dışındakilerle yeniden kontrol edilir. 29 Şubat doğumlularda doğum günü,
   29 Şubat'ı olmayan yılda 28 Şubat'a denk gelir. Altı tür de bakiyesizdir (BR-9).
 
