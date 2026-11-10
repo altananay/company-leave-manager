@@ -268,7 +268,10 @@ class LeaveSpecialTypesIT extends LeaveTestSupport {
         assertThat(approve(team.managerSession(), extract(first.body(), "id")).statusCode())
                 .isEqualTo(200);
 
-        LocalDate nextWindow = monday.plusYears(1);
+        // The next window's first holiday-free working Monday: a future holiday seed cannot turn the
+        // fixture into a NO_WORKING_DAY (I-2, re-review).
+        LocalDate nextWindow = WorkingDays.holidayFreeMonday(
+                monday.plusYears(1), 1, publicHolidays());
         HttpResponse<String> second = createSpecialLeave(team.member(), "BIRTHDAY",
                 nextWindow, nextWindow, null, "gelecek pencere");
         assertThat(second.statusCode()).as(second.body()).isEqualTo(201);
@@ -337,6 +340,14 @@ class LeaveSpecialTypesIT extends LeaveTestSupport {
         assertThat(kinshipOf(ceo.get("/api/leave/requests?size=100").body(), requestId)).isNull();
         assertThat(kinshipOf(member.get("/api/leave/requests?size=100").body(), requestId))
                 .isEqualTo("SPOUSE");
+
+        // I-1 (re-review): a deactivated report is still a direct report — the manager who may still
+        // decide the request keeps the kinship, while the grand-manager stays masked.
+        jdbc.update("update users set active = false where id = ?", employee.id());
+        assertThat(kinshipOf(leadSession.get("/api/leave/requests?size=100").body(), requestId))
+                .isEqualTo("SPOUSE");
+        assertThat(kinshipOf(grandSession.get("/api/leave/requests?size=100").body(), requestId))
+                .isNull();
     }
 
     /** The kinship of one request in a list/queue body: its value, or null when masked. */

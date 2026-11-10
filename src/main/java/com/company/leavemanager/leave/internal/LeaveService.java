@@ -700,7 +700,9 @@ public class LeaveService {
         Set<UUID> visible = new LinkedHashSet<>();
         visible.add(actorId);
         if (actor.isManager()) {
-            employees.directReports(actorId).forEach(employee -> visible.add(employee.id()));
+            // The same relation decide() uses: a departed report still has a direct manager, so that
+            // manager keeps the kinship of the request they may still decide (I-1, re-review).
+            visible.addAll(reports(actorId));
         }
         return visible;
     }
