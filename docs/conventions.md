@@ -66,7 +66,7 @@ Upgrades keep `scripts/check` green; a major upgrade that changes behavior is it
   `LEAVE_KINSHIP_REQUIRED`, `LEAVE_NO_SCHOOL_AGE_CHILD`, `LEAVE_NO_BIRTH_DATE`,
   `LEAVE_BIRTHDAY_WINDOW`, `LEAVE_SPECIAL_QUOTA_USED`, `LEAVE_RETROACTIVE_REASON_REQUIRED`,
   `LEAVE_NO_HIRE_DATE`, `LEAVE_OVERLAP`, `LEAVE_BALANCE_EXCEEDED`, `LEAVE_INVALID_ADJUSTMENT`,
-  `LEAVE_ADJUSTMENT_NOT_ALLOWED`, `LEAVE_NO_MANAGER`, `LEAVE_NOT_MANAGER`, `LEAVE_NOT_OWNER`,
+  `LEAVE_ADJUSTMENT_NOT_ALLOWED`, `LEAVE_NO_MANAGER`, `LEAVE_NOT_MANAGER`,
   `LEAVE_NOT_PENDING`, `LEAVE_NOT_APPROVED`, `LEAVE_ALREADY_STARTED`. The three shared codes above
   (`NOT_FOUND`, `NOT_AUTHORIZED`, `INVALID_PARAMETER`) are reused rather than minted a second time
   with a `LEAVE_` prefix. The enum, not this line, is the source of truth: a new code is added there
