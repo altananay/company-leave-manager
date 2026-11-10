@@ -131,7 +131,7 @@ class LeaveServiceGateTest {
         LocalDate monday = LocalDate.of(2026, 11, 16);
 
         LeaveResult<?> result = service.create(EMPLOYEE, STRANGER, com.company.leavemanager.leave.internal.LeaveType.ANNUAL,
-                monday, monday, HalfDay.NONE, "izin");
+                monday, monday, HalfDay.NONE, null, "izin");
 
         assertThat(result.error()).isEqualTo(LeaveError.NOT_AUTHORIZED);
         verifyNoInteractions(requests);
@@ -160,6 +160,6 @@ class LeaveServiceGateTest {
 
     private static EmployeeView view(UUID id, String role, UUID managerId) {
         return new EmployeeView(id, id + "@acme.test", "Person " + id, role, managerId,
-                LocalDate.of(2020, 3, 15), true);
+                LocalDate.of(2020, 3, 15), null, false, true);
     }
 }

@@ -1,7 +1,7 @@
 # Spec 0004 — İzin talebi akışı
 
-- Status: In progress
-- Phase: **A shipped (2026-11-09)** · **B1 shipped (2026-11-09)** · B2 bekliyor
+- Status: Shipped
+- Phase: **A shipped (2026-11-09)** · **B1 shipped (2026-11-09)** · **B2 shipped (2026-11-10)**
 - Mode: lite
 - Plan: `specs/plans/0004-plan.md`
 - Business rules: `docs/domain.md` (BR-1…BR-11) — bu spec onları **yeniden tanımlamaz**, uygular.
@@ -174,7 +174,7 @@ kullanır.
   İK görür. Çalışan kendi doğum tarihini/bayrağını bu uygulamadan düzenleyemez (İK girer).
 - **D19 — BR-10 süre ve pencereleri.** "Süre" sütunu **üst sınırdır**: evlilik, vefat ve eş doğumu
   en çok 5 iş günü; karne, doğum günü ve okulun ilk günü tam **1 iş günü** (tek gün). Karne ve okulun
-  ilk günü kotası **takvim yılında 1 gün**; doğum günü hakkı **en son doğum gününden itibaren 180
+  ilk günü kotası **her tür için takvim yılında 1 gün** (ikisi ayrı kova); doğum günü hakkı **en son doğum gününden itibaren 180
   gün** içinde kullanılır ve o pencere başına 1 gündür. Kota onaylı **ve** bekleyen talepleri sayar;
   onay anında kendi dışındakilerle yeniden kontrol edilir (D8 deseni). Altı tür de bakiyesizdir
   (BR-9).
@@ -225,24 +225,24 @@ kullanır.
 - [x] AC-11 — Mevcut davranış korunur: giriş, kullanıcı yönetimi, parola akışı ve 0003'ün testleri değişmeden geçer; yeni uçlar oturum + CSRF olmadan 401/403 döner.
 - [x] AC-12 — (B1) Yarım gün: tek günlük `ANNUAL`/`EXCUSE` talebinde `AM`/`PM` seçimi 0,5 iş günü sayılır ve `business_days` ondalık saklanır; özet, bakiye ve İK düzeltmesi 0,5 duyarlılığında çalışır; birden çok güne, özel türe veya iş günü olmayan güne yarım gün reddedilir.
 - [x] AC-13 — (B1) Çalışan "İzinli günlerim" görünümünde yalnız kendi onaylı izin günlerini (tarih, tür, yarım gün) görür; bekleyen/iptal ve başkasının günleri görünmez; boş, yükleniyor ve hata durumları gösterilir.
-- [ ] AC-14 — (B2) Altı özel tür kendi süresi, koşulu ve penceresiyle açılır: evlilik/vefat/eş doğumu en çok 5 iş günü; karne/doğum günü/okulun ilk günü tam 1 iş günü; karne ve okulun ilk günü takvim yılında 1 gün; doğum günü en son doğum gününden 180 gün içinde 1 gün; hiçbiri bakiyeden düşmez; kota onay anında yeniden kontrol edilir.
-- [ ] AC-15 — (B2) Özel tür verisi minimal ve yetkilidir: doğum tarihi ile okul çağı bayrağı yalnız İK kullanıcı uçlarında yönetilir, değişikliği denetlenir ve izin/bakiye/`/me` yanıtlarında görünmez; yakınlık derecesi yalnız vefat talebinde saklanır ve yalnız çalışan, doğrudan yöneticisi ve İK görür; çocuk/akraba kimliği toplanmaz ve KVKK notu `docs/security.md`'de yer alır.
-- [ ] AC-16 — (B1+B2) Faz A ve 0003 davranışı korunur: tam gün taleplerin süresi ve bakiyesi değişmez, mevcut testler zayıflatılmadan geçer (gün birimi değiştiği için yalnız sayı tipi beklentileri güncellenir); yeni uçlar oturum + CSRF ister, kapsam dışına 404 döner; 360/768/1440 px'te yatay kaydırma yok, dokunma hedefleri ≥44 px, axe sıfır ihlal.
+- [x] AC-14 — (B2) Altı özel tür kendi süresi, koşulu ve penceresiyle açılır: evlilik/vefat/eş doğumu en çok 5 iş günü; karne/doğum günü/okulun ilk günü tam 1 iş günü; karne ve okulun ilk günü **her biri için** takvim yılında 1 gün; doğum günü en son doğum gününden 180 gün içinde 1 gün; hiçbiri bakiyeden düşmez; kota onay anında yeniden kontrol edilir.
+- [x] AC-15 — (B2) Özel tür verisi minimal ve yetkilidir: doğum tarihi ile okul çağı bayrağı yalnız İK kullanıcı uçlarında yönetilir, değişikliği denetlenir ve izin/bakiye/`/me` yanıtlarında görünmez; yakınlık derecesi yalnız vefat talebinde saklanır ve yalnız çalışan, doğrudan yöneticisi ve İK görür; çocuk/akraba kimliği toplanmaz ve KVKK notu `docs/security.md`'de yer alır.
+- [x] AC-16 — (B1+B2) Faz A ve 0003 davranışı korunur: tam gün taleplerin süresi ve bakiyesi değişmez, mevcut testler zayıflatılmadan geçer (gün birimi değiştiği için yalnız sayı tipi beklentileri güncellenir); yeni uçlar oturum + CSRF ister, kapsam dışına 404 döner; 360/768/1440 px'te yatay kaydırma yok, dokunma hedefleri ≥44 px, axe sıfır ihlal.
 
 ## Definition of Done
 
-- [ ] Every acceptance criterion mapped to proof (test or reproducible observation)
-- [ ] `scripts/check` green
-- [ ] Independent review done; real findings fixed, noise rejected with written rationale, deferred ones in `specs/backlog.md`
-- [ ] Docs / ADRs updated if behavior or architecture changed
-- [ ] Spec moved to `specs/done/` (it becomes immutable there)
+- [x] Every acceptance criterion mapped to proof (test or reproducible observation)
+- [x] `scripts/check` green
+- [x] Independent review done; real findings fixed, noise rejected with written rationale, deferred ones in `specs/backlog.md`
+- [x] Docs / ADRs updated if behavior or architecture changed
+- [x] Spec moved to `specs/done/` (it becomes immutable there)
 
 ## Scorecard (fill at ship — honest numbers make the process improvable)
 
 | Metric | Value |
 |---|---|
-| Spec revisions | |
-| Fix rounds | |
-| Review findings: real / noise / deferred | |
-| Regressions introduced | |
-| Bugs escaped to production | |
+| Spec revisions | 1 (Faz B amendment, D14–D20) |
+| Fix rounds | 5 (Faz A 3, B1 1, B2 1) |
+| Review findings: real / noise / deferred | 57 / 8 / 0 (+1 belirsiz→karar: R-3 tür başına) |
+| Regressions introduced | 0 |
+| Bugs escaped to production | 0 |

@@ -1,6 +1,17 @@
 import { apiRequest } from '@/features/auth/authApi'
 
-export type LeaveType = 'ANNUAL' | 'EXCUSE'
+export type LeaveType =
+  | 'ANNUAL'
+  | 'EXCUSE'
+  | 'MARRIAGE'
+  | 'BEREAVEMENT'
+  | 'SPOUSE_BIRTH'
+  | 'SCHOOL_REPORT'
+  | 'BIRTHDAY'
+  | 'FIRST_SCHOOL_DAY'
+
+/** The relative a BEREAVEMENT request names; required only by that type (D17, D19). */
+export type Kinship = 'SPOUSE' | 'CHILD' | 'PARENT' | 'SIBLING'
 
 export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
 
@@ -26,6 +37,8 @@ export type LeaveRequest = {
   halfDay: HalfDay
   status: LeaveStatus
   reason: string | null
+  /** Set on a BEREAVEMENT request only; null everywhere else (D17/D19). */
+  kinship: Kinship | null
   decidedBy: string | null
   decidedByName: string | null
   decidedAt: string | null
@@ -82,10 +95,25 @@ export const leaveApi = {
     apiRequest<Preview>(
       `/api/leave/preview?startDate=${startDate}&endDate=${endDate}&type=${type}&halfDay=${halfDay}`,
     ),
-  create: (type: LeaveType, startDate: string, endDate: string, halfDay: HalfDay, reason: string) =>
+  create: (
+    type: LeaveType,
+    startDate: string,
+    endDate: string,
+    halfDay: HalfDay,
+    reason: string,
+    kinship?: Kinship | null,
+  ) =>
     apiRequest<LeaveRequest>('/api/leave/requests', {
       method: 'POST',
-      body: JSON.stringify({ type, startDate, endDate, halfDay, reason: reason.trim() || null }),
+      body: JSON.stringify({
+        type,
+        startDate,
+        endDate,
+        halfDay,
+        reason: reason.trim() || null,
+        // The field is absent unless the type carries it: the server refuses a kinship elsewhere.
+        ...(kinship ? { kinship } : {}),
+      }),
     }),
   days: () => apiRequest<LeaveDay[]>('/api/leave/days'),
   approve: (id: string, note: string) =>

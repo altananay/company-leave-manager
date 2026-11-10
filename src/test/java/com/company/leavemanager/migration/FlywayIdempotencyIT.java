@@ -24,7 +24,8 @@ class FlywayIdempotencyIT {
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         // V1 (app_metadata), V2 (identity, audit, sessions), V3 (leave, public holidays),
         // V4 (cancellation record + retroactive marker), V5 (audit states as jsonb),
-        // V6 (2027 holidays) and V7 (decimal days) are each applied exactly once.
-        assertThat(flyway.info().applied()).hasSize(7);
+        // V6 (2027 holidays), V7 (decimal days) and V8 (special leave + personal data) are each
+        // applied exactly once.
+        assertThat(flyway.info().applied()).hasSize(8);
     }
 }

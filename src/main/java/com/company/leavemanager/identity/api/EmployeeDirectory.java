@@ -21,6 +21,12 @@ import java.util.UUID;
 @Service
 public class EmployeeDirectory {
 
+    /**
+     * The employee as another module sees them. {@code birthDate} and {@code hasSchoolAgeChild} are
+     * BR-10's personal-data inputs (D17): they are read by the leave module to verify the birthday
+     * window and the school types and are never serialised to a leave, balance or {@code /me}
+     * response (D18).
+     */
     public record EmployeeView(
             UUID id,
             String email,
@@ -28,6 +34,8 @@ public class EmployeeDirectory {
             String role,
             UUID managerId,
             LocalDate hireDate,
+            LocalDate birthDate,
+            boolean hasSchoolAgeChild,
             boolean active) {
 
         public boolean isManager() {
@@ -95,6 +103,8 @@ public class EmployeeDirectory {
                 user.getRole().name(),
                 user.getManagerId(),
                 user.getHireDate(),
+                user.getBirthDate(),
+                user.hasSchoolAgeChild(),
                 user.isActive());
     }
 }

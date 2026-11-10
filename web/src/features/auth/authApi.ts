@@ -14,6 +14,10 @@ export type User = Me & {
   managerId: string | null
   /** Null on every account created before spec 0004: the balance then uses its default. */
   hireDate: string | null
+  /** HR-only personal data (D17/D18): the birthday window needs it; never on `/me`. */
+  birthDate: string | null
+  /** HR-only personal data (D17/D18): the school leave quota needs it; never on `/me`. */
+  hasSchoolAgeChild: boolean
 }
 
 export type CreatedUser = { user: User; temporaryPassword: string }
@@ -120,18 +124,37 @@ export const authApi = {
     role: string,
     managerId: string | null = null,
     hireDate: string | null = null,
+    birthDate: string | null = null,
+    hasSchoolAgeChild = false,
   ) =>
     request<CreatedUser>('/api/users', {
       method: 'POST',
-      body: JSON.stringify({ email, displayName, role, managerId, hireDate }),
+      body: JSON.stringify({
+        email,
+        displayName,
+        role,
+        managerId,
+        hireDate,
+        birthDate,
+        hasSchoolAgeChild,
+      }),
     }),
   deactivate: (id: string) => request<void>(`/api/users/${id}/deactivate`, { method: 'POST' }),
   resetPassword: (id: string) =>
     request<CreatedUser>(`/api/users/${id}/reset-password`, { method: 'POST' }),
-  /** HR fills in the manager and the hire date later; the pair is replaced on every call (L-04). */
-  updateUser: (id: string, managerId: string | null, hireDate: string | null) =>
+  /**
+   * HR fills in the manager, the hire date and the two personal fields later; the whole record is
+   * replaced on every call (L-04, D17).
+   */
+  updateUser: (
+    id: string,
+    managerId: string | null,
+    hireDate: string | null,
+    birthDate: string | null = null,
+    hasSchoolAgeChild = false,
+  ) =>
     request<User>(`/api/users/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ managerId, hireDate }),
+      body: JSON.stringify({ managerId, hireDate, birthDate, hasSchoolAgeChild }),
     }),
 }

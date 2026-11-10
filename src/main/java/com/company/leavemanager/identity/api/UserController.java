@@ -44,7 +44,9 @@ public class UserController {
                 request.displayName(),
                 request.role(),
                 request.managerId(),
-                request.hireDate());
+                request.hireDate(),
+                request.birthDate(),
+                Boolean.TRUE.equals(request.hasSchoolAgeChild()));
         return switch (result.outcome()) {
             case INVALID_ROLE -> ResponseEntity.badRequest()
                     .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_ROLE"));
@@ -56,6 +58,8 @@ public class UserController {
                     .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_MANAGER"));
             case INVALID_HIRE_DATE -> ResponseEntity.badRequest()
                     .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_HIRE_DATE"));
+            case INVALID_BIRTH_DATE -> ResponseEntity.badRequest()
+                    .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_BIRTH_DATE"));
             case CREATED -> ResponseEntity.status(HttpStatus.CREATED).body(result.response());
         };
     }
@@ -70,13 +74,14 @@ public class UserController {
         return respond(admin.resetPassword(actor(authentication).id(), id));
     }
 
-    /** HR edits the manager link and the hire date of an existing account (L-04). */
+    /** HR edits the org data, birth date and school-age-child flag of an existing account (L-04, D17). */
     @PatchMapping("/{id}")
     public ResponseEntity<?> update(@PathVariable UUID id,
                                     @RequestBody UpdateUserRequest request,
                                     Authentication authentication) {
         UserAdminService.UpdateResult result = admin.update(
-                actor(authentication).id(), id, request.managerId(), request.hireDate());
+                actor(authentication).id(), id, request.managerId(), request.hireDate(),
+                request.birthDate(), Boolean.TRUE.equals(request.hasSchoolAgeChild()));
         return respond(result.outcome(), result.response());
     }
 
@@ -102,6 +107,8 @@ public class UserController {
                     .body(ApiExceptionHandler.problem(HttpStatus.CONFLICT, "USER_EDIT_WOULD_GO_NEGATIVE"));
             case INVALID_HIRE_DATE -> ResponseEntity.badRequest()
                     .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_HIRE_DATE"));
+            case INVALID_BIRTH_DATE -> ResponseEntity.badRequest()
+                    .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_BIRTH_DATE"));
             case INVALID_MANAGER -> ResponseEntity.badRequest()
                     .body(ApiExceptionHandler.problem(HttpStatus.BAD_REQUEST, "INVALID_MANAGER"));
             case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND)

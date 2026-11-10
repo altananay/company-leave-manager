@@ -52,10 +52,11 @@ type ErrorKey =
   | 'managerHasPendingRequests'
   | 'invalidHireDate'
   | 'hireDateWouldGoNegative'
+  | 'invalidBirthDate'
   | 'genericError'
 
-/** The edit dialog's two fields: the refusal has to land on the field it is about (M-13). */
-type EditField = 'manager' | 'hireDate'
+/** The edit dialog's fields: the refusal has to land on the field it is about (M-13). */
+type EditField = 'manager' | 'hireDate' | 'birthDate'
 
 type EditError = { key: ErrorKey; field: EditField | null }
 
@@ -86,6 +87,8 @@ function errorKeyFor(failure: unknown): ErrorKey {
       return 'managerHasPendingRequests'
     case 'INVALID_HIRE_DATE':
       return 'invalidHireDate'
+    case 'INVALID_BIRTH_DATE':
+      return 'invalidBirthDate'
     case 'USER_EDIT_WOULD_GO_NEGATIVE':
       return 'hireDateWouldGoNegative'
     default:
@@ -107,6 +110,8 @@ function editErrorFor(failure: unknown): EditError {
     case 'hireDateWouldGoNegative':
     case 'validationFailed':
       return { key, field: 'hireDate' }
+    case 'invalidBirthDate':
+      return { key, field: 'birthDate' }
     default:
       return { key, field: null }
   }
@@ -137,12 +142,16 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
   const [role, setRole] = useState('EMPLOYEE')
   const [managerId, setManagerId] = useState('NONE')
   const [hireDate, setHireDate] = useState('')
+  const [birthDate, setBirthDate] = useState('')
+  const [hasSchoolAgeChild, setHasSchoolAgeChild] = useState(false)
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState<User | null>(null)
-  // The org-data edit (review round 1, L-04): manager + hire date, one account at a time.
+  // The org-data and personal-data edit (review round 1, L-04; D17): one account at a time.
   const [editing, setEditing] = useState<User | null>(null)
   const [editManagerId, setEditManagerId] = useState('NONE')
   const [editHireDate, setEditHireDate] = useState('')
+  const [editBirthDate, setEditBirthDate] = useState('')
+  const [editHasSchoolAgeChild, setEditHasSchoolAgeChild] = useState(false)
   const [editBusy, setEditBusy] = useState(false)
   const [editError, setEditError] = useState<EditError | null>(null)
   const [notice, setNotice] = useState<'usersUpdated' | null>(null)
@@ -151,6 +160,7 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
   const [page, setPage] = useState(1)
   const emailRef = useRef<HTMLInputElement>(null)
   const displayNameRef = useRef<HTMLInputElement>(null)
+  const birthDateRef = useRef<HTMLInputElement>(null)
   // The button that opened the dialog, so focus can return to it when the dialog closes.
   const deactivateTrigger = useRef<HTMLElement | null>(null)
   const editTrigger = useRef<HTMLElement | null>(null)
@@ -213,12 +223,16 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
           role,
           managerId === 'NONE' ? null : managerId,
           hireDate || null,
+          birthDate || null,
+          hasSchoolAgeChild,
         ),
       )
       setEmail('')
       setDisplayName('')
       setManagerId('NONE')
       setHireDate('')
+      setBirthDate('')
+      setHasSchoolAgeChild(false)
       await load()
     } catch (failure) {
       const key = errorKeyFor(failure)
@@ -228,6 +242,8 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
         emailRef.current?.focus()
       } else if (key === 'validationFailed') {
         displayNameRef.current?.focus()
+      } else if (key === 'invalidBirthDate') {
+        birthDateRef.current?.focus()
       }
     } finally {
       setBusy(false)
@@ -250,10 +266,12 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
     setNotice(null)
     setEditManagerId(user.managerId ?? 'NONE')
     setEditHireDate(user.hireDate ?? '')
+    setEditBirthDate(user.birthDate ?? '')
+    setEditHasSchoolAgeChild(user.hasSchoolAgeChild ?? false)
     setEditing(user)
   }
 
-  /** Saves the manager link and the hire date; the server validates the manager and the cycle. */
+  /** Saves the manager, the hire date and the two personal fields; the server validates them. */
   async function saveEdit(event: FormEvent) {
     event.preventDefault()
     if (!editing) {
@@ -266,6 +284,8 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
         editing.id,
         editManagerId === 'NONE' ? null : editManagerId,
         editHireDate || null,
+        editBirthDate || null,
+        editHasSchoolAgeChild,
       )
       setEditing(null)
       setNotice('usersUpdated')
@@ -292,7 +312,8 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
     error === 'emailExists' ||
     error === 'validationFailed' ||
     error === 'roleNotAssignable' ||
-    error === 'invalidManager'
+    error === 'invalidManager' ||
+    error === 'invalidBirthDate'
 
   // Only an active MANAGER can be assigned: BR-7 makes any other choice an approver who could never
   // approve, and the server refuses it with INVALID_MANAGER.
@@ -414,7 +435,7 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
                 </Select>
               </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-[12rem_auto] sm:items-end">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field
                 label={t('hireDate')}
                 type="date"
@@ -422,10 +443,39 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
                 describedBy={formError ? 'users-error' : undefined}
                 onChange={(event) => setHireDate(event.target.value)}
               />
-              <Button type="submit" disabled={busy} className="sm:justify-self-start">
-                {t('create')}
-              </Button>
+              <Field
+                label={t('birthDate')}
+                inputRef={birthDateRef}
+                type="date"
+                value={birthDate}
+                invalid={error === 'invalidBirthDate'}
+                describedBy={formError ? 'users-error' : undefined}
+                onChange={(event) => {
+                  setBirthDate(event.target.value)
+                  setError(null)
+                }}
+              />
             </div>
+            {/* D17/D18: HR alone records the two personal fields the special types need. */}
+            <div className="flex flex-col gap-1">
+              <label
+                htmlFor="create-school-age"
+                className="flex min-h-11 cursor-pointer items-center gap-2"
+              >
+                <input
+                  id="create-school-age"
+                  type="checkbox"
+                  checked={hasSchoolAgeChild}
+                  className="size-4 shrink-0 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  onChange={(event) => setHasSchoolAgeChild(event.target.checked)}
+                />
+                <span className="text-body">{t('hasSchoolAgeChild')}</span>
+              </label>
+              <p className="text-small text-muted-foreground">{t('hasSchoolAgeChildHint')}</p>
+            </div>
+            <Button type="submit" disabled={busy} className="sm:self-start">
+              {t('create')}
+            </Button>
             {formError && (
               <Alert variant="destructive" id="users-error">
                 <p className="font-medium">{t(error)}</p>
@@ -435,7 +485,7 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3" data-slot="users-stats">
         <Stat label={t('statTotal')} value={users.length} />
         <Stat label={t('statActive')} value={active} />
         <Stat label={t('statInactive')} value={users.length - active} />
@@ -715,6 +765,33 @@ function UsersPage({ onForbidden }: { onForbidden: () => void }) {
                   setEditError(null)
                 }}
               />
+              <Field
+                label={t('birthDate')}
+                type="date"
+                value={editBirthDate}
+                invalid={editError?.field === 'birthDate'}
+                describedBy={editError?.field === 'birthDate' ? 'edit-user-error' : undefined}
+                onChange={(event) => {
+                  setEditBirthDate(event.target.value)
+                  setEditError(null)
+                }}
+              />
+              <div className="flex flex-col gap-1">
+                <label
+                  htmlFor="edit-school-age"
+                  className="flex min-h-11 cursor-pointer items-center gap-2"
+                >
+                  <input
+                    id="edit-school-age"
+                    type="checkbox"
+                    checked={editHasSchoolAgeChild}
+                    className="size-4 shrink-0 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    onChange={(event) => setEditHasSchoolAgeChild(event.target.checked)}
+                  />
+                  <span className="text-body">{t('hasSchoolAgeChild')}</span>
+                </label>
+                <p className="text-small text-muted-foreground">{t('hasSchoolAgeChildHint')}</p>
+              </div>
               {editError && (
                 <Alert variant="destructive" id="edit-user-error">
                   <p className="font-medium">{t(editError.key)}</p>

@@ -20,7 +20,23 @@ async function expectTouchTargets(
   expect(count, `${label} has controls`).toBeGreaterThan(0)
 
   for (let index = 0; index < count; index += 1) {
-    const box = await controls.nth(index).boundingBox()
+    const control = controls.nth(index)
+    // A labelled checkbox's real target is its label: the native box is 16 px, while the label row is
+    // the 44 px area the user taps. Measure that target, not the decorative box (B2: the school-age
+    // checkbox is the first checkbox in the suite).
+    const labelled = await control.evaluate((element) => {
+      const input = element as HTMLInputElement
+      if (input.type !== 'checkbox') {
+        return null
+      }
+      const label = input.closest('label')
+      if (!label) {
+        return null
+      }
+      const rect = label.getBoundingClientRect()
+      return { width: rect.width, height: rect.height }
+    })
+    const box = labelled ?? (await control.boundingBox())
     expect(box?.height ?? 0, `${label} control ${index} height`).toBeGreaterThanOrEqual(44)
     expect(box?.width ?? 0, `${label} control ${index} width`).toBeGreaterThanOrEqual(44)
   }

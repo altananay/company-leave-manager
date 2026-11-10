@@ -58,12 +58,23 @@ public class User {
     @Column(name = "hire_date")
     private LocalDate hireDate;
 
+    /**
+     * BR-10's birthday window needs the date (D17); null until HR fills it in. It is personal data:
+     * it appears only in HR's user endpoints, never in {@code /me}, balance or leave responses (D18).
+     */
+    @Column(name = "birth_date")
+    private LocalDate birthDate;
+
+    /** BR-10's two school types need this flag; false is the safe default (D17/D18). */
+    @Column(name = "has_school_age_child", nullable = false)
+    private boolean hasSchoolAgeChild;
+
     protected User() {
         // for JPA
     }
 
     public static User create(String email, String displayName, Role role, String passwordHash, Instant now) {
-        return create(email, displayName, role, passwordHash, null, null, now);
+        return create(email, displayName, role, passwordHash, null, null, null, false, now);
     }
 
     public static User create(String email,
@@ -72,6 +83,8 @@ public class User {
                               String passwordHash,
                               UUID managerId,
                               LocalDate hireDate,
+                              LocalDate birthDate,
+                              boolean hasSchoolAgeChild,
                               Instant now) {
         User user = new User();
         user.id = UUID.randomUUID();
@@ -86,6 +99,8 @@ public class User {
         user.updatedAt = now;
         user.managerId = managerId;
         user.hireDate = hireDate;
+        user.birthDate = birthDate;
+        user.hasSchoolAgeChild = hasSchoolAgeChild;
         return user;
     }
 
@@ -120,13 +135,20 @@ public class User {
     }
 
     /**
-     * HR sets the org data of an existing account (spec 0004 review round 1, L-04): the manager link
-     * and the hire date are write-once facts HR backfills one account at a time. A null clears the
-     * field; nothing else about the account changes here.
+     * HR sets the org data of an existing account (spec 0004 review round 1, L-04): the manager link,
+     * the hire date and — since phase B2 — the birth date and the school-age-child flag BR-10 needs.
+     * A null clears a date; nothing else about the account changes here. The whole set is replaced on
+     * every call, so an absent field really means "not set".
      */
-    public void updateOrg(UUID managerId, LocalDate hireDate, Instant now) {
+    public void updateOrg(UUID managerId,
+                          LocalDate hireDate,
+                          LocalDate birthDate,
+                          boolean hasSchoolAgeChild,
+                          Instant now) {
         this.managerId = managerId;
         this.hireDate = hireDate;
+        this.birthDate = birthDate;
+        this.hasSchoolAgeChild = hasSchoolAgeChild;
         this.updatedAt = now;
     }
 
@@ -172,5 +194,13 @@ public class User {
 
     public LocalDate getHireDate() {
         return hireDate;
+    }
+
+    public LocalDate getBirthDate() {
+        return birthDate;
+    }
+
+    public boolean hasSchoolAgeChild() {
+        return hasSchoolAgeChild;
     }
 }
