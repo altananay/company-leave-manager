@@ -14,7 +14,6 @@ step 7). Nothing lands here without that decision; noise is rejected in the tria
   A decision deferred at bootstrap (its REPORT) uses Source: bootstrap <YYYY-MM-DD>.
 -->
 
-- **B-1** — Merkezi log platformu: ELK (Elasticsearch + Kibana + toplayıcı) bu projeye kurulsun mu, yoksa stdout + Docker log rotation yeterli mi? — Source: bootstrap 2026-11-07 — Severity: low (operational) — Recommendation: V1 stdout + rotation ile ilerlesin; ELK ayrı bir altyapı spec'i olarak, docker-compose'da opsiyonel `logging` profiliyle eklensin (uygulama sözleşmesi iki durumda da JSON stdout; ILM ile 30 gün saklama). — Deferred by: human, 2026-11-07, bir sonraki oturumda değerlendirilecek.
 
 - **B-2** — Health ucunun 2 sn sınırı ölçülmüyor: `HealthDownIT` yalnız bağlantı reddi yolunu görüyor, yavaş/askıda bir veritabanında süre sınırı kanıtsız. — Source: spec 0001, review round 1 (`src/test/java/com/company/leavemanager/health/HealthDownIT.java:37`) — Severity: low — Recommendation: ağ hatası enjeksiyonu (toxiproxy ya da geciktirici proxy) ile süre ölçen bir test ekle; ölçüm kararsızsa Hikari `connection-timeout` değerini açıkça assert et. — Deferred by: altananay, 2026-11-07, test altyapısına proxy eklemek ayrı bir iş.
 

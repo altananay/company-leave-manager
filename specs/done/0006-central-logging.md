@@ -1,6 +1,6 @@
 # Spec 0006 — Merkezi loglama (ELK)
 
-- Status: In progress
+- Status: Shipped
 - Mode: lite
 - Plan: `specs/plans/0006-plan.md`
 - Self-critique: done
@@ -38,20 +38,20 @@ Elasticsearch'e taşıyan Filebeat, Kibana ve 30 günlük ILM ile. Varsayılan `
 
 ## Acceptance criteria
 
-- [ ] AC-1 — Varsayılan yol: ELK profili kapalıyken `docker compose config` yalnız `db`'yi gösterir;
+- [x] AC-1 — Varsayılan yol: ELK profili kapalıyken `docker compose config` yalnız `db`'yi gösterir;
   host uygulama + `./scripts/check` (full) yeşil; ELK konteyneri yok.
-- [ ] AC-2 — `DB_HOST_PORT=0 docker compose -p leave-manager-logging --profile logging up -d` beş
+- [x] AC-2 — `DB_HOST_PORT=0 docker compose -p leave-manager-logging --profile logging up -d` beş
   uzun ömürlü servisi (db, app, Elasticsearch, Kibana, Filebeat) sağlıklı başlatır ve iki tek
   seferlik setup'ı çalıştırır; uygulama `/api/health` 200; Kibana `127.0.0.1:5601` yanıtlar.
-- [ ] AC-3 — Uygulama stdout'u geçerli JSON (ECS) satırlarıdır; bir log satırı Kibana/ES'te
+- [x] AC-3 — Uygulama stdout'u geçerli JSON (ECS) satırlarıdır; bir log satırı Kibana/ES'te
   `service.name: leave-manager` (ve mesaj metni) ile bulunur; satırda PII/sır yok.
-- [ ] AC-4 — ILM politikası 30 gün (`min_age: 30d`, `delete`); şablon/politika stack açılışında
+- [x] AC-4 — ILM politikası 30 gün (`min_age: 30d`, `delete`); şablon/politika stack açılışında
   uygulanır ve ikinci açılışta hata vermez.
-- [ ] AC-5 — Profilin yapılandırması konteynersiz doğrulanır (check adımı; `check.conf` değişir →
+- [x] AC-5 — Profilin yapılandırması konteynersiz doğrulanır (check adımı; `check.conf` değişir →
   residue); CI ELK'sız yeşil kalır.
-- [ ] AC-6 — README (logging bölümü, bellek gereksinimi), `docs/security.md` (30 gün saklama, PII
+- [x] AC-6 — README (logging bölümü, bellek gereksinimi), `docs/security.md` (30 gün saklama, PII
   yasağı, yerel dev stack'in auth'suz olduğu notu) ve `.env.example` güncel.
-- [ ] AC-7 — İmajlar sabit sürümlü (9.x), portlar yalnız `127.0.0.1`, adlandırılmış volume'lar;
+- [x] AC-7 — İmajlar sabit sürümlü (9.x), portlar yalnız `127.0.0.1`, adlandırılmış volume'lar;
   `DB_HOST_PORT=0 docker compose -p leave-manager-logging --profile logging down -v` her şeyi siler
   (yalnız logging projesi; dev `db-data` sağlam); 5434/8080/e2e ile çakışma yok.
 
@@ -84,9 +84,19 @@ Elasticsearch'e taşıyan Filebeat, Kibana ve 30 günlük ILM ile. Varsayılan `
 
 ## Definition of Done
 
-- [ ] Her AC kanıta bağlı (test veya tekrarlanabilir gözlem)
-- [ ] `./scripts/check` (full) yeşil; `check.conf` değiştiği için `./scripts/residue` yeşil
-- [ ] Bağımsız inceleme; gerçek bulgular düzeltildi, gürültü gerekçeli reddedildi, defer'ler
+- [x] Her AC kanıta bağlı (test veya tekrarlanabilir gözlem)
+- [x] `./scripts/check` (full) yeşil; `check.conf` değiştiği için `./scripts/residue` yeşil
+- [x] Bağımsız inceleme; gerçek bulgular düzeltildi, gürültü gerekçeli reddedildi, defer'ler
   `specs/backlog.md`'de
-- [ ] README + `docs/security.md` güncel
-- [ ] Spec `specs/done/`'a taşındı
+- [x] README + `docs/security.md` güncel
+- [x] Spec `specs/done/`'a taşındı
+
+## Scorecard (fill at ship — honest numbers make the process improvable)
+
+| Metric | Value |
+|---|---|
+| Spec revisions | 2 (R-4 `filebeat-*`; S1 proje/komut) |
+| Fix rounds | 2 (review round 1, re-review round 1) |
+| Review findings: real / noise / deferred | 12 / 1 / 0 (+2 kabul edilen Info: I-2, I-3) |
+| Regressions introduced | 0 |
+| Bugs escaped to production | 0 |
