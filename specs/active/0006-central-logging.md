@@ -21,8 +21,10 @@ Elasticsearch'e taşıyan Filebeat, Kibana ve 30 günlük ILM ile. Varsayılan `
 
 - **R-1** Varsayılan geliştirme yolu aynı kalır: `docker compose up -d db`, host uygulama, tam
   `./scripts/check` yeşil; profil açılmadan hiçbir ELK konteyneri başlamaz.
-- **R-2** `docker compose --profile logging up -d` db + uygulama + Elasticsearch + Kibana +
-  Filebeat'i ayağa kaldırır; uygulama `/api/health` yanıtlar, Kibana açılır.
+- **R-2** `DB_HOST_PORT=0 docker compose -p leave-manager-logging --profile logging up -d` yedi
+  servisi ayağa kaldırır: beş uzun ömürlü (db, app, Elasticsearch, Kibana, Filebeat) + iki tek
+  seferlik (`kibana-setup`, `filebeat-setup`); uygulama `/api/health` yanıtlar, Kibana açılır.
+  Stack kendi compose projesinde çalışır (`leave-manager-logging`), dev veritabanına dokunmaz.
 - **R-3** Uygulama her modda **JSON stdout** yazar (Spring Boot structured logging, ECS): zaman,
   seviye, logger, mesaj, servis adı; istek bağlamı varsa `requestId`. Kişisel veri/sır yok.
 - **R-4** Filebeat uygulama konteynerinin stdout'unu Docker soketiyle okur, JSON'u çözer, Docker
@@ -38,8 +40,9 @@ Elasticsearch'e taşıyan Filebeat, Kibana ve 30 günlük ILM ile. Varsayılan `
 
 - [ ] AC-1 — Varsayılan yol: ELK profili kapalıyken `docker compose config` yalnız `db`'yi gösterir;
   host uygulama + `./scripts/check` (full) yeşil; ELK konteyneri yok.
-- [ ] AC-2 — `docker compose --profile logging up -d` beş servisi sağlıklı başlatır; uygulama
-  `/api/health` 200; Kibana `127.0.0.1:5601` yanıtlar.
+- [ ] AC-2 — `DB_HOST_PORT=0 docker compose -p leave-manager-logging --profile logging up -d` beş
+  uzun ömürlü servisi (db, app, Elasticsearch, Kibana, Filebeat) sağlıklı başlatır ve iki tek
+  seferlik setup'ı çalıştırır; uygulama `/api/health` 200; Kibana `127.0.0.1:5601` yanıtlar.
 - [ ] AC-3 — Uygulama stdout'u geçerli JSON (ECS) satırlarıdır; bir log satırı Kibana/ES'te
   `service.name: leave-manager` (ve mesaj metni) ile bulunur; satırda PII/sır yok.
 - [ ] AC-4 — ILM politikası 30 gün (`min_age: 30d`, `delete`); şablon/politika stack açılışında
@@ -49,7 +52,8 @@ Elasticsearch'e taşıyan Filebeat, Kibana ve 30 günlük ILM ile. Varsayılan `
 - [ ] AC-6 — README (logging bölümü, bellek gereksinimi), `docs/security.md` (30 gün saklama, PII
   yasağı, yerel dev stack'in auth'suz olduğu notu) ve `.env.example` güncel.
 - [ ] AC-7 — İmajlar sabit sürümlü (9.x), portlar yalnız `127.0.0.1`, adlandırılmış volume'lar;
-  `docker compose --profile logging down -v` her şeyi siler; 5434/8080/e2e ile çakışma yok.
+  `DB_HOST_PORT=0 docker compose -p leave-manager-logging --profile logging down -v` her şeyi siler
+  (yalnız logging projesi; dev `db-data` sağlam); 5434/8080/e2e ile çakışma yok.
 
 ## Decisions
 

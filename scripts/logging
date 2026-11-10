@@ -29,8 +29,11 @@ config() {
   [ "$logging_services" = "app db elasticsearch filebeat filebeat-setup kibana kibana-setup " ] \
     || fail "the logging profile services changed: $logging_services"
   rendered=$(logging_compose config)
-  printf '%s' "$rendered" | grep -q 'host_ip: 127.0.0.1' || fail "a logging port is not bound to 127.0.0.1"
+  loopback=$(printf '%s' "$rendered" | grep -c 'host_ip: 127.0.0.1')
+  [ "$loopback" -eq 4 ] || fail "expected four loopback ports (app, db, Elasticsearch, Kibana), got $loopback"
   printf '%s' "$rendered" | grep -q 'elasticsearch:9.5.5' || fail "Elasticsearch is not pinned to 9.5.5"
+  printf '%s' "$rendered" | grep -q 'kibana:9.5.5' || fail "Kibana is not pinned to 9.5.5"
+  printf '%s' "$rendered" | grep -q 'filebeat:9.5.5' || fail "Filebeat is not pinned to 9.5.5"
   printf '%s' "$rendered" | grep -q 'es-data' || fail "the Elasticsearch data volume is missing"
   echo "logging config ok: default=db, profile=app db elasticsearch filebeat filebeat-setup kibana kibana-setup"
 }
