@@ -20,7 +20,7 @@ bir uygulama.
 [Hızlı başlangıç](#hızlı-başlangıç) · [Doğrulama ve testler](#doğrulama-ve-testler) · [API](#api) ·
 [Ortam değişkenleri](#ortam-değişkenleri) · [Merkezi loglama](#merkezi-loglama-opsiyonel) ·
 [Proje yapısı](#proje-yapısı) · [Dokümanlar](#dokümanlar) · [Yol haritası](#yol-haritası) ·
-[Geliştirme akışı](#geliştirme-akışı) · [Lisans](#lisans)
+[Geliştirme akışı](#geliştirme-akışı)
 
 ## Neden?
 
