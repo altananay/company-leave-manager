@@ -836,8 +836,13 @@ test('shouldKeepThePrimaryButtonTextReadable', async ({ page }) => {
 test('shouldShowAVisibleFocusRingOnAKeyboardFocusedButton', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
-
-  // The first Tab leaves the content region and lands on a real button; a keyboard user must see it.
+  // The language switch is the first focusable control; wait for it so the tab order is measured
+  // against the settled page.
+  await expect(page.getByRole('button', { name: 'TR', exact: true })).toBeVisible()
+  // The shell moves focus to <main> after a view change (App.tsx). A Tab racing that effect can be
+  // swallowed when it refocuses main, leaving the activeElement on the body instead of the first
+  // button; wait for the focus to settle, then measure the tab order from the top.
+  await expect(page.getByRole('main')).toBeFocused()
   await page.keyboard.press('Tab')
   const focus = await page.evaluate(() => {
     const element = document.activeElement
