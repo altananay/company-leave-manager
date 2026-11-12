@@ -4,6 +4,10 @@ export const messages = {
   tr: {
     appTitle: 'İzin Yönetimi',
     languageLabel: 'Dil',
+    themeLabel: 'Tema',
+    themeLight: 'Açık',
+    themeDark: 'Koyu',
+    themeSystem: 'Sistem',
     loading: 'Yükleniyor…',
     checking: 'Kontrol ediliyor…',
     up: 'Sistem çalışıyor',
@@ -248,6 +252,10 @@ export const messages = {
   en: {
     appTitle: 'Leave Management',
     languageLabel: 'Language',
+    themeLabel: 'Theme',
+    themeLight: 'Light',
+    themeDark: 'Dark',
+    themeSystem: 'System',
     loading: 'Loading…',
     checking: 'Checking…',
     up: 'System is up',

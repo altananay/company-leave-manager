@@ -1,4 +1,5 @@
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
+import { Check } from 'lucide-react'
 import type { ComponentProps } from 'react'
 
 import { cn } from '@/lib/utils'
@@ -65,6 +66,40 @@ function DropdownMenuItem({
   )
 }
 
+function DropdownMenuRadioGroup({
+  ...props
+}: ComponentProps<typeof DropdownMenuPrimitive.RadioGroup>) {
+  return <DropdownMenuPrimitive.RadioGroup {...props} />
+}
+
+/** A radio item marks the selected option; the theme menu uses it (spec 0007). */
+function DropdownMenuRadioItem({
+  className,
+  children,
+  ...props
+}: ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
+  return (
+    <DropdownMenuPrimitive.RadioItem
+      data-slot="dropdown-menu-radio-item"
+      className={cn(
+        'relative flex min-h-11 cursor-default select-none items-center gap-2 rounded-control py-2 pl-8 pr-2.5 text-small outline-none',
+        'data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground',
+        'data-[highlighted]:[outline:2px_solid_var(--ring)] data-[highlighted]:[outline-offset:-2px]',
+        'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+        className,
+      )}
+      {...props}
+    >
+      <span className="absolute left-2.5 flex size-3.5 items-center justify-center">
+        <DropdownMenuPrimitive.ItemIndicator>
+          <Check aria-hidden="true" className="size-4" />
+        </DropdownMenuPrimitive.ItemIndicator>
+      </span>
+      {children}
+    </DropdownMenuPrimitive.RadioItem>
+  )
+}
+
 function DropdownMenuLabel({
   className,
   ...props
@@ -94,6 +129,8 @@ export {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 }

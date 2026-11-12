@@ -15,7 +15,7 @@ const buttonVariants = cva(
       variant: {
         // Every primary action carries the brand gradient (AC-15). The gradient is a token class so
         // no screen repeats it.
-        default: 'brand-action bg-primary text-primary-foreground hover:brightness-105 shadow-1',
+        default: 'brand-action bg-primary text-brand-foreground hover:brightness-105 shadow-1',
         secondary:
           'border border-control bg-secondary text-secondary-foreground hover:bg-secondary/80',
         destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-1',

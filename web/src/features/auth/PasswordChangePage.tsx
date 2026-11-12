@@ -12,11 +12,11 @@ type ErrorKey = 'passwordTooShort' | 'passwordMismatch' | 'invalidPassword' | 'g
 export function PasswordChangePage({
   onChanged,
   onLogout,
-  languageSwitch,
+  controls,
 }: {
   onChanged: () => void
   onLogout: () => void
-  languageSwitch?: ReactNode
+  controls?: ReactNode
 }) {
   const { t } = useI18n()
   const [current, setCurrent] = useState('')
@@ -78,13 +78,13 @@ export function PasswordChangePage({
         <span className="flex items-center gap-2">
           <span
             aria-hidden="true"
-            className="brand-action grid size-8 place-items-center rounded-panel text-label font-bold text-primary-foreground"
+            className="brand-action grid size-8 place-items-center rounded-panel text-label font-bold text-brand-foreground"
           >
             İY
           </span>
           <span className="text-small font-semibold">{t('appTitle')}</span>
         </span>
-        {languageSwitch}
+        {controls}
       </div>
       <div className="flex flex-1 items-start justify-center px-4 pb-16 pt-4 sm:px-8">
         <div className="w-full max-w-md">

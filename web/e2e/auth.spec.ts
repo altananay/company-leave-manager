@@ -9,53 +9,84 @@ const HR_PASSWORD = 'hr-e2e-password-123'
 const WIDTHS = [360, 768, 1440]
 
 test('shouldNotScrollHorizontallyAtAnyWidth', async ({ page }) => {
-  for (const width of WIDTHS) {
-    await page.setViewportSize({ width, height: 900 })
+  // The width contract holds in both themes (spec 0007 AC-5): the dark tokens change colour only.
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: scheme })
 
-    // Login screen
-    await page.goto('/')
-    await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
-    expect(await horizontalOverflow(page), `login at ${width}px`).toBe(0)
+    for (const width of WIDTHS) {
+      await page.setViewportSize({ width, height: 900 })
 
-    // Signed-in shell and the users list
-    await page.getByLabel('E-posta').fill(HR_EMAIL)
-    await page.getByLabel('Parola').fill(HR_PASSWORD)
-    await page.getByRole('button', { name: 'Giriş yap' }).click()
-    await expect(page.getByText('Giriş yapan:')).toBeVisible()
-    expect(await horizontalOverflow(page), `home at ${width}px`).toBe(0)
+      // Login screen
+      await page.goto('/')
+      await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+      expect(await horizontalOverflow(page), `login at ${width}px (${scheme})`).toBe(0)
 
-    // One manageable account so the row actions and the dialog exist at every width.
-    await page.evaluate(async () => {
-      const token = (await (await fetch('/api/auth/csrf')).json()).token
-      await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
-        body: JSON.stringify({
-          email: `wide-${Date.now()}@acme.test`,
-          displayName: 'Wide Person',
-          role: 'EMPLOYEE',
-        }),
-      })
-    })
+      // Signed-in shell and the users list
+      await page.getByLabel('E-posta').fill(HR_EMAIL)
+      await page.getByLabel('Parola').fill(HR_PASSWORD)
+      await page.getByRole('button', { name: 'Giriş yap' }).click()
+      await expect(page.getByText('Giriş yapan:')).toBeVisible()
+      expect(await horizontalOverflow(page), `home at ${width}px (${scheme})`).toBe(0)
 
-    // The sidebar below 1024 px is a sheet: the helper opens whichever one is on screen.
-    await goToUsers(page)
-    await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
-    // Wait for the list itself: the heading renders before the request answers.
-    await expect(page.getByRole('table')).toBeVisible()
-    expect(await horizontalOverflow(page), `users at ${width}px`).toBe(0)
+      // One manageable account so the row actions and the dialog exist at every width.
+      await page.evaluate(
+        async ({ mode, px }) => {
+          const token = (await (await fetch('/api/auth/csrf')).json()).token
+          await fetch('/api/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+            body: JSON.stringify({
+              email: `wide-${mode}-${px}-${Date.now()}@acme.test`,
+              displayName: 'Wide Person',
+              role: 'EMPLOYEE',
+            }),
+          })
+        },
+        { mode: scheme, px: width },
+      )
 
-    // The dialog is the tightest layout on a phone: full width minus the page gutter. Row actions
-    // live behind the row menu (AC-14).
-    await page.getByRole('button', { name: 'İşlemler' }).first().click()
-    await page.getByRole('menuitem', { name: 'Pasife al' }).click()
-    await expect(page.getByRole('dialog')).toBeVisible()
-    expect(await horizontalOverflow(page), `dialog at ${width}px`).toBe(0)
-    await page.keyboard.press('Escape')
+      // The sidebar below 1024 px is a sheet: the helper opens whichever one is on screen.
+      await goToUsers(page)
+      await expect(page.getByRole('heading', { name: 'Kullanıcılar' })).toBeVisible()
+      // Wait for the list itself: the heading renders before the request answers.
+      await expect(page.getByRole('table')).toBeVisible()
+      expect(await horizontalOverflow(page), `users at ${width}px (${scheme})`).toBe(0)
 
-    await goToHome(page)
-    await logOut(page)
+      // The dialog is the tightest layout on a phone: full width minus the page gutter. Row actions
+      // live behind the row menu (AC-14).
+      await page.getByRole('button', { name: 'İşlemler' }).first().click()
+      await page.getByRole('menuitem', { name: 'Pasife al' }).click()
+      await expect(page.getByRole('dialog')).toBeVisible()
+      expect(await horizontalOverflow(page), `dialog at ${width}px (${scheme})`).toBe(0)
+      await page.keyboard.press('Escape')
+
+      await goToHome(page)
+      await logOut(page)
+    }
   }
+})
+
+test('shouldPersistTheThemeChoiceAndFollowTheSystem', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+  await expect(page.locator('html')).not.toHaveClass(/dark/)
+
+  // An explicit dark choice is stored and survives a reload (spec 0007 AC-2).
+  await page.getByRole('button', { name: 'Tema' }).click()
+  await page.getByRole('menuitemradio', { name: 'Koyu' }).click()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+
+  // The system option follows the OS live.
+  await page.getByRole('button', { name: 'Tema' }).click()
+  await page.getByRole('menuitemradio', { name: 'Sistem' }).click()
+  await page.emulateMedia({ colorScheme: 'light' })
+  await expect(page.locator('html')).not.toHaveClass(/dark/)
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await expect(page.locator('html')).toHaveClass(/dark/)
 })
 
 test('shouldFitThePasswordAndForbiddenScreensAtEveryWidth', async ({ page }) => {

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { AppShell, type NavItem } from '@/app/AppShell'
 import { PageHeader } from '@/app/PageHeader'
+import { ThemeToggle } from '@/app/ThemeToggle'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { PasswordChangePage } from '@/features/auth/PasswordChangePage'
 import { authApi, setUnauthorizedHandler, Unauthorized, type Me } from '@/features/auth/authApi'
@@ -219,6 +220,15 @@ function App() {
     </div>
   )
 
+  // The language and theme controls travel together: the same pair appears on the anonymous screens
+  // and in the shell header (spec 0007 AC-1).
+  const controls = (
+    <div className="flex items-center gap-2">
+      {languageSwitch}
+      <ThemeToggle />
+    </div>
+  )
+
   if (view === 'loading') {
     return (
       <div className="grid min-h-dvh place-items-center bg-background px-4">
@@ -236,7 +246,7 @@ function App() {
           onLoggedIn={handleLoggedIn}
           onAttempt={handleLoginAttempt}
           sessionExpired={sessionExpired}
-          languageSwitch={languageSwitch}
+          controls={controls}
         />
       </main>
     )
@@ -248,7 +258,7 @@ function App() {
         <PasswordChangePage
           onChanged={handlePasswordChanged}
           onLogout={handleLogout}
-          languageSwitch={languageSwitch}
+          controls={controls}
         />
       </main>
     )
@@ -305,7 +315,7 @@ function App() {
         breadcrumb: t('breadcrumb'),
       }}
       onLogout={handleLogout}
-      languageSwitch={languageSwitch}
+      controls={controls}
       mainRef={mainRef}
     >
       {view === 'home' && me && (

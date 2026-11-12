@@ -1,5 +1,10 @@
 @import 'tailwindcss';
 
+/* The class-based dark variant (shadcn/ui Tailwind v4 convention): `dark:` utilities follow the
+   `.dark` class the ThemeProvider sets on <html>, not the OS media query. The token swap below
+   works without it; this keeps a `dark:` utility honest when a component needs one. */
+@custom-variant dark (&:is(.dark *));
+
 /* ---------------------------------------------------------------------------
    Design tokens — the single source of every visual value (spec 0003, AC-5).
    No component may hard-code a colour; `scripts/tokens` fails the build if one does.
@@ -40,6 +45,15 @@
 
   --radius: 0.625rem;
 
+  /* The brand gradient keeps its light text in both themes: it is the brand surface, not the
+     primary colour (spec 0007 D-5). `--primary-foreground` stays the flat primary's text. */
+  --brand-foreground: oklch(0.99 0.005 250);
+
+  /* Elevation source values: the theme block below can move them without touching the utilities. */
+  --elevation-1: 0 1px 2px oklch(0.21 0.02 258 / 0.05);
+  --elevation-2: 0 4px 12px oklch(0.21 0.02 258 / 0.08);
+  --elevation-3: 0 12px 32px oklch(0.21 0.02 258 / 0.14);
+
   /* Light-only for now: without this the browser paints dark scrollbars and autofill for a user
      whose OS prefers dark, inside a light app. */
   color-scheme: light;
@@ -73,6 +87,13 @@
   --border: oklch(0.32 0.02 258);
   --control: oklch(0.62 0.02 258);
   --ring: oklch(0.68 0.16 262);
+
+  /* Dark elevation comes from black, not from the (now light) foreground hue. */
+  --elevation-1: 0 1px 2px oklch(0 0 0 / 0.45);
+  --elevation-2: 0 4px 12px oklch(0 0 0 / 0.5);
+  --elevation-3: 0 12px 32px oklch(0 0 0 / 0.6);
+
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -95,6 +116,7 @@
   --color-border: var(--border);
   --color-control: var(--control);
   --color-ring: var(--ring);
+  --color-brand-foreground: var(--brand-foreground);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -133,10 +155,10 @@
   --text-label--letter-spacing: 0.07em;
   --text-label--font-weight: 650;
 
-  /* Elevation (AC-15): three steps only, all from the foreground hue so a theme change moves them. */
-  --shadow-1: 0 1px 2px oklch(0.21 0.02 258 / 0.05);
-  --shadow-2: 0 4px 12px oklch(0.21 0.02 258 / 0.08);
-  --shadow-3: 0 12px 32px oklch(0.21 0.02 258 / 0.14);
+  /* Elevation (AC-15): three steps only, sourced from the theme block so a theme change moves them. */
+  --shadow-1: var(--elevation-1);
+  --shadow-2: var(--elevation-2);
+  --shadow-3: var(--elevation-3);
 
   /* Surfaces with a little life (AC-15): the login panel and the primary action. */
   --brand-panel: linear-gradient(

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { axe } from 'jest-axe'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { ThemeProvider } from './app/ThemeProvider'
 import { I18nProvider, detectInitialLang } from './i18n/I18nProvider'
 
 const STORAGE_KEY = 'leave-manager.lang'
@@ -69,7 +70,9 @@ function authenticated(
 function renderApp() {
   return render(
     <I18nProvider>
-      <App />
+      <ThemeProvider>
+        <App />
+      </ThemeProvider>
     </I18nProvider>,
   )
 }
@@ -1900,6 +1903,9 @@ describe('accessibility', () => {
     expect(turkish).toHaveFocus()
     await user.tab()
     expect(english).toHaveFocus()
+    // The theme toggle sits next to the language switch (spec 0007 AC-1).
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Tema' })).toHaveFocus()
     await user.tab()
     expect(email).toHaveFocus()
     await user.tab()
@@ -1922,9 +1928,25 @@ describe('accessibility', () => {
     // The language switch sits before the form: Shift+Tab from the first field walks back to it.
     email.focus()
     await user.tab({ shift: true })
+    expect(screen.getByRole('button', { name: 'Tema' })).toHaveFocus()
+    await user.tab({ shift: true })
     expect(screen.getByRole('button', { name: 'EN' })).toHaveFocus()
     await user.tab({ shift: true })
     expect(screen.getByRole('button', { name: 'TR' })).toHaveFocus()
+  })
+
+  it('shouldShowTheThemeToggleOnTheLoginScreen', async () => {
+    anonymous()
+    renderApp()
+    await screen.findByRole('heading', { name: 'Giriş' })
+    expect(screen.getByRole('button', { name: 'Tema' })).toBeInTheDocument()
+  })
+
+  it('shouldShowTheThemeToggleInTheShell', async () => {
+    authenticated(HR, () => json(200, { status: 'UP' }))
+    renderApp()
+    await screen.findByText(/Giriş yapan:/)
+    expect(screen.getByRole('button', { name: 'Tema' })).toBeInTheDocument()
   })
 
   it('shouldReachTheUsersScreenControlsWithTheKeyboard', async () => {
@@ -2009,6 +2031,8 @@ describe('accessibility', () => {
     expect(screen.getByRole('button', { name: 'TR' })).toHaveFocus()
     await user.tab()
     expect(screen.getByRole('button', { name: 'EN' })).toHaveFocus()
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Tema' })).toHaveFocus()
     await user.tab()
     expect(screen.getByLabelText('Mevcut parola')).toHaveFocus()
     await user.tab()

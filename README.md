@@ -15,7 +15,8 @@ bir uygulama.
 
 ## İçindekiler
 
-[Neden?](#neden) · [Özellikler](#özellikler) · [Ekran görüntüleri](#ekran-görüntüleri) ·
+[Neden?](#neden) · [Özellikler](#özellikler) · [Tema](#tema-açık--koyu--sistem) ·
+[Ekran görüntüleri](#ekran-görüntüleri) ·
 [Teknoloji yığını](#teknoloji-yığını) · [Mimari](#mimari) · [Roller ve iş kuralları](#roller-ve-iş-kuralları) ·
 [Hızlı başlangıç](#hızlı-başlangıç) · [Doğrulama ve testler](#doğrulama-ve-testler) · [API](#api) ·
 [Ortam değişkenleri](#ortam-değişkenleri) · [Merkezi loglama](#merkezi-loglama-opsiyonel) ·
@@ -51,8 +52,18 @@ kota, yetki) sunucuda uygulanır.
   minimaldir (doğum tarihi, okul çağı bayrağı, yakınlık) ve yalnız yetkili roller görür.
 - **Erişilebilirlik ve i18n** — TR/EN, axe sıfır ihlal, 44 px dokunma hedefleri, 360/768/1440 px'te
   yatay kaydırma yok.
+- **Tema** — açık/koyu/sistem; OS tercihini canlı izler, seçim kalıcıdır, ilk boyamada titreme yok.
 - **Merkezi loglama (opsiyonel)** — `logging` compose profili: ECS JSON stdout → Filebeat →
   Elasticsearch/Kibana, 30 gün ILM.
+
+## Tema (açık / koyu / sistem)
+
+Sağ üstteki tek ikon düğme (güneş/ay/monitör) üç seçenek sunar: **Açık**, **Koyu**, **Sistem**.
+Varsayılan **Sistem**dir ve işletim sistemi tercihini canlı izler; seçim `localStorage`'da saklanır
+ve ilk boyamada titreme olmadan uygulanır (`index.html`'deki küçük script). Renkler yalnız
+`web/src/index.css`'teki token'lardan gelir: `.dark` bloğu, karanlık `--shadow-*` değerleri ve marka
+yüzeylerinin sabit `--brand-foreground`'ı aynı dosyadadır. İki temada da WCAG AA kontrast ve axe
+sıfır ihlal e2e'de ölçülür.
 
 ## Ekran görüntüleri
 

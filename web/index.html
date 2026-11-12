@@ -6,6 +6,22 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>İzin Yönetimi</title>
+    <script>
+      // The ThemeProvider keeps this in sync after mount; this runs before the first paint so a
+      // stored or OS dark preference never flashes the light theme (spec 0007 AC-3).
+      ;(() => {
+        try {
+          const stored = localStorage.getItem('leave-manager.theme')
+          const dark =
+            stored === 'dark' ||
+            ((stored === 'system' || !stored) &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches)
+          if (dark) document.documentElement.classList.add('dark')
+        } catch {
+          // Blocked storage: the light default is the safe fallback.
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

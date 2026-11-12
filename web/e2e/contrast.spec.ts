@@ -27,6 +27,29 @@ test('shouldKeepControlBoundariesAtThreeToOne', async ({ page }) => {
   ).toBeGreaterThanOrEqual(3)
 })
 
+test('shouldKeepTheDarkControlBoundariesAtThreeToOne', async ({ page }) => {
+  // The dark tokens are measured, not assumed (spec 0007 AC-4).
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+
+  expect(await controlContrast(page, 'input', 'body'), 'dark input border').toBeGreaterThanOrEqual(
+    3,
+  )
+
+  await page.getByLabel('E-posta').fill(HR_EMAIL)
+  await page.getByLabel('Parola').fill(HR_PASSWORD)
+  await page.getByRole('button', { name: 'Giriş yap' }).click()
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+
+  await goToUsers(page)
+  expect(
+    await controlContrast(page, 'button[data-slot="button"].bg-secondary', '[data-slot="card"]'),
+    'dark secondary button border',
+  ).toBeGreaterThanOrEqual(3)
+})
+
 test('shouldKeepTheRoleListboxReadable', async ({ page }) => {
   // The /leave employee listbox is the same control on another screen; its boundary and its option
   // sizes are measured once, while it is open, in

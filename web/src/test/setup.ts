@@ -17,6 +17,22 @@ if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {}
 }
 
+// jsdom has no matchMedia; the theme provider's `system` option calls it on every mount. A test that
+// exercises the system preference replaces this stub with a controllable one (spec 0007).
+if (!window.matchMedia) {
+  window.matchMedia = (query: string) =>
+    ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }) as unknown as MediaQueryList
+}
+
 afterEach(() => {
   cleanup()
 })

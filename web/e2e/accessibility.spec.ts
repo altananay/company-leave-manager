@@ -509,6 +509,31 @@ test('shouldHaveNoAccessibilityViolationsOnEveryScreen', async ({ page }) => {
   await page.keyboard.press('Escape')
 })
 
+test('shouldHaveNoAccessibilityViolationsInTheDarkTheme', async ({ page }) => {
+  // The system default follows the emulated OS preference; the tokens are real CSS variables, not a
+  // filter (spec 0007 AC-2/AC-4).
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+  await expectNoViolations(page, 'dark login')
+
+  await page.getByLabel('E-posta').fill(HR_EMAIL)
+  await page.getByLabel('Parola').fill(HR_PASSWORD)
+  await page.getByRole('button', { name: 'Giriş yap' }).click()
+  await expect(page.getByText('Giriş yapan:')).toBeVisible()
+  await expectNoViolations(page, 'dark home')
+
+  await goToUsers(page)
+  await expect(page.getByRole('table')).toBeVisible()
+  await page.locator('[data-slot="users-stats"]').scrollIntoViewIfNeeded()
+  await expectNoViolations(page, 'dark users')
+
+  await goToLeave(page)
+  await expect(page.getByRole('heading', { name: 'İzin talepleri' })).toBeVisible()
+  await expectNoViolations(page, 'dark leave')
+})
+
 test('shouldHaveNoAccessibilityViolationsOnThePasswordAndForbiddenScreens', async ({ page }) => {
   // Sign in as HR and create a newcomer through the page's own session (the request fixture has a
   // separate cookie jar, so it would answer 401).
@@ -792,6 +817,15 @@ test('shouldHaveNoAccessibilityViolationsOnTheManagerQueueAndTheHrAdjustment', a
   await expectFocusTrappedInDialog(managerPage, 'leave decision dialog')
   await managerPage.keyboard.press('Escape')
 
+  // The same queue on the dark tokens (spec 0007 AC-4): the components are theme-agnostic, the
+  // contrast is not.
+  await managerPage.emulateMedia({ colorScheme: 'dark' })
+  await managerPage.reload()
+  await goToLeave(managerPage)
+  const darkQueue = managerPage.locator('[data-slot="card"]').filter({ hasText: 'Onay kuyruğu' })
+  await expect(darkQueue.getByText(fixture.employeeName)).toBeVisible()
+  await expectNoViolations(managerPage, 'manager queue (dark)')
+
   await managerContext.close()
 })
 
@@ -830,6 +864,24 @@ test('shouldKeepThePrimaryButtonTextReadable', async ({ page }) => {
   expect(
     await lowestBrandActionContrast(page),
     'users primary action text against the gradient (4.5:1)',
+  ).toBeGreaterThanOrEqual(4.5)
+})
+
+test('shouldKeepTheDarkThemeBrandTextReadable', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+
+  // The brand gradient keeps its light text in both themes (spec 0007 D-5).
+  expect(
+    await lowestBrandPanelContrast(page),
+    'dark brand-panel text against the gradient (4.5:1)',
+  ).toBeGreaterThanOrEqual(4.5)
+  expect(
+    await lowestBrandActionContrast(page),
+    'dark primary action text against the gradient (4.5:1)',
   ).toBeGreaterThanOrEqual(4.5)
 })
 

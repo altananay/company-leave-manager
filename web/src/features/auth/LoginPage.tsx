@@ -15,12 +15,12 @@ export function LoginPage({
   onLoggedIn,
   onAttempt,
   sessionExpired = false,
-  languageSwitch,
+  controls,
 }: {
   onLoggedIn: (me: Me) => void
   onAttempt?: () => void
   sessionExpired?: boolean
-  languageSwitch?: ReactNode
+  controls?: ReactNode
 }) {
   const { t } = useI18n()
   const [email, setEmail] = useState('')
@@ -60,10 +60,10 @@ export function LoginPage({
       <section
         aria-hidden="true"
         data-slot="brand-panel"
-        className="brand-panel relative hidden flex-col overflow-hidden p-10 text-primary-foreground lg:flex"
+        className="brand-panel relative hidden flex-col overflow-hidden p-10 text-brand-foreground lg:flex"
       >
         <div className="flex items-center gap-2.5">
-          <span className="grid size-9 place-items-center rounded-panel border border-primary-foreground/25 bg-primary-foreground/15 text-small font-bold backdrop-blur-sm">
+          <span className="grid size-9 place-items-center rounded-panel border border-brand-foreground/25 bg-brand-foreground/15 text-small font-bold backdrop-blur-sm">
             İY
           </span>
           <span className="text-h2 font-semibold tracking-tight">{t('appTitle')}</span>
@@ -71,22 +71,22 @@ export function LoginPage({
 
         <div className="mt-auto max-w-[34ch]">
           <h2 className="text-display">{t('loginPitch')}</h2>
-          <p className="mt-3 text-small text-primary-foreground/75">{t('loginPitchBody')}</p>
-          <ul className="mt-7 flex flex-col gap-2.5 text-small text-primary-foreground/85">
+          <p className="mt-3 text-small text-brand-foreground/75">{t('loginPitchBody')}</p>
+          <ul className="mt-7 flex flex-col gap-2.5 text-small text-brand-foreground/85">
             <li className="flex items-center gap-2.5">
-              <span className="grid size-4.5 place-items-center rounded-pill bg-primary-foreground/15 text-label">
+              <span className="grid size-4.5 place-items-center rounded-pill bg-brand-foreground/15 text-label">
                 ✓
               </span>
               {t('loginPointRoles')}
             </li>
             <li className="flex items-center gap-2.5">
-              <span className="grid size-4.5 place-items-center rounded-pill bg-primary-foreground/15 text-label">
+              <span className="grid size-4.5 place-items-center rounded-pill bg-brand-foreground/15 text-label">
                 ✓
               </span>
               {t('loginPointAudit')}
             </li>
             <li className="flex items-center gap-2.5">
-              <span className="grid size-4.5 place-items-center rounded-pill bg-primary-foreground/15 text-label">
+              <span className="grid size-4.5 place-items-center rounded-pill bg-brand-foreground/15 text-label">
                 ✓
               </span>
               {t('loginPointMobile')}
@@ -96,7 +96,7 @@ export function LoginPage({
 
         {/* 70 %, not 55 %: the footer must clear 4.5:1 against even the lightest gradient stop
             (`shouldKeepTheBrandPanelTextReadable` measures it). */}
-        <p className="mt-8 text-label font-medium tracking-normal text-primary-foreground/70">
+        <p className="mt-8 text-label font-medium tracking-normal text-brand-foreground/70">
           {t('appTitle')} · {t('internalOnly')}
         </p>
       </section>
@@ -107,13 +107,13 @@ export function LoginPage({
             <span className="flex items-center gap-2 lg:hidden">
               <span
                 aria-hidden="true"
-                className="brand-action grid size-8 place-items-center rounded-panel text-label font-bold text-primary-foreground"
+                className="brand-action grid size-8 place-items-center rounded-panel text-label font-bold text-brand-foreground"
               >
                 İY
               </span>
               <span className="text-small font-semibold">{t('appTitle')}</span>
             </span>
-            {languageSwitch}
+            {controls}
           </div>
 
           <h1 className="text-h1 font-semibold">{t('loginTitle')}</h1>

@@ -38,7 +38,7 @@ type AppShellProps = {
   user: Account
   labels: { logout: string; menu: string; close: string; navigation: string; breadcrumb: string }
   onLogout: () => void
-  languageSwitch: ReactNode
+  controls: ReactNode
   mainRef?: RefObject<HTMLElement | null>
   children: ReactNode
 }
@@ -86,7 +86,7 @@ function Brand({ appName }: { appName: string }) {
     <div className="flex items-center gap-2.5 px-1 py-1">
       <span
         aria-hidden="true"
-        className="brand-action grid size-9 place-items-center rounded-panel text-small font-bold text-primary-foreground shadow-1"
+        className="brand-action grid size-9 place-items-center rounded-panel text-small font-bold text-brand-foreground shadow-1"
       >
         İY
       </span>
@@ -163,7 +163,7 @@ function AppShell({
   user,
   labels,
   onLogout,
-  languageSwitch,
+  controls,
   mainRef,
   children,
 }: AppShellProps) {
@@ -229,7 +229,7 @@ function AppShell({
           </Breadcrumb>
 
           <div className="ml-auto flex items-center gap-2">
-            {languageSwitch}
+            {controls}
             <div className="hidden lg:block">
               <AccountMenu user={user} logoutLabel={labels.logout} onLogout={onLogout} />
             </div>
