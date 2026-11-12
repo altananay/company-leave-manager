@@ -46,6 +46,7 @@ describe('ThemeProvider', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
     localStorage.clear()
     document.documentElement.classList.remove('dark')
   })

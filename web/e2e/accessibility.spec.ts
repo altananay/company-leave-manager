@@ -516,9 +516,9 @@ test('shouldHaveNoAccessibilityViolationsOnEveryScreen', async ({ page }) => {
   await page.keyboard.press('Escape')
 })
 
-function overlayIsDark(page: Page) {
-  return page.evaluate(() => {
-    const element = document.querySelector<HTMLElement>('[data-slot="dialog-overlay"]')
+function overlayIsDark(page: Page, slot = 'dialog-overlay') {
+  return page.evaluate((dataSlot) => {
+    const element = document.querySelector<HTMLElement>(`[data-slot="${dataSlot}"]`)
     if (!element) {
       return false
     }
@@ -532,8 +532,9 @@ function overlayIsDark(page: Page) {
     context.fillStyle = getComputedStyle(element).backgroundColor
     context.fillRect(0, 0, 1, 1)
     const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data
-    return a > 100 && r < 40 && g < 40 && b < 40
-  })
+    // Dark-specific: the light scrim (19,25,34 / 102) must not satisfy this (N-1).
+    return a >= 140 && r <= 10 && g <= 10 && b <= 10
+  }, slot)
 }
 
 test('shouldHaveNoAccessibilityViolationsInTheDarkTheme', async ({ page }) => {
@@ -557,13 +558,31 @@ test('shouldHaveNoAccessibilityViolationsInTheDarkTheme', async ({ page }) => {
   await expect(page.getByText('Giriş yapan:')).toBeVisible()
   await expectNoViolations(page, 'dark home')
 
+  // A manageable row of our own: the seed's HR/CEO rows have no actions, and the dark test must
+  // stand alone with a filter (docs/testing.md rule 7) (N-2).
+  await page.evaluate(async (suffix) => {
+    const token = (await (await fetch('/api/auth/csrf')).json()).token
+    await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+      body: JSON.stringify({
+        email: `dark-${suffix}@acme.test`,
+        displayName: 'Dark Scan Person',
+        role: 'EMPLOYEE',
+      }),
+    })
+  }, Date.now())
+
   await goToUsers(page)
   await expect(page.getByRole('table')).toBeVisible()
   await page.locator('[data-slot="users-stats"]').scrollIntoViewIfNeeded()
   await expectNoViolations(page, 'dark users')
 
+  const darkRow = page.getByRole('row', { name: /Dark Scan Person/ })
+  await expect(darkRow).toBeVisible()
+
   // The dark scrim, row menu and dialog (F-1/F-3). The overlay must dim, not brighten.
-  await page.getByRole('button', { name: 'İşlemler' }).first().click()
+  await darkRow.getByRole('button', { name: 'İşlemler' }).click()
   await expect(page.getByRole('menuitem', { name: 'Pasife al' })).toBeVisible()
   await expectNoViolations(page, 'dark row actions menu')
   await page.getByRole('menuitem', { name: 'Pasife al' }).click()
@@ -581,6 +600,9 @@ test('shouldHaveNoAccessibilityViolationsInTheDarkTheme', async ({ page }) => {
   await page.getByRole('button', { name: 'Menü' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
   await expectNoViolations(page, 'dark nav sheet')
+  expect(await overlayIsDark(page, 'sheet-overlay'), 'the dark sheet scrim is black (N-1)').toBe(
+    true,
+  )
   await page.keyboard.press('Escape')
 })
 

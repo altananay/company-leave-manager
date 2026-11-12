@@ -10,7 +10,11 @@ export function detectInitialTheme(stored: string | null): Theme {
 }
 
 function systemPrefersDark(): boolean {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
+  try {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+  } catch {
+    return false
+  }
 }
 
 /** Blocked or full storage must not blank the SPA: an unreadable choice means "system" (F-5). */
