@@ -464,8 +464,9 @@ test('shouldHaveNoAccessibilityViolationsOnEveryScreen', async ({ page }) => {
   await expect(page.getByText('Giriş yapan:')).toBeVisible()
   await expectNoViolations(page, 'home')
 
-  // The account menu is a new surface (A-5): scan it while it is open.
-  await page.locator('header button[aria-haspopup="menu"]').click()
+  // The account menu is a new surface (A-5): scan it while it is open. The theme toggle is the
+  // other header menu; the account trigger is named by the user.
+  await page.getByRole('button', { name: 'HR Admin' }).click()
   await expect(page.getByRole('menuitem', { name: 'Çıkış' })).toBeVisible()
   await expectNoViolations(page, 'account menu')
   await page.keyboard.press('Escape')

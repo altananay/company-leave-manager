@@ -199,7 +199,7 @@ test('shouldKeepTouchTargetsAtLeast44Pixels', async ({ page }) => {
 
   // The account menu only exists from 1024 px up; measure its items there too.
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.locator('header button[aria-haspopup="menu"]').click()
+  await page.getByRole('button', { name: 'HR Admin' }).click()
   await expect(page.getByRole('menuitem', { name: 'Çıkış' })).toBeVisible()
   await expectTouchTargets(page, 'account menu', '[role="menuitem"]:visible')
 })
