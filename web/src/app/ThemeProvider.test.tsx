@@ -113,4 +113,31 @@ describe('ThemeProvider', () => {
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('light')
     expect(document.documentElement).not.toHaveClass('dark')
   })
+
+  it('shouldSurviveBlockedStorage', () => {
+    installMatchMedia(false)
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    )
+
+    // An unreadable choice means system; a failed write keeps the choice in memory.
+    expect(screen.getByTestId('theme')).toHaveTextContent('system')
+
+    fireEvent.click(screen.getByRole('button', { name: 'dark' }))
+
+    expect(screen.getByTestId('theme')).toHaveTextContent('dark')
+    expect(document.documentElement).toHaveClass('dark')
+
+    getItem.mockRestore()
+    setItem.mockRestore()
+  })
 })

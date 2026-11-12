@@ -451,6 +451,12 @@ test('shouldHaveNoAccessibilityViolationsOnEveryScreen', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
   await expectNoViolations(page, 'login')
 
+  // The feature's new menu surface, scanned open in the light theme too (F-3).
+  await page.getByRole('button', { name: 'Tema' }).click()
+  await expect(page.getByRole('menuitemradio', { name: 'Sistem' })).toBeVisible()
+  await expectNoViolations(page, 'theme menu')
+  await page.keyboard.press('Escape')
+
   // Login with an error
   await page.getByLabel('E-posta').fill(HR_EMAIL)
   await page.getByLabel('Parola').fill('wrong-password')
@@ -510,6 +516,26 @@ test('shouldHaveNoAccessibilityViolationsOnEveryScreen', async ({ page }) => {
   await page.keyboard.press('Escape')
 })
 
+function overlayIsDark(page: Page) {
+  return page.evaluate(() => {
+    const element = document.querySelector<HTMLElement>('[data-slot="dialog-overlay"]')
+    if (!element) {
+      return false
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = 1
+    canvas.height = 1
+    const context = canvas.getContext('2d')
+    if (!context) {
+      return false
+    }
+    context.fillStyle = getComputedStyle(element).backgroundColor
+    context.fillRect(0, 0, 1, 1)
+    const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data
+    return a > 100 && r < 40 && g < 40 && b < 40
+  })
+}
+
 test('shouldHaveNoAccessibilityViolationsInTheDarkTheme', async ({ page }) => {
   // The system default follows the emulated OS preference; the tokens are real CSS variables, not a
   // filter (spec 0007 AC-2/AC-4).
@@ -518,6 +544,12 @@ test('shouldHaveNoAccessibilityViolationsInTheDarkTheme', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
   await expect(page.locator('html')).toHaveClass(/dark/)
   await expectNoViolations(page, 'dark login')
+
+  // The feature's new menu surface, scanned open (F-3).
+  await page.getByRole('button', { name: 'Tema' }).click()
+  await expect(page.getByRole('menuitemradio', { name: 'Sistem' })).toBeVisible()
+  await expectNoViolations(page, 'dark theme menu')
+  await page.keyboard.press('Escape')
 
   await page.getByLabel('E-posta').fill(HR_EMAIL)
   await page.getByLabel('Parola').fill(HR_PASSWORD)
@@ -530,9 +562,26 @@ test('shouldHaveNoAccessibilityViolationsInTheDarkTheme', async ({ page }) => {
   await page.locator('[data-slot="users-stats"]').scrollIntoViewIfNeeded()
   await expectNoViolations(page, 'dark users')
 
+  // The dark scrim, row menu and dialog (F-1/F-3). The overlay must dim, not brighten.
+  await page.getByRole('button', { name: 'İşlemler' }).first().click()
+  await expect(page.getByRole('menuitem', { name: 'Pasife al' })).toBeVisible()
+  await expectNoViolations(page, 'dark row actions menu')
+  await page.getByRole('menuitem', { name: 'Pasife al' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expectNoViolations(page, 'dark deactivation dialog')
+  expect(await overlayIsDark(page), 'the dark dialog scrim is black (F-1)').toBe(true)
+  await page.keyboard.press('Escape')
+
   await goToLeave(page)
   await expect(page.getByRole('heading', { name: 'İzin talepleri' })).toBeVisible()
   await expectNoViolations(page, 'dark leave')
+
+  // A phone: the nav sheet and its scrim on the dark tokens (F-1/F-3).
+  await page.setViewportSize({ width: 360, height: 800 })
+  await page.getByRole('button', { name: 'Menü' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expectNoViolations(page, 'dark nav sheet')
+  await page.keyboard.press('Escape')
 })
 
 test('shouldHaveNoAccessibilityViolationsOnThePasswordAndForbiddenScreens', async ({ page }) => {
@@ -824,6 +873,7 @@ test('shouldHaveNoAccessibilityViolationsOnTheManagerQueueAndTheHrAdjustment', a
   await managerPage.reload()
   await goToLeave(managerPage)
   const darkQueue = managerPage.locator('[data-slot="card"]').filter({ hasText: 'Onay kuyruğu' })
+  await expect(managerPage.locator('html')).toHaveClass(/dark/)
   await expect(darkQueue.getByText(fixture.employeeName)).toBeVisible()
   await expectNoViolations(managerPage, 'manager queue (dark)')
 

@@ -61,27 +61,28 @@ kota, yetki) sunucuda uygulanır.
 Sağ üstteki tek ikon düğme (güneş/ay/monitör) üç seçenek sunar: **Açık**, **Koyu**, **Sistem**.
 Varsayılan **Sistem**dir ve işletim sistemi tercihini canlı izler; seçim `localStorage`'da saklanır
 ve ilk boyamada titreme olmadan uygulanır (`index.html`'deki küçük script). Renkler yalnız
-`web/src/index.css`'teki token'lardan gelir: `.dark` bloğu, karanlık `--shadow-*` değerleri ve marka
+`web/src/index.css`'teki token'lardan gelir: `.dark` bloğu, karanlık `--elevation-*` değerleri
+(`--shadow-*` bunlara bağlanır) ve marka
 yüzeylerinin sabit `--brand-foreground`'ı aynı dosyadadır. İki temada da WCAG AA kontrast ve axe
 sıfır ihlal e2e'de ölçülür.
 
 ## Ekran görüntüleri
 
-| Çalışan | Yönetici |
-|---|---|
+| Çalışan                                                                                 | Yönetici                                                |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | ![Çalışan izin ekranı: bakiye, talepler, izinli günler](docs/images/leave-requests.png) | ![Yönetici onay kuyruğu](docs/images/manager-queue.png) |
-| Bakiye, talepler ve izinli günler tek ekranda | Yönetici doğrudan raporlarının kuyruğunu onaylar |
+| Bakiye, talepler ve izinli günler tek ekranda                                           | Yönetici doğrudan raporlarının kuyruğunu onaylar        |
 
 ## Teknoloji yığını
 
-| Katman | Teknoloji |
-|---|---|
-| **Backend** | Java 25 · Spring Boot 4.1.2 (WebMVC, Data JPA, Security, Session JDBC, Validation, Actuator) · Hibernate · Flyway · PostgreSQL 18 · Maven Wrapper |
+| Katman       | Teknoloji                                                                                                                                           |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Backend**  | Java 25 · Spring Boot 4.1.2 (WebMVC, Data JPA, Security, Session JDBC, Validation, Actuator) · Hibernate · Flyway · PostgreSQL 18 · Maven Wrapper   |
 | **Frontend** | React 19 · Vite 8 · TypeScript 7 · Tailwind CSS 4 · Radix UI + shadcn/ui tarzı bileşenler (`web/src/ui`) · lucide-react · CVA · clsx/tailwind-merge |
-| **Test** | JUnit 5 · MockMvc · Testcontainers (PostgreSQL) · ArchUnit · Vitest + Testing Library · axe-core · Playwright |
-| **Altyapı** | Docker Compose (PostgreSQL; opsiyonel Elasticsearch/Kibana/Filebeat 9.5.5) · GitHub Actions |
-| **Kalite** | oxlint · Prettier · `./scripts/check` (tek doğrulama sözleşmesi) · `./scripts/doctor` · `./scripts/residue` |
-| **İş akışı** | ANEW: spec → plan onayı → build → bağımsız inceleme → insan triyajı → VERIFY → ship |
+| **Test**     | JUnit 5 · MockMvc · Testcontainers (PostgreSQL) · ArchUnit · Vitest + Testing Library · axe-core · Playwright                                       |
+| **Altyapı**  | Docker Compose (PostgreSQL; opsiyonel Elasticsearch/Kibana/Filebeat 9.5.5) · GitHub Actions                                                         |
+| **Kalite**   | oxlint · Prettier · `./scripts/check` (tek doğrulama sözleşmesi) · `./scripts/doctor` · `./scripts/residue`                                         |
+| **İş akışı** | ANEW: spec → plan onayı → build → bağımsız inceleme → insan triyajı → VERIFY → ship                                                                 |
 
 ## Mimari
 
@@ -97,12 +98,12 @@ sıfır ihlal e2e'de ölçülür.
 
 ## Roller ve iş kuralları
 
-| Rol | Yapabildikleri |
-|---|---|
-| `EMPLOYEE` | Kendi taleplerini açar/iptal eder; bakiyesini ve izinli günlerini görür |
-| `MANAGER` | Doğrudan raporlarının kuyruğunu onaylar/reddeder; alt ağacını görür |
-| `HR` | Kullanıcı yönetimi, bakiye düzeltmesi, geçmişe dönük kayıt, tüm talepler (onay yetkisi yok) |
-| `CEO` | Şirket geneli okuma (onay/yazma yetkisi yok) |
+| Rol        | Yapabildikleri                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------- |
+| `EMPLOYEE` | Kendi taleplerini açar/iptal eder; bakiyesini ve izinli günlerini görür                     |
+| `MANAGER`  | Doğrudan raporlarının kuyruğunu onaylar/reddeder; alt ağacını görür                         |
+| `HR`       | Kullanıcı yönetimi, bakiye düzeltmesi, geçmişe dönük kayıt, tüm talepler (onay yetkisi yok) |
+| `CEO`      | Şirket geneli okuma (onay/yazma yetkisi yok)                                                |
 
 **İzin türleri:** yıllık · mazeret · evlilik (5) · vefat (5, yakınlık zorunlu) · eş doğumu (5) ·
 karne (1, okul çağı bayrağı, yılda 1) · doğum günü (1, 180 gün penceresi) · okulun ilk günü (1, okul
@@ -207,29 +208,29 @@ Tek doğrulama sözleşmesi:
 
 ## API
 
-| Grup | Uçlar |
-|---|---|
-| Sağlık | `GET /api/health` |
-| Kimlik | `POST /api/auth/login` · `POST /api/auth/logout` · `GET /api/auth/me` · `GET /api/auth/csrf` · `POST /api/auth/password` |
-| Kullanıcılar (HR) | `GET /api/users` · `POST /api/users` · `PATCH /api/users/{id}` · `POST /api/users/{id}/deactivate` · `POST /api/users/{id}/reset-password` |
-| İzin | `GET /api/leave/requests` · `POST /api/leave/requests` · `POST /api/leave/requests/{id}/approve` · `.../reject` · `.../cancel` · `GET /api/leave/queue` · `GET /api/leave/balance` · `GET /api/leave/preview` · `GET /api/leave/days` · `POST /api/leave/adjustments` |
+| Grup              | Uçlar                                                                                                                                                                                                                                                                 |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sağlık            | `GET /api/health`                                                                                                                                                                                                                                                     |
+| Kimlik            | `POST /api/auth/login` · `POST /api/auth/logout` · `GET /api/auth/me` · `GET /api/auth/csrf` · `POST /api/auth/password`                                                                                                                                              |
+| Kullanıcılar (HR) | `GET /api/users` · `POST /api/users` · `PATCH /api/users/{id}` · `POST /api/users/{id}/deactivate` · `POST /api/users/{id}/reset-password`                                                                                                                            |
+| İzin              | `GET /api/leave/requests` · `POST /api/leave/requests` · `POST /api/leave/requests/{id}/approve` · `.../reject` · `.../cancel` · `GET /api/leave/queue` · `GET /api/leave/balance` · `GET /api/leave/preview` · `GET /api/leave/days` · `POST /api/leave/adjustments` |
 
 Tüm yazma uçları oturum + CSRF ister; kapsam dışı istek **404** döner. Hata gövdesi
 `{status, code, message, requestId}` biçimindedir.
 
 ## Ortam değişkenleri
 
-| Değişken | Varsayılan | Açıklama |
-|---|---|---|
-| `DB_URL` | `jdbc:postgresql://localhost:5434/leave_manager` | JDBC adresi |
-| `DB_USER` / `DB_PASSWORD` | `leave` / `leave` | Veritabanı kullanıcısı |
-| `DB_HOST_PORT` | `5434` | Compose DB host portu (`0` = rastgele boş port) |
-| `PORT` | `8080` | API portu |
-| `SESSION_IDLE_TIMEOUT` | `30m` | Oturum boşta kalma süresi |
-| `SESSION_COOKIE_SECURE` | `false` | TLS arkasında `true` (prod profili varsayılanı) |
-| `SEED_HR_EMAIL` / `SEED_HR_PASSWORD` | — | İlk İK hesabı (parola ≥ 12 karakter) |
-| `SEED_CEO_EMAIL` / `SEED_CEO_PASSWORD` | — | İlk CEO hesabı |
-| `APP_HOST_PORT` | `8085` | Yalnız `logging` profilindeki app konteynerinin host portu |
+| Değişken                               | Varsayılan                                       | Açıklama                                                   |
+| -------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------- |
+| `DB_URL`                               | `jdbc:postgresql://localhost:5434/leave_manager` | JDBC adresi                                                |
+| `DB_USER` / `DB_PASSWORD`              | `leave` / `leave`                                | Veritabanı kullanıcısı                                     |
+| `DB_HOST_PORT`                         | `5434`                                           | Compose DB host portu (`0` = rastgele boş port)            |
+| `PORT`                                 | `8080`                                           | API portu                                                  |
+| `SESSION_IDLE_TIMEOUT`                 | `30m`                                            | Oturum boşta kalma süresi                                  |
+| `SESSION_COOKIE_SECURE`                | `false`                                          | TLS arkasında `true` (prod profili varsayılanı)            |
+| `SEED_HR_EMAIL` / `SEED_HR_PASSWORD`   | —                                                | İlk İK hesabı (parola ≥ 12 karakter)                       |
+| `SEED_CEO_EMAIL` / `SEED_CEO_PASSWORD` | —                                                | İlk CEO hesabı                                             |
+| `APP_HOST_PORT`                        | `8085`                                           | Yalnız `logging` profilindeki app konteynerinin host portu |
 
 ## Merkezi loglama (opsiyonel)
 
@@ -281,14 +282,14 @@ docker compose -p leave-manager-logging --profile logging down -v
 
 ## Yol haritası
 
-| Spec | Durum |
-|---|---|
-| 0001 — Walking skeleton | ✅ Shipped |
-| 0002 — Kimlik ve roller | ✅ Shipped |
-| 0003 — UI tasarım sistemi | ✅ Shipped |
-| 0004 — İzin talebi akışı (A + B1 + B2) | ✅ Shipped |
+| Spec                                       | Durum      |
+| ------------------------------------------ | ---------- |
+| 0001 — Walking skeleton                    | ✅ Shipped |
+| 0002 — Kimlik ve roller                    | ✅ Shipped |
+| 0003 — UI tasarım sistemi                  | ✅ Shipped |
+| 0004 — İzin talebi akışı (A + B1 + B2)     | ✅ Shipped |
 | 0005 — `LEAVE_NOT_OWNER` ölü kod temizliği | ✅ Shipped |
-| 0006 — Merkezi loglama (opsiyonel ELK) | ✅ Shipped |
+| 0006 — Merkezi loglama (opsiyonel ELK)     | ✅ Shipped |
 
 Ertelenen küçük işler: **B-2** (health süre testi), **B-5** (Testcontainers 2.x), **B-10** (hata
 eşleme tablosu karakterizasyon testi) — [specs/backlog.md](specs/backlog.md).

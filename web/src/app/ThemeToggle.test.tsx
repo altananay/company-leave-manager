@@ -50,4 +50,50 @@ describe('ThemeToggle', () => {
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark')
     expect(document.documentElement).toHaveClass('dark')
   })
+
+  it('shouldMarkTheSelectedTheme', async () => {
+    const user = userEvent.setup()
+    renderToggle()
+
+    await user.click(screen.getByRole('button', { name: 'Tema' }))
+
+    expect(await screen.findByRole('menuitemradio', { name: 'Sistem' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    expect(screen.getByRole('menuitemradio', { name: 'Açık' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    )
+  })
+
+  it('shouldSelectAThemeWithTheKeyboard', async () => {
+    const user = userEvent.setup()
+    renderToggle()
+
+    const trigger = screen.getByRole('button', { name: 'Tema' })
+    trigger.focus()
+    await user.keyboard('{Enter}')
+    await screen.findByRole('menuitemradio', { name: 'Açık' })
+    // Radix focuses the first item; one step down reaches Koyu, Enter commits it.
+    await user.keyboard('{ArrowDown}{Enter}')
+
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark')
+    expect(document.documentElement).toHaveClass('dark')
+    expect(screen.getByRole('button', { name: 'Tema' })).toHaveFocus()
+  })
+
+  it('shouldUseTheEnglishLabels', async () => {
+    localStorage.setItem('leave-manager.lang', 'en')
+    const user = userEvent.setup()
+    renderToggle()
+
+    await user.click(screen.getByRole('button', { name: 'Theme' }))
+
+    expect(await screen.findByRole('menuitemradio', { name: 'Dark' })).toBeVisible()
+    expect(screen.getByRole('menuitemradio', { name: 'System' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+  })
 })

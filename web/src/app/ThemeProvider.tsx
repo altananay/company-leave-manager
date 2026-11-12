@@ -13,6 +13,24 @@ function systemPrefersDark(): boolean {
   return window.matchMedia('(prefers-color-scheme: dark)').matches
 }
 
+/** Blocked or full storage must not blank the SPA: an unreadable choice means "system" (F-5). */
+function readStoredTheme(): Theme {
+  try {
+    return detectInitialTheme(localStorage.getItem(THEME_STORAGE_KEY))
+  } catch {
+    return 'system'
+  }
+}
+
+/** A failed write keeps the choice in memory for this page (F-5); the toggle must still work. */
+function writeStoredTheme(theme: Theme) {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme)
+  } catch {
+    // Quota/blocked: memory-only for this page.
+  }
+}
+
 type ThemeValue = {
   theme: Theme
   resolved: 'light' | 'dark'
@@ -27,9 +45,7 @@ const ThemeContext = createContext<ThemeValue | null>(null)
  * first paint; this provider keeps it in sync and follows the OS while `system` is selected.
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() =>
-    detectInitialTheme(localStorage.getItem(THEME_STORAGE_KEY)),
-  )
+  const [theme, setThemeState] = useState<Theme>(readStoredTheme)
   const [systemDark, setSystemDark] = useState<boolean>(() => systemPrefersDark())
 
   useEffect(() => {
@@ -50,7 +66,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       theme,
       resolved,
       setTheme: (next) => {
-        localStorage.setItem(THEME_STORAGE_KEY, next)
+        writeStoredTheme(next)
         setThemeState(next)
       },
     }),

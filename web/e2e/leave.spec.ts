@@ -355,6 +355,9 @@ test('shouldFitTheLeaveScreenAtEveryWidth', async ({ page, browser }) => {
       await employeePage.setViewportSize({ width, height: 900 })
       await goToLeave(employeePage)
       await expect(employeePage.locator('[data-slot="balance-remaining"]')).toHaveText(/\d+/)
+      if (scheme === 'dark') {
+        await expect(employeePage.locator('html')).toHaveClass(/dark/)
+      }
 
       expect(await horizontalOverflow(employeePage), `leave at ${width}px (${scheme})`).toBe(0)
       await expectTouchTargets(employeePage, `leave at ${width}px (${scheme})`)

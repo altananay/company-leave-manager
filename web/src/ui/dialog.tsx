@@ -16,7 +16,10 @@ function DialogContent({
 }: ComponentProps<typeof DialogPrimitive.Content> & { closeLabel: string }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-[1px]" />
+      <DialogPrimitive.Overlay
+        data-slot="dialog-overlay"
+        className="fixed inset-0 z-50 bg-overlay backdrop-blur-[1px]"
+      />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(

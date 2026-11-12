@@ -19,6 +19,9 @@ test('shouldNotScrollHorizontallyAtAnyWidth', async ({ page }) => {
       // Login screen
       await page.goto('/')
       await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+      if (scheme === 'dark') {
+        await expect(page.locator('html')).toHaveClass(/dark/)
+      }
       expect(await horizontalOverflow(page), `login at ${width}px (${scheme})`).toBe(0)
 
       // Signed-in shell and the users list
@@ -75,6 +78,12 @@ test('shouldPersistTheThemeChoiceAndFollowTheSystem', async ({ page }) => {
   await page.getByRole('button', { name: 'Tema' }).click()
   await page.getByRole('menuitemradio', { name: 'Koyu' }).click()
   await expect(page.locator('html')).toHaveClass(/dark/)
+  expect(
+    await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('color-scheme'),
+    ),
+    'color-scheme follows the theme',
+  ).toBe('dark')
 
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
@@ -85,6 +94,12 @@ test('shouldPersistTheThemeChoiceAndFollowTheSystem', async ({ page }) => {
   await page.getByRole('menuitemradio', { name: 'Sistem' }).click()
   await page.emulateMedia({ colorScheme: 'light' })
   await expect(page.locator('html')).not.toHaveClass(/dark/)
+  expect(
+    await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('color-scheme'),
+    ),
+    'color-scheme follows the system theme',
+  ).toBe('light')
   await page.emulateMedia({ colorScheme: 'dark' })
   await expect(page.locator('html')).toHaveClass(/dark/)
 })
@@ -202,6 +217,11 @@ test('shouldKeepTouchTargetsAtLeast44Pixels', async ({ page }) => {
   await page.getByRole('button', { name: 'HR Admin' }).click()
   await expect(page.getByRole('menuitem', { name: 'Çıkış' })).toBeVisible()
   await expectTouchTargets(page, 'account menu', '[role="menuitem"]:visible')
+
+  // The theme menu's radio items are 44 px too (spec 0007 AC-1).
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Tema' }).click()
+  await expectTouchTargets(page, 'theme menu', '[role="menuitemradio"]:visible')
 })
 
 test('shouldNotScrollInsideTheTableWithALongAddress', async ({ page }) => {
@@ -309,6 +329,30 @@ test('shouldShowTheContentFocusRingOnlyForTheKeyboard', async ({ page }) => {
 /**
  * Every control a thumb has to hit lives in ./layout; this file keeps the journey assertions.
  */
+
+test('shouldShowTheFocusRingInTheDarkTheme', async ({ page }) => {
+  // AC-5: the focus ring is visible on the dark tokens too.
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Giriş' })).toBeVisible()
+  await expect(page.locator('html')).toHaveClass(/dark/)
+  await expect(page.getByRole('button', { name: 'TR', exact: true })).toBeVisible()
+  await expect(page.getByRole('main')).toBeFocused()
+
+  await page.keyboard.press('Tab')
+  const focus = await page.evaluate(() => {
+    const element = document.activeElement
+    if (!(element instanceof HTMLElement) || element.tagName !== 'BUTTON') {
+      return { button: false, visible: false }
+    }
+    const style = getComputedStyle(element)
+    const outline = style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) > 0
+    const ring = style.boxShadow !== 'none' && style.boxShadow !== ''
+    return { button: true, visible: outline || ring }
+  })
+  expect(focus.button, 'the first Tab lands on a button').toBe(true)
+  expect(focus.visible, 'the focus ring is visible in the dark theme').toBe(true)
+})
 
 test('shouldLoginDenyAndLogout', async ({ page }) => {
   // Anonymous: the shell shows the login screen.

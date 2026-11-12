@@ -8,8 +8,8 @@
 /* ---------------------------------------------------------------------------
    Design tokens — the single source of every visual value (spec 0003, AC-5).
    No component may hard-code a colour; `scripts/tokens` fails the build if one does.
-   The dark block below is the seam for a later slice: nothing sets `.dark` yet,
-   so it is inert today and costs one file to enable.
+   Spec 0007 realizes the dark seam: the ThemeProvider sets `.dark` on <html> and
+   the block below is the dark theme, not a placeholder.
    --------------------------------------------------------------------------- */
 
 :root {
@@ -54,8 +54,11 @@
   --elevation-2: 0 4px 12px oklch(0.21 0.02 258 / 0.08);
   --elevation-3: 0 12px 32px oklch(0.21 0.02 258 / 0.14);
 
-  /* Light-only for now: without this the browser paints dark scrollbars and autofill for a user
-     whose OS prefers dark, inside a light app. */
+  /* The modal scrim dims the page; it must not follow `--foreground` (spec 0007 F-1). */
+  --overlay: oklch(0.21 0.02 258 / 0.4);
+
+  /* Light is the default; `.dark` sets its own color-scheme, so the browser paints dark
+     scrollbars and autofill only while the dark theme is active (spec 0007 AC-2). */
   color-scheme: light;
 }
 
@@ -93,6 +96,9 @@
   --elevation-2: 0 4px 12px oklch(0 0 0 / 0.5);
   --elevation-3: 0 12px 32px oklch(0 0 0 / 0.6);
 
+  /* A black scrim: the near-white `--foreground` would brighten the dark page (spec 0007 F-1). */
+  --overlay: oklch(0 0 0 / 0.6);
+
   color-scheme: dark;
 }
 
@@ -117,6 +123,7 @@
   --color-control: var(--control);
   --color-ring: var(--ring);
   --color-brand-foreground: var(--brand-foreground);
+  --color-overlay: var(--overlay);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

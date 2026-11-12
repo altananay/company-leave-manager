@@ -27,7 +27,7 @@ function SheetContent({
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay
         data-slot="sheet-overlay"
-        className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-[1px] transition-opacity duration-(--duration-base)"
+        className="fixed inset-0 z-50 bg-overlay backdrop-blur-[1px] transition-opacity duration-(--duration-base)"
       />
       <DialogPrimitive.Content
         data-slot="sheet-content"

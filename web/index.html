@@ -12,13 +12,20 @@
       ;(() => {
         try {
           const stored = localStorage.getItem('leave-manager.theme')
+          // Anything except `light` follows the OS, matching detectInitialTheme (spec 0007 F-6).
           const dark =
             stored === 'dark' ||
-            ((stored === 'system' || !stored) &&
-              window.matchMedia('(prefers-color-scheme: dark)').matches)
+            (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
           if (dark) document.documentElement.classList.add('dark')
         } catch {
-          // Blocked storage: the light default is the safe fallback.
+          // Blocked storage: fall back to the OS preference, like the provider (F-5).
+          try {
+            if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+              document.documentElement.classList.add('dark')
+            }
+          } catch {
+            // No matchMedia: the light default is the safe fallback.
+          }
         }
       })()
     </script>
